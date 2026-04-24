@@ -16,7 +16,7 @@ The goal is that a complete novice can download, install, and run Nexus with no 
 - **LocalAI module** — AI-assisted setup for local language models and diffusion models; Claude detects your hardware, generates a one-time setup script; inference UI with live output streaming
 - **12 additional modules** — Web, Research, Codex, Journal, Game, Org, Home, Streaming, VTube, Emulator, Vault, and Server each have a functional dashboard with inline setup form, action buttons, and a live command-output log
 - **AI Skills** — 44 built-in tool functions the AI can call without any configuration: pull repos, create notes, start services, run custom commands, and more
-- **AI provider config** — Anthropic API key, local model (Ollama / LM Studio), or Claude.ai login
+- **AI provider config** — Anthropic API key or any OpenAI-compatible local model (Ollama, LM Studio, llama.cpp); full tool-use and Mycelium flows work on both paths
 - **MCP integration** — connect to MCP servers (filesystem, GitHub, web search, SQLite, and more) and inject their tools into every Claude API call
 - **Per-project AI instructions** — each project gets its own `CLAUDE.md` copied from the module's template; templates include domain knowledge, key software, and prompts for the AI
 - **Project deletion** — remove any project tile with a confirmation dialog
@@ -105,6 +105,8 @@ Enter the endpoint URL and model name for any OpenAI-compatible server:
 - **Ollama**: `http://localhost:11434`, model e.g. `llama3.2`
 - **LM Studio**: `http://localhost:1234/v1`, model as shown in the app
 
+Use the **Test Connection** button to verify the endpoint is reachable. The local provider supports the same tool-use loop as the Anthropic path — all skills and MCP tools work. If the model doesn't support function calling, tool use is silently disabled and the model replies directly.
+
 ### Claude.ai Login
 Browser-based OAuth — not yet supported in the terminal UI. Use an API key in the meantime.
 
@@ -135,7 +137,7 @@ The AI uses these to act, not just advise — pulling repos, creating notes, sta
 | Skill | What it does |
 |-------|--------------|
 | `list_projects` | List all your Nexus projects with type and description |
-| `run_flow` | Trigger a cross-module Mycelium flow — stub until Mycelium handlers are wired |
+| `run_flow` | Trigger a cross-module Mycelium flow (`research_to_codex`, `git_to_journal`, `research_to_org`, `codex_to_journal`, `org_to_journal`) |
 | `search_logs` | Search the application log for recent events |
 
 ### Module skills

@@ -31,23 +31,26 @@ uv run nexus     # run the app
 nexus/
   app.py                 — NexusApp (Textual App), entry point
   core/
-    config_manager.py    — read/write settings.yaml + per-project config.yaml
+    config_manager.py    — read/write settings.yaml + per-project config.yaml; is_ai_configured() helper
     logger.py            — centralised logging (RotatingFileHandler → logs/nexus.log)
     module_manager.py    — module registry + screen dispatch
     mycelium.py          — inter-module communication bus
     project_manager.py   — create / list / delete project instances
     scheduler.py         — BackupScheduler: asyncio polling loop; fires restic backups on daily/weekly schedules
   ai/
-    client.py            — AIClient: wraps Anthropic SDK, merges skill + MCP tools, handles tool-use loop
+    client.py            — AIClient: provider-aware (api_key → _chat_anthropic via Anthropic SDK;
+                           local → _chat_local via OpenAI-compatible HTTP); _to_oai_tool() translates
+                           Anthropic tool format to OpenAI function format; full tool-use loop for both paths
     mcp_client.py        — MCPClient: connects to MCP servers via stdio
     mcp_registry.py      — curated catalog of popular MCP servers
     skill_registry.py    — SkillRegistry singleton: register(), get_tools(scopes), call(), has()
-    global_skills.py     — global-scope skills: list_projects, run_flow (stub), search_logs
+    global_skills.py     — global-scope skills: list_projects, run_flow, search_logs
   ui/
     tiles.py             — TileGrid, ProjectTile, AddProjectTile, SettingsTile, ConfirmDeleteModal
     add_project_screen.py — full-screen tile grid of module types (ModuleTile) + name/desc form;
                             Custom tile always last with distinct purple styling; grid auto-sizes
-    settings_screen.py   — AI provider config (api_key / local / login) + general settings
+    settings_screen.py   — AI provider config (api_key / local / login) + general settings;
+                           Test Connection button for local provider; Verify button for api_key
     mcp_screen.py        — MCP server manager (Active / Add Servers tabs)
     base_project_screen.py — BaseProjectScreen: shared layout (top-bar, action-bar, setup-pane,
                              main-pane, output log), _run_cmd async helper, InputModal; all 12
@@ -212,13 +215,16 @@ Configured via the Settings screen (`s`) or directly in `config/settings.yaml`:
 
 | Provider | How it works |
 |----------|-------------|
-| `api_key` | Anthropic API key → `AIClient` uses `AsyncAnthropic` directly |
-| `local`   | OpenAI-compatible endpoint (Ollama, LM Studio) — endpoint URL + model name |
+| `api_key` | Anthropic API key → `AIClient._chat_anthropic()` via `AsyncAnthropic` |
+| `local`   | OpenAI-compatible endpoint → `AIClient._chat_local()` via `httpx`; tools translated with `_to_oai_tool()`; degrades gracefully if model doesn't support function calling |
 | `login`   | Claude.ai account login — browser OAuth, not yet supported in terminal UI |
+
+`is_ai_configured(cfg=None) -> bool` in `config_manager.py` is the single source of truth for whether AI is usable — use it instead of checking for an API key directly. It handles both providers: `api_key` requires a key or `ANTHROPIC_API_KEY` env var; `local` requires both `local_endpoint` and `local_model`.
 
 ## Mycelium — Inter-Module Communication
 
-`nexus/core/mycelium.py` — registers active project instances and routes payloads between modules so the AI can orchestrate cross-module workflows.
+`nexus/core/mycelium.py` — singleton `bus`, registers active project instances and routes payloads between modules.
+`nexus/ai/flow_handlers.py` — implements the five default flows; `register_flow_handlers()` is called at app startup.
 
 ### Default flows
 | Source | Target | Action |
@@ -229,7 +235,7 @@ Configured via the Settings screen (`s`) or directly in `config/settings.yaml`:
 | `codex` | `journal` | `codex_to_journal` — reflect on a topic |
 | `org` | `journal` | `org_to_journal` — log completed tasks |
 
-**Status:** all five flows are currently stubs — `run_flow` skill returns an error. Handlers must be wired in `mycelium.py` before cross-module orchestration works.
+**Status:** all five flows are fully implemented in `nexus/ai/flow_handlers.py` and registered at startup via `register_flow_handlers()`. Each handler reads source data, calls `_ai_synthesize()` (which respects the active AI provider), and writes output in the target module's native file format. Invoke via the `run_flow` global skill.
 
 ## AI Skills System
 
@@ -289,8 +295,6 @@ reply = await ai_client.chat(
 )
 ```
 
-Currently `AIClient` uses the Anthropic SDK only; local model support (OpenAI function-calling format translation) is not yet implemented.
-
 ### Scope conventions
 
 | Scope | When loaded |
@@ -305,7 +309,7 @@ Module skills files live at `modules/<id>/skills.py` and call `registry.register
 | Skill | Inputs | Description |
 |-------|--------|-------------|
 | `list_projects` | — | Return all project names, module types, and descriptions |
-| `run_flow` | `action`, `payload` | Stub — returns error until Mycelium handlers are wired |
+| `run_flow` | `action`, `payload` | Trigger a Mycelium cross-module flow (e.g. `research_to_codex`, `git_to_journal`) |
 | `search_logs` | `query?`, `n=50` | Return the last `n` log lines, optionally filtered by query |
 
 ### Module skills
