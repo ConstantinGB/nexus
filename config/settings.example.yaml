@@ -1,6 +1,9 @@
 ai:
-  provider: claude       # claude | local
-  api_key: ""            # leave empty to use ANTHROPIC_API_KEY env var
+  provider: api_key    # api_key | local
+  api_key: ""          # leave empty to use ANTHROPIC_API_KEY env var
+  # For local provider (Ollama, LM Studio, llama.cpp):
+  # local_endpoint: "http://localhost:11434"
+  # local_model: "llama3.2"
 
 mcp:
   servers:

@@ -154,10 +154,11 @@ class SettingsScreen(Screen):
     }
 
     /* Provider detail sections */
-    #api-key-section { height: auto; }
-    #local-section   { height: auto; }
-    #login-section   { height: auto; }
-    #verify-bar      { height: 3; }
+    #api-key-section  { height: auto; }
+    #local-section    { height: auto; }
+    #login-section    { height: auto; }
+    #verify-bar       { height: 3; }
+    #local-test-bar   { height: 3; }
 
     /* Model section */
     #model-section   { height: auto; background: #2D1B4E; border: solid #3A2260;
@@ -337,6 +338,9 @@ class SettingsScreen(Screen):
                             placeholder="llama3.2",
                             id="input-local-model",
                         )
+                        with Horizontal(id="local-test-bar"):
+                            yield Button("Test Connection", id="btn-local-test")
+                            yield Label("", id="local-test-status", classes="status-pending")
                         yield Label(
                             "Compatible with any OpenAI-compatible endpoint (Ollama, LM Studio, …).",
                             classes="hint",
@@ -653,6 +657,8 @@ class SettingsScreen(Screen):
                 self.call_after_refresh(self._update_model_section)
             elif bid == "btn-verify":
                 self.run_worker(self._verify_api_key())
+            elif bid == "btn-local-test":
+                self.run_worker(self._test_local_connection())
             elif bid == "btn-save":
                 self._save()
             elif bid == "btn-close":
@@ -728,6 +734,32 @@ class SettingsScreen(Screen):
             log.exception("API key verification request failed")
             status.update("✗ Connection error")
             status.set_classes("status-err")
+
+    # ── Test local connection ─────────────────────────────────────────────────
+
+    async def _test_local_connection(self) -> None:
+        endpoint = self.query_one("#input-local-endpoint", Input).value.strip().rstrip("/")
+        lbl = self.query_one("#local-test-status", Label)
+        lbl.update("testing…")
+        lbl.set_classes("status-pending")
+        log.debug("Testing local endpoint: %s", endpoint)
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(f"{endpoint}/v1/models")
+            if r.status_code == 200:
+                models = r.json().get("data", [])
+                first  = models[0]["id"] if models else "no models"
+                log.info("Local endpoint reachable, first model: %s", first)
+                lbl.update(f"✓ Connected  ({first})")
+                lbl.set_classes("status-ok")
+            else:
+                log.warning("Local endpoint returned HTTP %s", r.status_code)
+                lbl.update(f"✗ HTTP {r.status_code}")
+                lbl.set_classes("status-err")
+        except Exception as exc:
+            log.exception("Local endpoint test failed")
+            lbl.update(f"✗ {exc}")
+            lbl.set_classes("status-err")
 
     # ── Save ──────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-import os
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -63,7 +62,7 @@ class CustomProjectScreen(Screen):
     # ── Data loading ──────────────────────────────────────────────────────────
 
     def _load(self) -> None:
-        from nexus.core.config_manager import load_global_config, load_project_config
+        from nexus.core.config_manager import load_global_config, load_project_config, is_ai_configured
 
         md_path = _PROJECTS_DIR / self.project.slug / "CLAUDE.md"
         try:
@@ -78,13 +77,10 @@ class CustomProjectScreen(Screen):
         cfg = load_project_config(self.project.slug)
         self._commands = cfg.get("custom", {}).get("commands", [])
 
-        api_key = (
-            load_global_config().get("ai", {}).get("api_key", "")
-            or os.environ.get("ANTHROPIC_API_KEY", "")
-        )
-        if api_key:
+        ai_cfg = load_global_config().get("ai", {})
+        if is_ai_configured(ai_cfg):
             from nexus.ai.client import AIClient
-            self._ai_client = AIClient(api_key=api_key)
+            self._ai_client = AIClient()
             self._has_ai = True
 
     # ── Compose ───────────────────────────────────────────────────────────────

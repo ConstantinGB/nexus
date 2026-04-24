@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 import json
-import os
 from pathlib import Path
 
 from nexus.ai.skill_registry import registry
@@ -74,16 +73,13 @@ async def _custom_ask(args: dict) -> str:
     except FileNotFoundError:
         return json.dumps({"error": f"CLAUDE.md not found for project '{slug}'."})
 
-    api_key = (
-        load_global_config().get("ai", {}).get("api_key", "")
-        or os.environ.get("ANTHROPIC_API_KEY", "")
-    )
-    if not api_key:
-        return json.dumps({"error": "No AI provider configured — add an API key in Settings."})
+    from nexus.core.config_manager import is_ai_configured
+    if not is_ai_configured(load_global_config().get("ai", {})):
+        return json.dumps({"error": "No AI provider configured — add one in Settings."})
 
     try:
         from nexus.ai.client import AIClient
-        client = AIClient(api_key=api_key)
+        client = AIClient()
         reply  = await client.chat(
             messages      = [{"role": "user", "content": question}],
             system_prompt = claude_md,

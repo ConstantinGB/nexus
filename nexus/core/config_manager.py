@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 from pathlib import Path
 import yaml
 
@@ -127,3 +128,15 @@ def remove_global_mcp_server(server_id: str) -> None:
     config = load_global_config()
     config.setdefault("mcp", {}).setdefault("servers", {}).pop(server_id, None)
     save_global_config(config)
+
+
+def is_ai_configured(cfg: dict | None = None) -> bool:
+    """Return True if the active AI provider is fully configured."""
+    if cfg is None:
+        cfg = load_global_config().get("ai", {})
+    provider = cfg.get("provider", "api_key")
+    if provider == "api_key":
+        return bool(cfg.get("api_key") or os.environ.get("ANTHROPIC_API_KEY"))
+    if provider == "local":
+        return bool(cfg.get("local_endpoint") and cfg.get("local_model"))
+    return False

@@ -83,3 +83,7 @@ DEFAULT_FLOWS: list[Flow] = [
     Flow("codex",    "journal", "codex_to_journal",    "Write a journal entry reflecting on a Codex topic"),
     Flow("org",      "journal", "org_to_journal",      "Log completed org tasks or milestones to the journal"),
 ]
+
+bus = Mycelium()
+for _flow in DEFAULT_FLOWS:
+    bus.register_flow(_flow)

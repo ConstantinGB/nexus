@@ -42,8 +42,21 @@ registry.register(
 # ---------------------------------------------------------------------------
 
 async def _run_flow(args: dict) -> str:
-    # Mycelium not yet wired into app startup — stub for now.
-    return json.dumps({"error": "Mycelium not yet wired. Implement after Mycelium handlers are registered."})
+    action = args["action"]
+    try:
+        payload = json.loads(args.get("payload") or "{}")
+    except json.JSONDecodeError:
+        return json.dumps({"error": "payload must be valid JSON"})
+    from nexus.core.mycelium import bus
+    try:
+        result = await bus.send(action, payload)
+        return result if isinstance(result, str) else json.dumps({"result": result})
+    except NotImplementedError:
+        available = [f.action for f in bus.all_flows()]
+        return json.dumps({"error": f"No handler registered for '{action}'", "available": available})
+    except Exception as exc:
+        log.exception("run_flow failed for action=%s", action)
+        return json.dumps({"error": str(exc)})
 
 
 registry.register(
