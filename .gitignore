@@ -1,0 +1,27 @@
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/*.log
+logs/*.log.*
+
+# ── User data ────────────────────────────────────────────────────────────────
+# Project instances contain credentials and personal data — never commit these.
+projects/*
+!projects/.gitkeep
+PLAN-Apr24.md
+
+# Global config contains API keys, tokens, and MCP server credentials.
+config/settings.yaml
+
+# ── Python ───────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# ── Editor / OS ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

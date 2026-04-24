@@ -1,0 +1,123 @@
+from __future__ import annotations
+from pathlib import Path
+
+from textual.widgets import Label, Button, Log
+from textual.containers import Vertical, Horizontal
+
+from nexus.core.logger import get
+from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
+
+log = get("streaming.project_screen")
+
+
+class StreamingProjectScreen(BaseProjectScreen):
+    MODULE_KEY   = "streaming"
+    MODULE_LABEL = "STREAMING"
+    SETUP_FIELDS = [
+        {"id": "obs_config_dir", "label": "OBS config directory",
+         "placeholder": "~/.config/obs-studio"},
+        {"id": "platform", "label": "Streaming platform (twitch / youtube / local)",
+         "placeholder": "twitch"},
+        {"id": "obs_bin", "label": "OBS binary",
+         "placeholder": "obs"},
+    ]
+
+    DEFAULT_CSS = _screen_css("StreamingProjectScreen")
+
+    # ── Action buttons ────────────────────────────────────────────────────────
+
+    def _compose_action_buttons(self) -> list:
+        return [
+            Button("Launch OBS",   id="btn-launch-obs",  variant="primary"),
+            Button("Check Logs",   id="btn-check-logs"),
+            Button("List Scenes",  id="btn-list-scenes"),
+            Button("Open Config",  id="btn-open-config"),
+        ]
+
+    # ── Main content ──────────────────────────────────────────────────────────
+
+    async def _populate_content(self) -> None:
+        area = self.query_one("#content-area", Vertical)
+        await area.remove_children()
+
+        obs_config_dir = Path(self._mod.get("obs_config_dir", "")).expanduser()
+        platform       = self._mod.get("platform", "")
+        obs_bin        = self._mod.get("obs_bin", "obs")
+        config_exists  = obs_config_dir.exists()
+
+        widgets: list = [
+            Horizontal(
+                Label("Platform:", classes="info-key"),
+                Label(platform.upper() if platform else "—", classes="info-val"),
+                classes="info-row",
+            ),
+            Horizontal(
+                Label("OBS binary:", classes="info-key"),
+                Label(obs_bin, classes="info-val"),
+                classes="info-row",
+            ),
+            Horizontal(
+                Label("Config dir:", classes="info-key"),
+                Label(
+                    str(obs_config_dir),
+                    classes="info-val " + ("status-ok" if config_exists else "status-err"),
+                ),
+                classes="info-row",
+            ),
+        ]
+
+        scenes_dir = obs_config_dir / "basic" / "scenes"
+        if scenes_dir.exists():
+            scene_files = sorted(scenes_dir.glob("*.json"))
+            widgets.append(Label("Scene collections:", classes="section-label"))
+            for sf in scene_files:
+                widgets.append(Label(f"  {sf.stem}", classes="hint"))
+            if not scene_files:
+                widgets.append(Label("  No scene collections found.", classes="hint"))
+        elif config_exists:
+            widgets.append(Label("No scene collections found (basic/scenes/ missing).", classes="hint"))
+        else:
+            widgets.append(Label("OBS config directory not found — is OBS installed?", classes="hint"))
+
+        await area.mount(*widgets)
+
+    # ── Button handler ────────────────────────────────────────────────────────
+
+    def _handle_action(self, bid: str | None) -> None:
+        obs_config_dir = Path(self._mod.get("obs_config_dir", "")).expanduser()
+        obs_bin        = self._mod.get("obs_bin", "obs")
+
+        if bid == "btn-launch-obs":
+            self.run_worker(self._run_cmd([obs_bin]))
+
+        elif bid == "btn-check-logs":
+            logs_dir = obs_config_dir / "logs"
+            if not logs_dir.exists():
+                self.app.notify("OBS logs directory not found.", severity="warning")
+                return
+            log_files = sorted(logs_dir.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not log_files:
+                self.app.notify("No OBS log files found.", severity="warning")
+                return
+            latest_log = log_files[0]
+            try:
+                lines = latest_log.read_text(errors="replace").splitlines()[-50:]
+                ui_log = self.query_one("#output-log")
+                ui_log.clear()
+                ui_log.write_line(f"--- {latest_log.name} (last 50 lines) ---")
+                for line in lines:
+                    ui_log.write_line(line)
+            except Exception:
+                log.exception("Failed to read OBS log")
+                self.app.notify("Could not read OBS log.", severity="error")
+
+        elif bid == "btn-list-scenes":
+            scenes_dir = obs_config_dir / "basic" / "scenes"
+            self.run_worker(
+                self._run_cmd(["find", str(scenes_dir), "-name", "*.json"])
+                if scenes_dir.exists()
+                else self._run_cmd(["echo", "No scenes directory found."])
+            )
+
+        elif bid == "btn-open-config":
+            self.run_worker(self._run_cmd(["xdg-open", str(obs_config_dir)]))
