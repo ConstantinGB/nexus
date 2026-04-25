@@ -2,7 +2,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from textual.widgets import Label, Button, Log
+from textual.app import ComposeResult
+from textual.screen import ModalScreen
+from textual.widgets import Label, Button, Log, Select
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -10,10 +12,52 @@ from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_
 
 from modules.backup.backup_ops import (
     restic_ensure_initialized, restic_backup,
-    restic_snapshots, restic_check, restic_forget, restic_restore,
+    restic_snapshots, restic_snapshots_json, restic_check, restic_forget, restic_restore,
 )
 
 log = get("backup.project_screen")
+
+
+class SnapshotPickerModal(ModalScreen):
+    DEFAULT_CSS = """
+    SnapshotPickerModal { align: center middle; }
+    #sp-dialog {
+        background: #2D1B4E; border: solid #00B4FF;
+        padding: 1 2; width: 72; height: auto;
+    }
+    #sp-title  { color: #00B4FF; text-style: bold; height: 2; }
+    #sp-select { margin-bottom: 1; }
+    #sp-btns   { height: 3; }
+    #sp-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self, snapshots: list[dict]) -> None:
+        super().__init__()
+        self._snapshots = snapshots
+
+    def compose(self) -> ComposeResult:
+        options = [
+            (
+                f"{s.get('time', '')[:16].replace('T', ' ')}  "
+                f"{s.get('id', '')[:8]}  "
+                f"{s.get('hostname', '')}",
+                s["id"],
+            )
+            for s in self._snapshots
+        ]
+        with Vertical(id="sp-dialog"):
+            yield Label("Select a snapshot to restore:", id="sp-title")
+            yield Select(options, id="sp-select", allow_blank=False)
+            with Horizontal(id="sp-btns"):
+                yield Button("Restore →", id="sp-ok", variant="primary")
+                yield Button("Cancel",    id="sp-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "sp-ok":
+            val = self.query_one("#sp-select", Select).value
+            self.dismiss(val if val is not Select.BLANK else None)
+        else:
+            self.dismiss(None)
 
 
 class BackupProjectScreen(BaseProjectScreen):
@@ -60,6 +104,10 @@ class BackupProjectScreen(BaseProjectScreen):
             last_run_raw[:16].replace("T", " ") if last_run_raw else "Never"
         )
 
+        keep_daily  = self._mod.get("keep_daily",  7)
+        keep_weekly = self._mod.get("keep_weekly", 4)
+        excludes    = self._mod.get("excludes",    [])
+
         widgets = [
             Horizontal(
                 Label("Backend:",  classes="info-key"),
@@ -83,6 +131,16 @@ class BackupProjectScreen(BaseProjectScreen):
                 classes="info-row",
             ),
             Horizontal(
+                Label("Retention:", classes="info-key"),
+                Label(f"daily={keep_daily}  weekly={keep_weekly}", classes="info-val"),
+                classes="info-row",
+            ),
+            Horizontal(
+                Label("Excludes:", classes="info-key"),
+                Label(", ".join(excludes) if excludes else "(none)", classes="info-val"),
+                classes="info-row",
+            ),
+            Horizontal(
                 Label("Last backup:", classes="info-key"),
                 Label(last_run_display, classes="info-val"),
                 classes="info-row",
@@ -103,23 +161,7 @@ class BackupProjectScreen(BaseProjectScreen):
         elif bid == "btn-forget":
             self.run_worker(self._do_forget())
         elif bid == "btn-restore":
-            self.app.push_screen(
-                InputModal("Restore",
-                           "Enter snapshot ID (or 'latest') and target path: "
-                           "snapshotID:/target/path",
-                           placeholder="latest:/tmp/restore"),
-                self._on_restore_input,
-            )
-
-    def _on_restore_input(self, value: str | None) -> None:
-        if not value:
-            return
-        parts = value.split(":", 1)
-        if len(parts) != 2:
-            self.app.notify("Format: snapshotID:/target/path", severity="warning")
-            return
-        snap_id, target = parts
-        self.run_worker(self._do_restore(snap_id.strip(), target.strip()))
+            self.run_worker(self._pick_and_restore())
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -135,7 +177,8 @@ class BackupProjectScreen(BaseProjectScreen):
 
     async def _do_backup(self) -> None:
         repo, pw = self._repo_and_password()
-        paths = self._mod.get("paths", [])
+        paths    = self._mod.get("paths", [])
+        excludes = self._mod.get("excludes", [])
         if not repo:
             self._append_log("No repository configured.")
             return
@@ -150,7 +193,7 @@ class BackupProjectScreen(BaseProjectScreen):
             return
         self._append_log("Running backup…")
         ok, out = await loop.run_in_executor(
-            None, restic_backup, repo, pw, paths
+            None, restic_backup, repo, pw, paths, excludes
         )
         self._append_log(out)
         if ok:
@@ -179,10 +222,15 @@ class BackupProjectScreen(BaseProjectScreen):
             self.app.notify("Integrity check failed — see log.", severity="error")
 
     async def _do_forget(self) -> None:
-        repo, pw = self._repo_and_password()
-        self._append_log("Forgetting old snapshots (keep-daily=7, keep-weekly=4) + pruning…")
+        repo, pw    = self._repo_and_password()
+        keep_daily  = int(self._mod.get("keep_daily",  7))
+        keep_weekly = int(self._mod.get("keep_weekly", 4))
+        self._append_log(
+            f"Forgetting old snapshots (keep-daily={keep_daily}, "
+            f"keep-weekly={keep_weekly}) + pruning…"
+        )
         ok, out = await asyncio.get_event_loop().run_in_executor(
-            None, restic_forget, repo, pw, 7, 4
+            None, restic_forget, repo, pw, keep_daily, keep_weekly
         )
         self._append_log(out)
         if ok:
@@ -201,3 +249,32 @@ class BackupProjectScreen(BaseProjectScreen):
             self.app.notify(f"Restored to {target}.", severity="information")
         else:
             self.app.notify("Restore failed — see log.", severity="error")
+
+    async def _pick_and_restore(self) -> None:
+        repo, pw = self._repo_and_password()
+        if not repo:
+            self._append_log("No repository configured.")
+            return
+        self._append_log("Fetching snapshot list…")
+        ok, snapshots = await asyncio.get_event_loop().run_in_executor(
+            None, restic_snapshots_json, repo, pw
+        )
+        if not ok or not snapshots:
+            self._append_log("No snapshots found — run a backup first.")
+            self.app.notify("No snapshots available.", severity="warning")
+            return
+
+        def _on_snap_picked(snap_id: str | None) -> None:
+            if not snap_id:
+                return
+            self.app.push_screen(
+                InputModal("Restore Target", "Restore to directory:", "/tmp/restore"),
+                lambda target: self._on_target_picked(snap_id, target),
+            )
+
+        def _on_target_picked(snap_id: str, target: str | None) -> None:
+            if not target:
+                return
+            self.run_worker(self._do_restore(snap_id, target))
+
+        self.app.push_screen(SnapshotPickerModal(snapshots), _on_snap_picked)

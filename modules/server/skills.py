@@ -125,9 +125,14 @@ async def _server_stop(args: dict) -> str:
     return await _service_action(args["project_slug"], args["service"], "stop")
 
 
+async def _server_restart(args: dict) -> str:
+    return await _service_action(args["project_slug"], args["service"], "restart")
+
+
 for _action, _handler, _desc in [
-    ("start", _server_start, "Start a service (systemctl start or docker start)."),
-    ("stop",  _server_stop,  "Stop a service (systemctl stop or docker stop)."),
+    ("start",   _server_start,   "Start a service (systemctl start or docker start)."),
+    ("stop",    _server_stop,    "Stop a service (systemctl stop or docker stop)."),
+    ("restart", _server_restart, "Restart a service (systemctl restart or docker restart)."),
 ]:
     registry.register(
         scope       = "server",

@@ -10,6 +10,7 @@ from textual.widgets import Header, Footer, Label, Button, Log, TextArea
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
 
 log = get("localai.project_screen")
@@ -117,7 +118,8 @@ class LocalAIProjectScreen(Screen):
                     yield TextArea("", id="neg-input")
 
                 with Horizontal(id="action-bar"):
-                    yield Button("▶ Run", id="btn-run", variant="primary")
+                    yield Button("▶ Run",          id="btn-run",  variant="primary")
+                    yield Button("Test Endpoint",   id="btn-test-ep")
                     if self._output_type == "file":
                         yield Button("Open Output", id="btn-open", disabled=True)
 
@@ -152,16 +154,46 @@ class LocalAIProjectScreen(Screen):
                      self._localai_cfg.get("model"), self._output_type)
             self.run_worker(self._run_inference(prompt, neg))
 
+        elif bid == "btn-test-ep":
+            self.run_worker(self._test_endpoint())
+
         elif bid == "btn-open":
             if self._last_output_file and self._last_output_file.exists():
                 log.info("Opening output file: %s", self._last_output_file)
                 try:
-                    subprocess.Popen(["xdg-open", str(self._last_output_file)])
+                    subprocess.Popen(open_path(self._last_output_file))
                 except Exception:
                     log.exception("Failed to open output file")
                     self.app.notify("Could not open file.", severity="error")
             else:
                 self.app.notify("No output file found yet.", severity="warning")
+
+    # ── Endpoint test ─────────────────────────────────────────────────────────
+
+    async def _test_endpoint(self) -> None:
+        import time
+        import httpx
+        from nexus.core.config_manager import load_global_config
+        ui_log = self.query_one("#output-log", Log)
+        ai_cfg   = load_global_config().get("ai", {})
+        endpoint = ai_cfg.get("local_endpoint", "http://localhost:11434").rstrip("/")
+        ui_log.write_line(f"$ GET {endpoint}/v1/models")
+        try:
+            t0 = time.monotonic()
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(f"{endpoint}/v1/models")
+            ms = int((time.monotonic() - t0) * 1000)
+            if r.status_code == 200:
+                models = r.json().get("data", [])
+                first  = models[0]["id"] if models else "no models listed"
+                ui_log.write_line(f"✓ Connected in {ms}ms  |  first model: {first}")
+            else:
+                ui_log.write_line(f"✗ HTTP {r.status_code} ({ms}ms)")
+        except httpx.ConnectError:
+            ui_log.write_line(f"✗ Could not connect to {endpoint}")
+        except Exception as exc:
+            log.exception("Test endpoint failed")
+            ui_log.write_line(f"✗ {exc}")
 
     # ── Inference worker ──────────────────────────────────────────────────────
 

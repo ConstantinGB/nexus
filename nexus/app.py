@@ -69,6 +69,7 @@ def _register_skills() -> None:
     import modules.vault.skills        # noqa: F401
     import modules.server.skills       # noqa: F401
     import modules.backup.skills       # noqa: F401
+    import modules.localai.skills      # noqa: F401
     import modules.custom.skills       # noqa: F401
     from nexus.ai.flow_handlers import register_flow_handlers
     register_flow_handlers()

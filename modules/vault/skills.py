@@ -16,6 +16,25 @@ def _vault_cfg(slug: str) -> dict:
     return load_project_config(slug).get("vault", {})
 
 
+async def _get_age_pubkey(key_path: Path) -> str:
+    """Return the age public key for key_path using age-keygen -y, with comment fallback."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "age-keygen", "-y", str(key_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        if proc.returncode == 0:
+            return out.decode().strip()
+    except FileNotFoundError:
+        pass
+    for line in key_path.read_text(errors="replace").splitlines():
+        if line.startswith("# public key:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # vault_list_gpg_keys
 # ---------------------------------------------------------------------------
@@ -55,12 +74,7 @@ registry.register(
 
 async def _vault_age_key_status(args: dict) -> str:
     exists = _AGE_KEY.exists()
-    pubkey = ""
-    if exists:
-        for line in _AGE_KEY.read_text(errors="replace").splitlines():
-            if line.startswith("# public key:"):
-                pubkey = line.split(":", 1)[1].strip()
-                break
+    pubkey = await _get_age_pubkey(_AGE_KEY) if exists else ""
     return json.dumps({"key_exists": exists, "key_path": str(_AGE_KEY), "public_key": pubkey})
 
 
@@ -88,13 +102,9 @@ async def _vault_encrypt_file(args: dict) -> str:
         return json.dumps({"error": "age key not found at ~/.age/key.txt. Generate one first."})
     if not file_path.exists():
         return json.dumps({"error": f"File not found: {file_path}"})
-    pubkey = ""
-    for line in _AGE_KEY.read_text(errors="replace").splitlines():
-        if line.startswith("# public key:"):
-            pubkey = line.split(":", 1)[1].strip()
-            break
+    pubkey = await _get_age_pubkey(_AGE_KEY)
     if not pubkey:
-        return json.dumps({"error": "Could not read public key from age key file"})
+        return json.dumps({"error": "Could not derive public key from age key file"})
     out_path = file_path.with_suffix(file_path.suffix + ".age")
     try:
         proc = await asyncio.create_subprocess_exec(

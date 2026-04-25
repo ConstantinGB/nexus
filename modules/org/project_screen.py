@@ -7,6 +7,7 @@ from textual.widgets import Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path
 from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 log = get("org.project_screen")
@@ -104,9 +105,15 @@ class OrgProjectScreen(BaseProjectScreen):
             )
             widgets.append(Label("Recent files:", classes="section-label"))
             for f in files[:20]:
-                size = f.stat().st_size
+                try:
+                    text = f.read_text(errors="replace")
+                    done  = text.count("[x]") + text.count("[X]")
+                    total = done + text.count("[ ]")
+                    pct   = f"  {done}/{total} done" if total else ""
+                except Exception:
+                    pct = ""
                 widgets.append(
-                    Label(f"  {f.name}  ({size:,} bytes)", classes="hint")
+                    Label(f"  {f.name}{pct}", classes="hint")
                 )
         else:
             widgets.append(Label("Directory not found — it will be created on first use.", classes="hint"))
@@ -132,7 +139,7 @@ class OrgProjectScreen(BaseProjectScreen):
             today = date.today().isoformat()
             self._create_file(f"schedule-{today}", output_dir, _SCHEDULE_TEMPLATE, "schedule")
         elif bid == "btn-open-dir":
-            self.run_worker(self._run_cmd(["xdg-open", str(output_dir)]))
+            self.run_worker(self._run_cmd(open_path(output_dir)))
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
 

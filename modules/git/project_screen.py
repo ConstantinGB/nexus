@@ -11,6 +11,7 @@ from textual.widgets import (
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
 
 log = get("git.project_screen")
@@ -85,7 +86,7 @@ class BranchModal(ModalScreen):
     BranchModal { align: center middle; }
     #br-box {
         background: #2D1B4E; border: solid #00B4FF;
-        padding: 1 2; width: 64; height: 28;
+        padding: 1 2; width: 64; height: auto; max-height: 38;
     }
     #br-title      { color: #00B4FF; text-style: bold; height: 2; }
     .br-section    { color: #00FF88; height: 1; margin-top: 1; }
@@ -96,6 +97,10 @@ class BranchModal(ModalScreen):
     .br-remote     { color: #555588; }
     #br-new-label  { color: #00FF88; height: 1; margin-top: 1; }
     #br-new-input  { margin-bottom: 1; }
+    #br-del-label  { color: #00FF88; height: 1; margin-top: 1; }
+    #br-del-input  { margin-bottom: 1; }
+    #br-del-btns   { height: 3; margin-bottom: 1; }
+    #br-del-btns Button { margin-right: 1; }
     #br-btns       { height: 3; }
     #br-btns Button { margin-right: 1; }
     #br-error      { color: #FF4444; height: 1; }
@@ -116,9 +121,15 @@ class BranchModal(ModalScreen):
             yield ScrollableContainer(id="br-list")
             yield Label("New branch:", id="br-new-label")
             yield Input(placeholder="feature/my-branch", id="br-new-input")
+            yield Label("Delete branch (cannot be current):", id="br-del-label")
+            yield Input(placeholder="old-feature-branch", id="br-del-input")
+            with Horizontal(id="br-del-btns"):
+                yield Button("Delete",       id="btn-br-delete",  variant="error")
+                yield Button("Force Delete", id="btn-br-force")
             yield Label("", id="br-error")
             with Horizontal(id="br-btns"):
                 yield Button("Create & Switch", id="btn-br-create", variant="primary")
+                yield Button("Open PR ↗",       id="btn-br-pr")
                 yield Button("Cancel",          id="btn-br-cancel")
 
     def on_mount(self) -> None:
@@ -155,6 +166,17 @@ class BranchModal(ModalScreen):
                 self.query_one("#br-error", Label).update("Enter a branch name.")
                 return
             self.run_worker(self._create(name))
+        elif bid in ("btn-br-delete", "btn-br-force"):
+            name = self.query_one("#br-del-input", Input).value.strip()
+            if not name:
+                self.query_one("#br-error", Label).update("Enter the branch name to delete.")
+                return
+            if name == self._current:
+                self.query_one("#br-error", Label).update("Cannot delete the current branch.")
+                return
+            self.run_worker(self._delete(name, force=(bid == "btn-br-force")))
+        elif bid == "btn-br-pr":
+            self.run_worker(self._open_pr())
         elif bid and bid.startswith("bri-"):
             idx = int(bid[4:])
             branch = self._local_branches[idx]
@@ -169,8 +191,8 @@ class BranchModal(ModalScreen):
         if ok:
             self.dismiss(("switched", branch))
         else:
-            self.query_one("#br-error", Label).update(msg[:60])
-            self.app.notify(f"Switch failed: {msg[:60]}", severity="error")
+            self.query_one("#br-error", Label).update(msg[:120])
+            self.app.notify(f"Switch failed: {msg[:120]}", severity="error")
 
     async def _create(self, name: str) -> None:
         from modules.git.git_ops import create_branch
@@ -180,8 +202,37 @@ class BranchModal(ModalScreen):
         if ok:
             self.dismiss(("created", name))
         else:
-            self.query_one("#br-error", Label).update(msg[:60])
-            self.app.notify(f"Create failed: {msg[:60]}", severity="error")
+            self.query_one("#br-error", Label).update(msg[:120])
+            self.app.notify(f"Create failed: {msg[:120]}", severity="error")
+
+    async def _delete(self, name: str, force: bool = False) -> None:
+        from modules.git.git_ops import delete_branch
+        ok, msg = await asyncio.get_event_loop().run_in_executor(
+            None, delete_branch, self.repo_path, name, force
+        )
+        if ok:
+            self.dismiss(("deleted", name))
+        else:
+            hint = " (use Force Delete if unmerged)" if not force and "not fully merged" in msg else ""
+            self.query_one("#br-error", Label).update(msg[:120] + hint)
+            self.app.notify(f"Delete failed: {msg[:120]}", severity="error")
+
+    async def _open_pr(self) -> None:
+        import subprocess as _sp
+        from modules.git.git_ops import get_remote_url, pr_url
+        remote = await asyncio.get_event_loop().run_in_executor(
+            None, get_remote_url, self.repo_path
+        )
+        url = pr_url(remote, self._current)
+        if url:
+            _sp.Popen(open_path(url))
+            self.app.notify(f"Opening PR for '{self._current}'…", severity="information")
+        elif not remote:
+            self.app.notify("No remote 'origin' configured.", severity="warning")
+        elif self._current in ("main", "master", "develop"):
+            self.app.notify("Switch to a feature branch first.", severity="warning")
+        else:
+            self.app.notify("Only GitHub and GitLab remotes are supported.", severity="warning")
 
 
 # ── Stash modal ───────────────────────────────────────────────────────────────
@@ -252,7 +303,7 @@ class StashModal(ModalScreen):
         if ok:
             self.dismiss(("pushed", msg))
         else:
-            self.app.notify(f"Stash failed: {msg[:60]}", severity="error")
+            self.app.notify(f"Stash failed: {msg[:120]}", severity="error")
 
     async def _do_pop(self) -> None:
         from modules.git.git_ops import stash_pop
@@ -262,7 +313,7 @@ class StashModal(ModalScreen):
         if ok:
             self.dismiss(("popped", msg))
         else:
-            self.app.notify(f"Pop failed: {msg[:60]}", severity="error")
+            self.app.notify(f"Pop failed: {msg[:120]}", severity="error")
 
 
 # ── Info modal ────────────────────────────────────────────────────────────────
@@ -789,7 +840,7 @@ class GitProjectScreen(Screen):
                 self.app.notify(f"✗ {repo['name']}: unexpected error", severity="error")
                 continue
             self.app.notify(
-                f"{'✓' if ok else '✗'} {repo['name']}: {msg[:60]}",
+                f"{'✓' if ok else '✗'} {repo['name']}: {msg[:120]}",
                 severity="information" if ok else "error",
             )
         await self._render_repos()
@@ -841,7 +892,7 @@ class GitProjectScreen(Screen):
         if not result:
             return
         action, branch = result
-        verb = "Switched to" if action == "switched" else "Created"
+        verb = {"switched": "Switched to", "created": "Created", "deleted": "Deleted"}.get(action, action)
         self.app.notify(f"{verb} branch '{branch}' in {repo_name}.")
         self.run_worker(self._render_repos())
 

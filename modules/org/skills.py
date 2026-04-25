@@ -145,3 +145,42 @@ registry.register(
     },
     handler = _org_new_diagram,
 )
+
+
+# ---------------------------------------------------------------------------
+# org_new_schedule
+# ---------------------------------------------------------------------------
+
+async def _org_new_schedule(args: dict) -> str:
+    slug = args["project_slug"]
+    name = args["name"]
+    d    = _output_dir(slug)
+    if d is None:
+        return json.dumps({"error": "Output directory not configured"})
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        date     = datetime.now().strftime("%Y-%m-%d")
+        filename = name.lower().replace(" ", "-").replace("/", "-")[:50] + ".md"
+        text     = f"# {name}\n\n_Created: {date}_\n\n{_WEEKLY_TABLE}"
+        path     = d / filename
+        path.write_text(text, encoding="utf-8")
+        return json.dumps({"success": True, "path": str(path)})
+    except Exception as exc:
+        log.exception("org_new_schedule skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "org",
+    name        = "org_new_schedule",
+    description = "Create a weekly schedule Markdown file with an hourly time-slot table.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "name":         {"type": "string", "description": "Schedule title"},
+        },
+        "required": ["project_slug", "name"],
+    },
+    handler = _org_new_schedule,
+)

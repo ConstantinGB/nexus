@@ -6,6 +6,7 @@ from textual.widgets import Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path, check_binary
 from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("vtube.project_screen")
@@ -32,15 +33,34 @@ class VTubeProjectScreen(BaseProjectScreen):
     MODULE_KEY   = "vtube"
     MODULE_LABEL = "VTUBE"
     SETUP_FIELDS = [
-        {"id": "model_path", "label": "Avatar model file (.moc3 or .vrm)",
+        {"id": "model_path",        "label": "Avatar model file (.moc3 or .vrm)",
          "placeholder": "~/avatars/my-model/model.moc3"},
-        {"id": "runtime",    "label": "Runtime (vtubestudio / vseefface / vnyan / 3tene)",
+        {"id": "runtime",           "label": "Runtime (vtubestudio / vseefface / vnyan / 3tene)",
          "placeholder": "vtubestudio"},
-        {"id": "tracker",    "label": "Face tracker (arkit / openSeeFace / ifacialmocap)",
+        {"id": "tracker",           "label": "Face tracker (arkit / openSeeFace / ifacialmocap)",
          "placeholder": "openSeeFace"},
+        {"id": "openseeface_port",  "label": "OpenSeeFace receiver port (optional)",
+         "placeholder": "11573", "optional": True},
     ]
 
     DEFAULT_CSS = _screen_css("VTubeProjectScreen")
+
+    # ── Before-save hook ──────────────────────────────────────────────────────
+
+    def _on_before_save(self, data: dict) -> dict:
+        model_path = Path(data.get("model_path", "")).expanduser()
+        runtime    = data.get("runtime", "")
+        if not model_path.exists():
+            self.app.notify(
+                f"Model file not found: {model_path.name} — saved anyway.",
+                severity="warning",
+            )
+        if runtime and not check_binary(runtime):
+            self.app.notify(
+                f"Runtime '{runtime}' not found on PATH — saved anyway.",
+                severity="warning",
+            )
+        return {}
 
     # ── Action buttons ────────────────────────────────────────────────────────
 
@@ -91,6 +111,15 @@ class VTubeProjectScreen(BaseProjectScreen):
                 classes="info-row",
             ),
         ]
+        osf_port = self._mod.get("openseeface_port", "").strip()
+        if osf_port or tracker.lower() == "openseeface":
+            widgets.append(
+                Horizontal(
+                    Label("OSF port:", classes="info-key"),
+                    Label(osf_port or "11573 (default)", classes="info-val"),
+                    classes="info-row",
+                )
+            )
 
         model_exists = model_path.exists()
         widgets.append(
@@ -147,4 +176,4 @@ class VTubeProjectScreen(BaseProjectScreen):
 
         elif bid == "btn-open-model-dir":
             model_dir = model_path.parent if model_path.suffix else model_path
-            self.run_worker(self._run_cmd(["xdg-open", str(model_dir)]))
+            self.run_worker(self._run_cmd(open_path(model_dir)))

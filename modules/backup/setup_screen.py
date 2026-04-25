@@ -45,11 +45,14 @@ class BackupSetupScreen(Screen):
     def __init__(self, project: ProjectInfo) -> None:
         super().__init__()
         self._project = project
-        self._backend  = "local"
-        self._repo     = ""
-        self._paths    = ""
-        self._password = ""
-        self._schedule = "manual"
+        self._backend    = "local"
+        self._repo       = ""
+        self._paths      = ""
+        self._password   = ""
+        self._schedule   = "manual"
+        self._keep_daily  = "7"
+        self._keep_weekly = "4"
+        self._excludes    = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -97,6 +100,14 @@ class BackupSetupScreen(Screen):
                         id="input-schedule",
                         allow_blank=False,
                     )
+                yield Label("Retention — keep daily snapshots:", classes="field-label")
+                yield Input(placeholder="7", value="7", id="input-keep-daily")
+                yield Label("Retention — keep weekly snapshots:", classes="field-label")
+                yield Input(placeholder="4", value="4", id="input-keep-weekly")
+                yield Label("Exclude patterns (comma-separated globs, optional):",
+                            classes="field-label")
+                yield Label("Example: *.tmp, node_modules, .git", classes="hint")
+                yield Input(placeholder="*.tmp, node_modules", id="input-excludes")
                 with Horizontal(id="btn-bar"):
                     yield Button("← Back",   id="btn-back-2")
                     yield Button("Next →",   id="btn-next-2", variant="primary")
@@ -200,8 +211,11 @@ class BackupSetupScreen(Screen):
             if not paths:
                 self.app.notify("Enter at least one path.", severity="warning")
                 return
-            self._paths    = paths
-            self._schedule = str(self.query_one("#input-schedule", Select).value)
+            self._paths       = paths
+            self._schedule    = str(self.query_one("#input-schedule", Select).value)
+            self._keep_daily  = self.query_one("#input-keep-daily",  Input).value.strip() or "7"
+            self._keep_weekly = self.query_one("#input-keep-weekly", Input).value.strip() or "4"
+            self._excludes    = self.query_one("#input-excludes",    Input).value.strip()
             self.call_after_refresh(self._show_step, "step-password")
 
         elif bid == "btn-back-3":
@@ -251,16 +265,24 @@ class BackupSetupScreen(Screen):
 
     def _save_config(self) -> None:
         # Password stored in local-only config.yaml (git-ignored, never uploaded).
+        try:
+            keep_daily  = max(1, int(self._keep_daily))
+            keep_weekly = max(1, int(self._keep_weekly))
+        except ValueError:
+            keep_daily, keep_weekly = 7, 4
+        excludes = [p.strip() for p in self._excludes.split(",") if p.strip()]
         cfg = {
             "backup": {
-                "setup_done":  True,
-                "configured":  True,
-                "backend":     self._backend,
-                "repo":        self._repo,
-                "password":    self._password,
-                "paths":       [p.strip() for p in self._paths.split(",")
-                                if p.strip()],
-                "schedule":    self._schedule,
+                "setup_done":   True,
+                "configured":   True,
+                "backend":      self._backend,
+                "repo":         self._repo,
+                "password":     self._password,
+                "paths":        [p.strip() for p in self._paths.split(",") if p.strip()],
+                "schedule":     self._schedule,
+                "keep_daily":   keep_daily,
+                "keep_weekly":  keep_weekly,
+                "excludes":     excludes,
             }
         }
         save_project_config(self._project.slug, cfg)

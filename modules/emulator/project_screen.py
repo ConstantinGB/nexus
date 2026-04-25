@@ -1,11 +1,56 @@
 from __future__ import annotations
 from pathlib import Path
 
-from textual.widgets import Label, Button, Log
+from textual.app import ComposeResult
+from textual.screen import ModalScreen
+from textual.widgets import Label, Button, Log, Select
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path, check_binary
 from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+
+
+class _RomPickerModal(ModalScreen):
+    DEFAULT_CSS = """
+    _RomPickerModal { align: center middle; }
+    #rp-dialog {
+        background: #2D1B4E; border: solid #00B4FF;
+        padding: 1 2; width: 64; height: auto;
+    }
+    #rp-title  { color: #00B4FF; text-style: bold; height: 2; }
+    #rp-select { margin-bottom: 1; }
+    #rp-btns   { height: 3; }
+    #rp-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self, system_dir: Path) -> None:
+        super().__init__()
+        self._system_dir = system_dir
+
+    def compose(self) -> ComposeResult:
+        roms = sorted(f for f in self._system_dir.iterdir() if f.is_file())
+        options = [(r.name, str(r)) for r in roms]
+        with Vertical(id="rp-dialog"):
+            yield Label(f"ROMs — {self._system_dir.name}", id="rp-title")
+            if options:
+                yield Select(options, id="rp-select", allow_blank=False)
+            else:
+                yield Label("No ROM files found in this system directory.", id="rp-select")
+            with Horizontal(id="rp-btns"):
+                yield Button("Launch ▶", id="rp-ok", variant="primary",
+                             disabled=not options)
+                yield Button("Cancel", id="rp-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "rp-ok":
+            try:
+                val = self.query_one("#rp-select", Select).value
+                self.dismiss(val if val is not Select.BLANK else None)
+            except Exception:
+                self.dismiss(None)
+        else:
+            self.dismiss(None)
 
 log = get("emulator.project_screen")
 
@@ -36,6 +81,17 @@ class EmulatorProjectScreen(BaseProjectScreen):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._detected_systems: list[str] = []
+
+    # ── Before-save hook ──────────────────────────────────────────────────────
+
+    def _on_before_save(self, data: dict) -> dict:
+        retroarch_bin = data.get("retroarch_bin", "retroarch")
+        if not check_binary(retroarch_bin):
+            self.app.notify(
+                f"'{retroarch_bin}' not found — saved anyway. Fix the binary path when it's available.",
+                severity="warning",
+            )
+        return {}
 
     # ── Action buttons ────────────────────────────────────────────────────────
 
@@ -114,19 +170,22 @@ class EmulatorProjectScreen(BaseProjectScreen):
                 prompt += f" (+{len(self._detected_systems) - 10} more)"
             self.app.push_screen(
                 InputModal("Browse by System", prompt, self._detected_systems[0]),
-                lambda system: self._launch_system(system, rom_dir, retroarch_bin),
+                lambda system: self._pick_rom(system, rom_dir, retroarch_bin),
             )
 
         elif bid == "btn-open-rom-dir":
-            self.run_worker(self._run_cmd(["xdg-open", str(rom_dir)]))
+            self.run_worker(self._run_cmd(open_path(rom_dir)))
 
-    def _launch_system(self, system: str | None, rom_dir: Path, retroarch_bin: str) -> None:
+    def _pick_rom(self, system: str | None, rom_dir: Path, retroarch_bin: str) -> None:
         if not system:
             return
         system_dir = rom_dir / system
         if not system_dir.exists():
             self.app.notify(f"System directory not found: {system}", severity="warning")
             return
-        self.run_worker(
-            self._run_cmd([retroarch_bin, "--contentdir", str(system_dir)])
+        self.app.push_screen(
+            _RomPickerModal(system_dir),
+            lambda rom_path: self.run_worker(
+                self._run_cmd([retroarch_bin, rom_path])
+            ) if rom_path else None,
         )

@@ -35,6 +35,7 @@ nexus/
     logger.py            — centralised logging (RotatingFileHandler → logs/nexus.log)
     module_manager.py    — module registry + screen dispatch
     mycelium.py          — inter-module communication bus
+    platform.py          — cross-platform helpers: open_path() → xdg-open/open/start; check_binary() → shutil.which + path check
     project_manager.py   — create / list / delete project instances
     scheduler.py         — BackupScheduler: asyncio polling loop; fires restic backups on daily/weekly schedules
   ai/
@@ -57,59 +58,68 @@ nexus/
                              non-git/localai modules subclass this
 modules/
   git/                   — Git module (FULLY IMPLEMENTED)
-    setup_screen.py      — 6-step wizard: name → type → credentials → git config → software → repos → clone
+    setup_screen.py      — 6-step wizard: name → type → credentials (optional for public repos) → git config → software → repos → clone
     project_screen.py    — repo management: pull/push/commit/info/delete per repo;
+                           BranchModal: switch/create/delete branch + Open PR link (GitHub/GitLab);
                            AddRepoModal for cloning via SSH or HTTPS URL
-    git_ops.py           — subprocess wrappers for git, all return (bool, str)
+    git_ops.py           — subprocess wrappers for git, all return (bool, str); get_remote_url + pr_url helpers
     github_api.py        — async GitHub REST API (list repos, verify token)
     skills.py            — git_status, git_pull, git_push, git_commit, git_log, git_clone
   localai/               — LocalAI module (FULLY IMPLEMENTED)
     setup_screen.py      — 5-step wizard: config → AI generates script → review → install → done
-    project_screen.py    — inference UI: prompt input, output log, optional negative prompt + file open
+    project_screen.py    — inference UI: prompt input, output log, optional negative prompt + file open; Test Endpoint button
     hw_detect.py         — hardware detection (GPU via nvidia-smi/rocm-smi/lspci, RAM, CPU, OS, disk)
+    skills.py            — localai_run_inference
   custom/                — AI-first open project: CLAUDE.md viewer + conversational AI chat + user-defined shell commands
     project_screen.py    — CustomProjectScreen: two-pane layout (context | chat), dynamic command buttons,
                            graceful degradation without AI; skill_scopes=["global","custom"]
     skills.py            — custom_run_command, custom_ask
-  web/                   — project_screen: Dev/Build/Test/Lint via package manager; auto-detects
-                           framework from package.json; inline setup for project_path + pm
+  web/                   — project_screen: Dev/Build/Test/Lint/Install via package manager; Run Script…
+                           picker (all package.json scripts); Stop button for long-running processes;
+                           auto-detects framework; inline setup for project_path + pm
                            skills.py: web_list_scripts, web_run_script
-  research/              — project_screen: note list (.md files), New Note / Search / Export URLs;
-                           inline setup for topic + notes_dir
+  research/              — project_screen: note list (.md files), New Note (YAML frontmatter: date/topic/tags) /
+                           Search / Export URLs / Export All; inline setup for topic + notes_dir
                            skills.py: research_list_notes, research_new_note, research_search
   codex/                 — project_screen: Zettelkasten note list, New Note with frontmatter skeleton,
-                           Search (ripgrep), Open Vault; inline setup for vault_dir
+                           Search (ripgrep -C 2 with context), Filter Tags, Open Vault; inline setup for vault_dir
                            skills.py: codex_list, codex_new_entry, codex_search
-  journal/               — project_screen: entry list (.tex newest-first), New Entry (LaTeX template),
-                           Compile Latest (pdflatex); inline setup for journal_dir + author
+  journal/               — project_screen: entry list (.tex newest-first, word count), New Entry (LaTeX template),
+                           Compile Latest (pdflatex with `!` error summary), Open PDF; inline setup for journal_dir + author
                            skills.py: journal_list_entries, journal_new_entry, journal_compile
   game/                  — project_screen: Godot info (game name, version, scene count), Launch Editor,
-                           Run Game, Lint (gdtoolkit); inline setup for project_path + godot_bin
+                           Run Game, Lint (gdtoolkit with error/warning count summary), Export (headless);
+                           inline setup for project_path + godot_bin; binary validated at setup save
                            skills.py: game_scene_list, game_launch_editor, game_run
-  org/                   — project_screen: .md file list by mtime, New Plan / New Diagram (Mermaid) /
-                           New Schedule (Markdown table); inline setup for output_dir
-                           skills.py: org_list_plans, org_new_plan, org_new_diagram
+  org/                   — project_screen: .md file list by mtime with checkbox completion tracking (N/M done),
+                           New Plan / New Diagram (Mermaid) / New Schedule (Markdown table); inline setup for output_dir
+                           skills.py: org_list_plans, org_new_plan, org_new_diagram, org_new_schedule
   home/                  — project_screen: HA URL + ping status, YAML config file list, Ping HA /
-                           Check API (curl) / Open in Browser; inline setup for ha_url + config_dir + token
+                           Check API (httpx, token stays in-process) / Open in Browser;
+                           inline setup for ha_url + config_dir + token; validates configuration.yaml at save
                            skills.py: home_ping, home_api_call
   streaming/             — project_screen: OBS config status, scene collection list, Launch OBS /
-                           Check Logs / List Scenes; inline setup for obs_config_dir + platform + obs_bin
+                           Check Logs (crash/dropped-frames warning summary) / List Scenes;
+                           inline setup for obs_config_dir + platform + obs_bin; binary validated at setup save
                            skills.py: streaming_list_scenes, streaming_launch_obs, streaming_check_logs
   vtube/                 — project_screen: pipeline display (Camera → tracker → runtime → OBS),
                            Launch Runtime / Start Tracker / Check Camera; inline setup for model_path +
-                           runtime + tracker
+                           runtime + tracker + openseeface_port (optional); runtime + model validated at save
                            skills.py: vtube_launch_runtime, vtube_start_tracker
   emulator/              — project_screen: ROM directory tree (system dirs + ROM counts), Launch
-                           RetroArch / Browse by System; inline setup for rom_dir + retroarch_bin
+                           RetroArch / Browse by System → ROM picker modal; inline setup for rom_dir + retroarch_bin;
+                           binary validated at setup save
                            skills.py: emulator_list_systems, emulator_launch
-  vault/                 — project_screen: tool inventory (gpg/age/veracrypt/keepassxc-cli ✓/✗),
-                           age key status, GPG List Keys / GPG Gen Key / age New Key / Encrypt File;
-                           inline setup for vault_dir
+  vault/                 — project_screen: tool inventory (gpg/age/veracrypt/keepassxc-cli ✓/✗), age key
+                           status, GPG List Keys / Gen Key / Export Key / Import Key / Encrypt File / Decrypt File /
+                           KeePassXC List / VeraCrypt Mount+Dismount;
+                           inline setup for vault_dir + age_key_path + keepassxc_db + veracrypt_volume
                            skills.py: vault_list_gpg_keys, vault_age_key_status, vault_encrypt_file
-  server/                — project_screen: service rows (name|port|type|status|Start/Stop/Logs),
-                           concurrent status polling (systemd + docker), Add Service / Refresh / Docker PS;
+  server/                — project_screen: service rows (name|port|type|status|Start/Stop/Logs/Open URL),
+                           concurrent status polling (systemd + docker), Add Service / Import Compose /
+                           Refresh / Docker PS / Stats (docker stats --no-stream); duplicate name detection;
                            inline setup for docker_compose_dir
-                           skills.py: server_list_services, server_status, server_start, server_stop
+                           skills.py: server_list_services, server_status, server_start, server_stop, server_restart
 projects/                — project instances (git-ignored except .gitkeep)
 config/
   settings.yaml          — global config: AI provider + MCP servers (git-ignored)
@@ -324,6 +334,7 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 | | `git_commit` | `repo`, `message` |
 | | `git_log` | `repo`, `n=10` |
 | | `git_clone` | `url`, `name?` |
+| **localai** | `localai_run_inference` | `prompt`, `negative_prompt?` |
 | **web** | `web_list_scripts` | — |
 | | `web_run_script` | `script` |
 | **research** | `research_list_notes` | — |
@@ -341,6 +352,7 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 | **org** | `org_list_plans` | — |
 | | `org_new_plan` | `name`, `tasks?` |
 | | `org_new_diagram` | `name`, `mermaid_content?` |
+| | `org_new_schedule` | `name` |
 | **home** | `home_ping` | — |
 | | `home_api_call` | `endpoint`, `method?` |
 | **streaming** | `streaming_list_scenes` | — |
@@ -353,10 +365,15 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 | **vault** | `vault_list_gpg_keys` | — |
 | | `vault_age_key_status` | — |
 | | `vault_encrypt_file` | `path` |
+| **backup** | `backup_run_backup` | — |
+| | `backup_list_snapshots` | — |
+| | `backup_check` | — |
+| | `backup_restore` | `snapshot?`, `target` |
 | **server** | `server_list_services` | — |
 | | `server_status` | `service` |
 | | `server_start` | `service` |
 | | `server_stop` | `service` |
+| | `server_restart` | `service` |
 | **custom** | `custom_run_command` | `label` |
 | | `custom_ask` | `question` |
 
@@ -378,4 +395,8 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 - All user-supplied paths are resolved via `Path.expanduser()` before use.
 - Stream keys and other secrets should be stored in the Vault module, not in plain-text project files.
 - **LocalAI shell injection prevention**: user prompt values (`{prompt}`, `{negative_prompt}`) are replaced with `$NEXUS_PROMPT` / `$NEXUS_NEGATIVE_PROMPT` in the command string and passed via the subprocess `env=` dict — never interpolated directly into shell strings. Existing configs with `{prompt}` are auto-converted at runtime.
+- **Home Assistant token**: the HA long-lived access token is passed to the API via Python `httpx` headers — it never appears in subprocess arguments visible in `ps aux`.
+- **Vault public key extraction**: `age-keygen -y <keyfile>` is used to extract the public key from an age identity file; the previous approach of parsing the last comment line was fragile and has been removed.
+- **Backup skill init safety**: the `backup_run_backup` skill calls `restic_ensure_initialized()` before every backup, matching the UI behaviour — AI-triggered backups on uninitialised repos initialise automatically instead of failing silently.
 - **Backup paths**: all restic paths go through `_p()` (`os.path.abspath(os.path.expanduser(path))`) in `modules/backup/backup_ops.py` before subprocess calls. `restic_ensure_initialized()` auto-creates the repo directory and runs `restic init` on first use, treating "already initialized" as success.
+- **Cross-platform open**: all "open file/URL" actions go through `nexus.core.platform.open_path()` which selects `xdg-open` / `open` / `start` per platform — avoids hard-coding `xdg-open` everywhere.

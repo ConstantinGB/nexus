@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from datetime import date
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from textual.widgets import Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path
 from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("journal.project_screen")
@@ -50,6 +52,7 @@ class JournalProjectScreen(BaseProjectScreen):
         return [
             Button("New Entry",      id="btn-new-entry",     variant="primary"),
             Button("Compile Latest", id="btn-compile-latest"),
+            Button("Open PDF",       id="btn-open-pdf"),
             Button("Open Dir",       id="btn-open-dir"),
         ]
 
@@ -91,7 +94,11 @@ class JournalProjectScreen(BaseProjectScreen):
             )
             widgets.append(Label("Recent entries:", classes="section-label"))
             for entry in entries[:15]:
-                widgets.append(Label(f"  {entry.name}", classes="hint"))
+                try:
+                    wc = len(entry.read_text(errors="replace").split())
+                except Exception:
+                    wc = 0
+                widgets.append(Label(f"  {entry.name}  ({wc:,} words)", classes="hint"))
         else:
             widgets.append(Label("No entries yet. Click 'New Entry' to start.", classes="hint"))
 
@@ -107,8 +114,14 @@ class JournalProjectScreen(BaseProjectScreen):
             self._create_entry(journal_dir, author)
         elif bid == "btn-compile-latest":
             self._compile_latest(journal_dir)
+        elif bid == "btn-open-pdf":
+            pdfs = sorted(journal_dir.rglob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if pdfs:
+                self.run_worker(self._run_cmd(open_path(pdfs[0])))
+            else:
+                self.app.notify("No PDF found — compile first.", severity="warning")
         elif bid == "btn-open-dir":
-            self.run_worker(self._run_cmd(["xdg-open", str(journal_dir)]))
+            self.run_worker(self._run_cmd(open_path(journal_dir)))
 
     def _create_entry(self, journal_dir: Path, author: str) -> None:
         today        = date.today()
@@ -134,10 +147,40 @@ class JournalProjectScreen(BaseProjectScreen):
         if not entries:
             self.app.notify("No .tex entries found.", severity="warning")
             return
-        latest = entries[0]
-        self.run_worker(
-            self._run_cmd(
-                ["pdflatex", "-interaction=nonstopmode", str(latest)],
+        self.run_worker(self._do_compile(entries[0], journal_dir))
+
+    async def _do_compile(self, latest: Path, journal_dir: Path) -> None:
+        ui_log = self.query_one("#output-log", Log)
+        ui_log.write_line(f"$ pdflatex -interaction=nonstopmode {latest.name}")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "pdflatex", "-interaction=nonstopmode", str(latest),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
                 cwd=str(journal_dir),
             )
-        )
+            assert proc.stdout
+            error_lines: list[str] = []
+            async for raw in proc.stdout:
+                line = raw.decode(errors="replace").rstrip()
+                ui_log.write_line(line)
+                if line.startswith("!"):
+                    error_lines.append(line)
+            await proc.wait()
+        except FileNotFoundError:
+            ui_log.write_line("✗ pdflatex not found — install a TeX distribution.")
+            self.app.notify("pdflatex not found.", severity="error")
+            return
+        except Exception:
+            log.exception("pdflatex failed")
+            ui_log.write_line("✗ Unexpected error — see log.")
+            return
+
+        if error_lines:
+            ui_log.write_line(f"\n⚠ {len(error_lines)} LaTeX error(s):")
+            for e in error_lines[:5]:
+                ui_log.write_line(f"  {e}")
+            self.app.notify(f"Compile finished with {len(error_lines)} error(s).", severity="warning")
+        else:
+            ui_log.write_line(f"\n✓ Compiled: {latest.stem}.pdf")
+            self.app.notify("Compile complete.", severity="information")

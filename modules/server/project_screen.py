@@ -9,6 +9,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.config_manager import load_project_config, save_project_config
+from nexus.core.platform import open_path
 from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 log = get("server.project_screen")
@@ -74,13 +75,15 @@ class ServiceRow(Horizontal):
         name     = self._service.get("name", "?")
         port     = self._service.get("port", "—")
         svc_type = self._service.get("type", "?")
-        yield Label(name,     classes="svc-name")
+        yield Label(name,       classes="svc-name")
         yield Label(f":{port}", classes="svc-port")
-        yield Label(svc_type, classes="svc-type")
-        yield Label("…",      id=f"svc-status-{name}", classes="svc-status")
-        yield Button("Start",  id=f"svc-start-{name}")
-        yield Button("Stop",   id=f"svc-stop-{name}")
-        yield Button("Logs",   id=f"svc-logs-{name}")
+        yield Label(svc_type,   classes="svc-type")
+        yield Label("…",        id=f"svc-status-{name}", classes="svc-status")
+        yield Button("Start",   id=f"svc-start-{name}")
+        yield Button("Stop",    id=f"svc-stop-{name}")
+        yield Button("Logs",    id=f"svc-logs-{name}")
+        if port and str(port).isdigit():
+            yield Button(f"Open", id=f"svc-open-{name}")
 
 
 class ServerProjectScreen(BaseProjectScreen):
@@ -97,9 +100,11 @@ class ServerProjectScreen(BaseProjectScreen):
 
     def _compose_action_buttons(self) -> list:
         return [
-            Button("Add Service",   id="btn-add-service", variant="primary"),
-            Button("Refresh All",   id="btn-refresh"),
-            Button("Docker PS",     id="btn-docker-ps"),
+            Button("Add Service",      id="btn-add-service", variant="primary"),
+            Button("Import Compose",   id="btn-import-compose"),
+            Button("Refresh All",      id="btn-refresh"),
+            Button("Docker PS",        id="btn-docker-ps"),
+            Button("Stats",            id="btn-docker-stats"),
         ]
 
     # ── Main content ──────────────────────────────────────────────────────────
@@ -165,11 +170,20 @@ class ServerProjectScreen(BaseProjectScreen):
         if bid == "btn-add-service":
             self.app.push_screen(_AddServiceModal("", ""), self._on_service_added)
 
+        elif bid == "btn-import-compose":
+            self.run_worker(self._import_from_compose())
+
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
 
         elif bid == "btn-docker-ps":
             self.run_worker(self._run_cmd(["docker", "ps"]))
+
+        elif bid == "btn-docker-stats":
+            self.run_worker(self._run_cmd([
+                "docker", "stats", "--no-stream",
+                "--format", r"table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}",
+            ]))
 
         elif bid and bid.startswith("svc-start-"):
             name = bid[len("svc-start-"):]
@@ -183,16 +197,71 @@ class ServerProjectScreen(BaseProjectScreen):
             name = bid[len("svc-logs-"):]
             self._service_logs(name)
 
+        elif bid and bid.startswith("svc-open-"):
+            name = bid[len("svc-open-"):]
+            svc  = self._get_service(name)
+            if svc:
+                self.run_worker(self._run_cmd(open_path(f"http://localhost:{svc['port']}")))
+
     def _on_service_added(self, result: dict | None) -> None:
         if not result:
             return
         services = list(self._mod.get("services", []))
+        if any(s.get("name") == result["name"] for s in services):
+            self.app.notify(f"Service '{result['name']}' already exists.", severity="warning")
+            return
         services.append(result)
         self._mod["services"] = services
         self._cfg[self.MODULE_KEY] = self._mod
         save_project_config(self.project.slug, self._cfg)
         self.app.notify(f"Service '{result['name']}' added.")
         self.run_worker(self._populate_content())
+
+    async def _import_from_compose(self) -> None:
+        compose_dir = Path(self._mod.get("docker_compose_dir", "")).expanduser()
+        if not compose_dir.is_dir():
+            self.app.notify("No Docker Compose directory configured.", severity="warning")
+            return
+        compose_file = None
+        for name in ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"):
+            candidate = compose_dir / name
+            if candidate.exists():
+                compose_file = candidate
+                break
+        if not compose_file:
+            self.app.notify("No compose file found in configured directory.", severity="warning")
+            return
+        try:
+            import yaml as _yaml
+            data = _yaml.safe_load(compose_file.read_text()) or {}
+        except Exception as exc:
+            self.app.notify(f"Failed to parse compose file: {exc}", severity="error")
+            return
+        defined = data.get("services", {})
+        if not defined:
+            self.app.notify("No services found in compose file.", severity="warning")
+            return
+        existing_names = {s.get("name") for s in self._mod.get("services", [])}
+        services = list(self._mod.get("services", []))
+        added = 0
+        for svc_name, svc_cfg in defined.items():
+            if svc_name in existing_names:
+                continue
+            ports = svc_cfg.get("ports", [])
+            port = ""
+            if ports:
+                first = str(ports[0])
+                port  = first.split(":")[-1].split("/")[0]
+            services.append({"name": svc_name, "port": port, "type": "docker"})
+            added += 1
+        if added:
+            self._mod["services"] = services
+            self._cfg[self.MODULE_KEY] = self._mod
+            save_project_config(self.project.slug, self._cfg)
+            self.app.notify(f"Imported {added} service(s) from {compose_file.name}.")
+            self.run_worker(self._populate_content())
+        else:
+            self.app.notify("All compose services are already registered.", severity="information")
 
     def _get_service(self, name: str) -> dict | None:
         for svc in self._mod.get("services", []):

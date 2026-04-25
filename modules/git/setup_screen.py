@@ -129,8 +129,10 @@ class GitSetupScreen(Screen):
 
             # Step 3a: GitHub credentials
             with Vertical(id="step-creds-github"):
-                yield Label("Personal Access Token (PAT):", classes="field-label")
-                yield Input(placeholder="ghp_…", password=True, id="input-pat")
+                yield Label("Personal Access Token (PAT) — optional for public repos:",
+                            classes="field-label")
+                yield Input(placeholder="ghp_… (leave blank for public repos only)",
+                            password=True, id="input-pat")
                 yield Label(
                     "github.com → Settings → Developer settings → "
                     "Personal access tokens → Tokens (classic)  |  Scopes: repo, read:user",
@@ -253,11 +255,7 @@ class GitSetupScreen(Screen):
             self._show(f"step-creds-{self._git_type}")
 
         elif step == "step-creds-github":
-            token = self.query_one("#input-pat", Input).value.strip()
-            if not token:
-                self.query_one("#creds-error", Label).update("Please enter a PAT.")
-                return
-            self._token = token
+            self._token = self.query_one("#input-pat", Input).value.strip()
             self._show("step-gitconfig")
 
         elif step == "step-creds-selfhosted":
@@ -317,17 +315,21 @@ class GitSetupScreen(Screen):
         hint      = self.query_one("#repos-hint", Label)
 
         if self._git_type == "github":
-            log.info("Fetching GitHub repos for project: %s", self.project.slug)
-            hint.update("Fetching your GitHub repositories…")
-            try:
-                from modules.git.github_api import list_repos
-                self._repos = await list_repos(self._token)
-                log.info("Fetched %d GitHub repos", len(self._repos))
-                hint.update(f"{len(self._repos)} repositories found — select which to add:")
-            except Exception as exc:
-                log.exception("Failed to fetch GitHub repos")
-                hint.update(f"Could not fetch repos: {exc}")
-                return
+            if not self._token:
+                hint.update("No PAT set — add repositories manually via Clone / Add on the project screen.")
+                self._repos = []
+            else:
+                log.info("Fetching GitHub repos for project: %s", self.project.slug)
+                hint.update("Fetching your GitHub repositories…")
+                try:
+                    from modules.git.github_api import list_repos
+                    self._repos = await list_repos(self._token)
+                    log.info("Fetched %d GitHub repos", len(self._repos))
+                    hint.update(f"{len(self._repos)} repositories found — select which to add:")
+                except Exception as exc:
+                    log.exception("Failed to fetch GitHub repos")
+                    hint.update(f"Could not fetch repos: {exc}")
+                    return
 
         elif self._git_type == "local":
             from modules.git.git_ops import scan_local_repos

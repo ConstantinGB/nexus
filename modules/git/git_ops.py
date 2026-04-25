@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -223,6 +224,20 @@ def create_branch(repo_path: Path, name: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def delete_branch(repo_path: Path, name: str, force: bool = False) -> tuple[bool, str]:
+    flag = "-D" if force else "-d"
+    try:
+        log.info("Delete branch %s (force=%s) in %s", name, force, repo_path.name)
+        r = _git(repo_path, "branch", flag, name)
+        msg = (r.stdout + r.stderr).strip()
+        if r.returncode != 0:
+            log.warning("Delete branch failed: %s", msg)
+        return r.returncode == 0, msg
+    except Exception as exc:
+        log.exception("delete_branch failed for %s", repo_path)
+        return False, str(exc)
+
+
 def get_short_status(repo_path: Path) -> str:
     """Return `git status --short` output."""
     try:
@@ -266,6 +281,27 @@ def stash_pop(repo_path: Path) -> tuple[bool, str]:
     except Exception as exc:
         log.exception("stash_pop failed for %s", repo_path)
         return False, str(exc)
+
+
+def get_remote_url(repo_path: Path, remote: str = "origin") -> str:
+    """Return the fetch URL of the named remote, or '' if not configured."""
+    try:
+        r = _git(repo_path, "remote", "get-url", remote)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def pr_url(remote_url: str, branch: str) -> str | None:
+    """Return a GitHub/GitLab PR comparison URL, or None for other hosts / default branches."""
+    if not remote_url or branch in ("main", "master", "develop", "HEAD"):
+        return None
+    url = re.sub(r"^git@([^:]+):", r"https://\1/", remote_url).removesuffix(".git")
+    if "github.com" in url:
+        return f"{url}/compare/{branch}?expand=1"
+    if "gitlab" in url:
+        return f"{url}/-/merge_requests/new?merge_request[source_branch]={branch}"
+    return None
 
 
 def scan_local_repos(base_path: Path) -> list[Path]:

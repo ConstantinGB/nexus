@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import configparser
 import shutil
 from pathlib import Path
@@ -7,6 +8,7 @@ from textual.widgets import Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import check_binary
 from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("game.project_screen")
@@ -46,17 +48,50 @@ class GameProjectScreen(BaseProjectScreen):
 
     # ── Before-save hook ──────────────────────────────────────────────────────
 
+    async def _run_lint(self, project_path: str) -> None:
+        from textual.widgets import Log as _Log
+        ui_log = self.query_one("#output-log", _Log)
+        ui_log.write_line(f"$ gdlint {project_path}")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "gdlint", project_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            assert proc.stdout
+            errors = warnings = 0
+            async for raw in proc.stdout:
+                line = raw.decode(errors="replace").rstrip()
+                ui_log.write_line(line)
+                ll = line.lower()
+                if "error" in ll:
+                    errors += 1
+                elif "warning" in ll:
+                    warnings += 1
+            await proc.wait()
+            icon = "✓" if proc.returncode == 0 else "✗"
+            ui_log.write_line(f"\n{icon} {errors} error(s), {warnings} warning(s)")
+        except FileNotFoundError:
+            ui_log.write_line("✗ gdlint not found.")
+
     def _on_before_save(self, data: dict) -> dict:
         project_path = Path(data.get("project_path", "")).expanduser()
+        godot_bin = data.get("godot_bin", "godot4")
+        if not check_binary(godot_bin):
+            self.app.notify(
+                f"'{godot_bin}' not found — saved anyway. Fix the binary path when it's available.",
+                severity="warning",
+            )
         return _read_godot_project(project_path)
 
     # ── Action buttons ────────────────────────────────────────────────────────
 
     def _compose_action_buttons(self) -> list:
         return [
-            Button("Launch Editor", id="btn-editor",  variant="primary"),
-            Button("Run Game",      id="btn-run"),
+            Button("Launch Editor",    id="btn-editor",  variant="primary"),
+            Button("Run Game",         id="btn-run"),
             Button("Lint (gdtoolkit)", id="btn-lint"),
+            Button("Export…",          id="btn-export"),
         ]
 
     # ── Main content ──────────────────────────────────────────────────────────
@@ -117,9 +152,17 @@ class GameProjectScreen(BaseProjectScreen):
             self.run_worker(self._run_cmd([godot_bin, "--path", project_path]))
         elif bid == "btn-lint":
             if shutil.which("gdlint"):
-                self.run_worker(self._run_cmd(["gdlint", project_path]))
+                self.run_worker(self._run_lint(project_path))
             else:
                 self.app.notify(
                     "gdlint not found. Install gdtoolkit: pip install gdtoolkit",
                     severity="warning",
                 )
+        elif bid == "btn-export":
+            from nexus.ui.base_project_screen import InputModal
+            self.app.push_screen(
+                InputModal("Export Game", "Target platform (linux / windows / mac / web):", "linux"),
+                lambda platform: self.run_worker(
+                    self._run_cmd([godot_bin, "--headless", "--export-release", platform, "--path", project_path])
+                ) if platform else None,
+            )

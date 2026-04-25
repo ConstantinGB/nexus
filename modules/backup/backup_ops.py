@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 import os
 import subprocess
 
@@ -59,20 +60,36 @@ def restic_init(repo: str, password: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def restic_backup(repo: str, password: str, paths: list[str]) -> tuple[bool, str]:
+def restic_backup(repo: str, password: str, paths: list[str],
+                  excludes: list[str] | None = None) -> tuple[bool, str]:
     repo  = _p(repo)
     paths = [_p(p) for p in paths]
+    cmd   = ["restic", "-r", repo, "backup"] + paths
+    for pattern in (excludes or []):
+        cmd += ["--exclude", pattern]
     try:
-        r = subprocess.run(
-            ["restic", "-r", repo, "backup"] + paths,
-            capture_output=True, text=True, env=_env(password),
-        )
+        r = subprocess.run(cmd, capture_output=True, text=True, env=_env(password))
         out = (r.stdout + r.stderr).strip()
         return r.returncode == 0, out
     except FileNotFoundError:
         return False, "restic not found."
     except Exception as exc:
         return False, str(exc)
+
+
+def restic_snapshots_json(repo: str, password: str) -> tuple[bool, list[dict]]:
+    """Return parsed snapshot list from restic snapshots --json."""
+    repo = _p(repo)
+    try:
+        r = subprocess.run(
+            ["restic", "-r", repo, "snapshots", "--json"],
+            capture_output=True, text=True, env=_env(password),
+        )
+        if r.returncode != 0:
+            return False, []
+        return True, json.loads(r.stdout or "[]")
+    except (FileNotFoundError, json.JSONDecodeError, Exception):
+        return False, []
 
 
 def restic_snapshots(repo: str, password: str) -> tuple[bool, str]:

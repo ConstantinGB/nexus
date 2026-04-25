@@ -7,6 +7,7 @@ from textual.widgets import Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path
 from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 log = get("codex.project_screen")
@@ -26,6 +27,19 @@ links: []
 
 def _slugify(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "note"
+
+
+def _has_tag(path: Path, tag: str) -> bool:
+    """Return True if the note's YAML frontmatter tags list contains the given tag."""
+    if not tag:
+        return True
+    try:
+        for line in path.read_text(errors="replace").splitlines():
+            if line.startswith("tags:") and tag in line:
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def _first_heading(path: Path) -> str:
@@ -51,12 +65,17 @@ class CodexProjectScreen(BaseProjectScreen):
 
     # ── Action buttons ────────────────────────────────────────────────────────
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._tag_filter: str = ""
+
     def _compose_action_buttons(self) -> list:
         return [
-            Button("New Note",   id="btn-new-note",  variant="primary"),
-            Button("Search",     id="btn-search"),
-            Button("Open Vault", id="btn-open-vault"),
-            Button("Refresh",    id="btn-refresh"),
+            Button("New Note",    id="btn-new-note",     variant="primary"),
+            Button("Search",      id="btn-search"),
+            Button("Filter Tags", id="btn-filter-tags"),
+            Button("Open Vault",  id="btn-open-vault"),
+            Button("Refresh",     id="btn-refresh"),
         ]
 
     # ── Main content ──────────────────────────────────────────────────────────
@@ -75,11 +94,13 @@ class CodexProjectScreen(BaseProjectScreen):
         ]
 
         if vault_dir.exists():
-            notes = sorted(vault_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            all_notes = sorted(vault_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            notes = [n for n in all_notes if _has_tag(n, self._tag_filter)] if self._tag_filter else all_notes
+            filter_label = f"  (filtered: #{self._tag_filter})" if self._tag_filter else ""
             widgets.append(
                 Horizontal(
                     Label("Notes:", classes="info-key"),
-                    Label(str(len(notes)), classes="info-val"),
+                    Label(f"{len(notes)}/{len(all_notes)}{filter_label}", classes="info-val"),
                     classes="info-row",
                 )
             )
@@ -107,13 +128,22 @@ class CodexProjectScreen(BaseProjectScreen):
             self.app.push_screen(
                 InputModal("Search", "Search query:", "keyword"),
                 lambda q: self.run_worker(self._run_cmd(
-                    ["rg", "-n", "--color", "never", q, str(vault_dir)]
+                    ["rg", "-C", "2", "--color", "never", q, str(vault_dir)]
                 )) if q else None,
             )
+        elif bid == "btn-filter-tags":
+            self.app.push_screen(
+                InputModal("Filter by Tag", "Tag name (blank to clear):", ""),
+                self._apply_tag_filter,
+            )
         elif bid == "btn-open-vault":
-            self.run_worker(self._run_cmd(["xdg-open", str(vault_dir)]))
+            self.run_worker(self._run_cmd(open_path(vault_dir)))
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
+
+    def _apply_tag_filter(self, tag: str | None) -> None:
+        self._tag_filter = (tag or "").strip()
+        self.run_worker(self._populate_content())
 
     def _create_note(self, title: str | None, vault_dir: Path) -> None:
         if not title:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import re
+from datetime import date
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -43,6 +44,7 @@ class ResearchProjectScreen(BaseProjectScreen):
             Button("New Note",    id="btn-new-note",    variant="primary"),
             Button("Search",      id="btn-search"),
             Button("Export URLs", id="btn-export-urls"),
+            Button("Export All",  id="btn-export-all"),
             Button("Refresh",     id="btn-refresh"),
         ]
 
@@ -100,6 +102,8 @@ class ResearchProjectScreen(BaseProjectScreen):
             )
         elif bid == "btn-export-urls":
             self.run_worker(self._run_cmd(["grep", "-rh", "http", str(notes_dir)]))
+        elif bid == "btn-export-all":
+            self.run_worker(self._export_all(notes_dir))
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
 
@@ -111,9 +115,30 @@ class ResearchProjectScreen(BaseProjectScreen):
         try:
             notes_dir.mkdir(parents=True, exist_ok=True)
             if not dest.exists():
-                dest.write_text(f"# {title}\n\n")
+                topic = self._mod.get("topic", "")
+                frontmatter = (
+                    f"---\ndate: {date.today()}\ntopic: {topic}\ntags: []\n---\n\n"
+                )
+                dest.write_text(f"{frontmatter}# {title}\n\n")
             self.app.notify(f"Created: {dest.name}")
             self.run_worker(self._populate_content())
         except Exception:
             log.exception("Failed to create note: %s", dest)
             self.app.notify("Could not create note — see log.", severity="error")
+
+    async def _export_all(self, notes_dir: Path) -> None:
+        from textual.widgets import Log as _Log
+        ui_log = self.query_one("#output-log", _Log)
+        notes = sorted(notes_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not notes:
+            self.app.notify("No notes to export.", severity="warning")
+            return
+        out = notes_dir / "export-all.md"
+        try:
+            parts = [n.read_text(errors="replace") for n in notes]
+            out.write_text("\n\n---\n\n".join(parts))
+            ui_log.write_line(f"✓ Exported {len(notes)} notes → {out.name}")
+            self.app.notify(f"Exported {len(notes)} notes to {out.name}")
+        except Exception:
+            log.exception("Export all failed")
+            self.app.notify("Export failed — see log.", severity="error")

@@ -5,6 +5,7 @@ from textual.widgets import Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
+from nexus.core.platform import open_path, check_binary
 from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("streaming.project_screen")
@@ -23,6 +24,17 @@ class StreamingProjectScreen(BaseProjectScreen):
     ]
 
     DEFAULT_CSS = _screen_css("StreamingProjectScreen")
+
+    # ── Before-save hook ──────────────────────────────────────────────────────
+
+    def _on_before_save(self, data: dict) -> dict:
+        obs_bin = data.get("obs_bin", "obs")
+        if not check_binary(obs_bin):
+            self.app.notify(
+                f"'{obs_bin}' not found — saved anyway. Fix the binary path when it's available.",
+                severity="warning",
+            )
+        return {}
 
     # ── Action buttons ────────────────────────────────────────────────────────
 
@@ -107,6 +119,13 @@ class StreamingProjectScreen(BaseProjectScreen):
                 ui_log.write_line(f"--- {latest_log.name} (last 50 lines) ---")
                 for line in lines:
                     ui_log.write_line(line)
+                _WARN_KEYS = ("crash", "dropped frames", "output error", "recording error",
+                              "encoding error", "connection failed")
+                flagged = [l for l in lines if any(k in l.lower() for k in _WARN_KEYS)]
+                if flagged:
+                    ui_log.write_line(f"\n⚠ {len(flagged)} warning/issue line(s):")
+                    for l in flagged[:5]:
+                        ui_log.write_line(f"  {l.strip()}")
             except Exception:
                 log.exception("Failed to read OBS log")
                 self.app.notify("Could not read OBS log.", severity="error")
@@ -120,4 +139,4 @@ class StreamingProjectScreen(BaseProjectScreen):
             )
 
         elif bid == "btn-open-config":
-            self.run_worker(self._run_cmd(["xdg-open", str(obs_config_dir)]))
+            self.run_worker(self._run_cmd(open_path(obs_config_dir)))
