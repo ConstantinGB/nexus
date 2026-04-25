@@ -10,6 +10,7 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config, save_project_config
+from nexus.ui.chat_panel import ChatPanel
 
 log = get("ui.base_project_screen")
 
@@ -115,12 +116,10 @@ class BaseProjectScreen(Screen):
     #setup-btns  { height: 3; margin-top: 1; }
     #setup-btns Button { margin-right: 1; }
 
-    #main-pane   { height: 1fr; }
-    #content-area {
-        height: 1fr;
-        padding: 1 2;
-        overflow-y: auto;
-    }
+    #body-row    { height: 1fr; }
+    #main-pane   { width: 1fr; height: 1fr; }
+    #content-area { height: 1fr; padding: 1 2; overflow-y: auto; }
+    #btn-toggle-chat { margin-left: 1; }
 
     #output-log { height: 8; background: #0A0518; border: solid #3A2260; }
 
@@ -183,6 +182,7 @@ class BaseProjectScreen(Screen):
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta, id="project-meta")
+            yield Button("💬 AI", id="btn-toggle-chat")
         with Horizontal(id="action-bar"):
             yield from self._compose_action_buttons()
 
@@ -199,9 +199,16 @@ class BaseProjectScreen(Screen):
             with Horizontal(id="setup-btns"):
                 yield Button("Save", id="btn-save-setup", variant="primary")
 
-        with Vertical(id="main-pane"):
-            with Vertical(id="content-area"):
-                pass
+        with Horizontal(id="body-row"):
+            with Vertical(id="main-pane"):
+                with Vertical(id="content-area"):
+                    pass
+            yield ChatPanel(
+                self.project.slug,
+                self.MODULE_KEY,
+                ["global", self.MODULE_KEY],
+                id="chat-panel",
+            )
 
         yield Log(id="output-log", auto_scroll=True)
         yield Footer()
@@ -212,7 +219,6 @@ class BaseProjectScreen(Screen):
             self.query_one("#action-bar").display = True
             self.run_worker(self._populate_content())
         else:
-            self.query_one("#main-pane").display = False
             self.query_one("#action-bar").display = False
 
     # ── Button dispatcher ─────────────────────────────────────────────────────
@@ -222,6 +228,8 @@ class BaseProjectScreen(Screen):
         try:
             if bid == "btn-save-setup":
                 self._handle_save_setup()
+            elif bid == "btn-toggle-chat":
+                self._toggle_chat()
             else:
                 self._handle_action(bid)
         except Exception:
@@ -245,11 +253,17 @@ class BaseProjectScreen(Screen):
         self._save_cfg(data)
         self._reload_screen()
 
+    def _toggle_chat(self) -> None:
+        try:
+            panel = self.query_one("#chat-panel", ChatPanel)
+            panel.display = not panel.display
+        except Exception:
+            pass
+
     def _reload_screen(self) -> None:
         self._load_cfg()
         self.query_one("#setup-pane").display = False
         self.query_one("#action-bar").display = True
-        self.query_one("#main-pane").display = True
         self.run_worker(self._populate_content())
 
     # ── Command runner ────────────────────────────────────────────────────────
