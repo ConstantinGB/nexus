@@ -151,7 +151,7 @@ async def _git_to_journal(payload: dict) -> str:
     ) or "Recent commits:\n\n" + "\n".join(f"- {l}" for l in all_lines)
 
     try:
-        path = _write_journal_entry(target_slug, "Git Activity", body)
+        path = await asyncio.to_thread(_write_journal_entry, target_slug, "Git Activity", body)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps({"success": True, "path": str(path)})
@@ -170,13 +170,13 @@ async def _research_to_codex(payload: dict) -> str:
         load_project_config(source_slug).get("research", {}).get("notes_dir", "")
     ).expanduser()
 
-    note_path = _resolve_research_note(notes_dir, payload.get("note_filename"))
+    note_path = await asyncio.to_thread(_resolve_research_note, notes_dir, payload.get("note_filename"))
     if not note_path:
         return json.dumps({"error": "No research notes found."})
-    if not note_path.exists():
+    if not await asyncio.to_thread(note_path.exists):
         return json.dumps({"error": f"Note not found: {note_path.name}"})
 
-    note_content = note_path.read_text(errors="replace")
+    note_content = await asyncio.to_thread(note_path.read_text, errors="replace")
     title = note_path.stem.replace("-", " ").title()
 
     body = await _ai_synthesize(
@@ -185,7 +185,7 @@ async def _research_to_codex(payload: dict) -> str:
     ) or note_content
 
     try:
-        path = _write_codex_entry(target_slug, title, body)
+        path = await asyncio.to_thread(_write_codex_entry, target_slug, title, body)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps({"success": True, "path": str(path), "title": title})
@@ -204,13 +204,13 @@ async def _research_to_org(payload: dict) -> str:
         load_project_config(source_slug).get("research", {}).get("notes_dir", "")
     ).expanduser()
 
-    note_path = _resolve_research_note(notes_dir, payload.get("note_filename"))
+    note_path = await asyncio.to_thread(_resolve_research_note, notes_dir, payload.get("note_filename"))
     if not note_path:
         return json.dumps({"error": "No research notes found."})
-    if not note_path.exists():
+    if not await asyncio.to_thread(note_path.exists):
         return json.dumps({"error": f"Note not found: {note_path.name}"})
 
-    note_content = note_path.read_text(errors="replace")
+    note_content = await asyncio.to_thread(note_path.read_text, errors="replace")
     plan_name = payload.get("plan_name") or note_path.stem.replace("-", " ").title()
 
     body = await _ai_synthesize(
@@ -222,7 +222,7 @@ async def _research_to_org(payload: dict) -> str:
     )
 
     try:
-        path = _write_org_plan(target_slug, plan_name, body)
+        path = await asyncio.to_thread(_write_org_plan, target_slug, plan_name, body)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps({"success": True, "path": str(path), "plan": plan_name})
@@ -243,15 +243,17 @@ async def _codex_to_journal(payload: dict) -> str:
 
     entry_id = payload.get("entry_id")
     if entry_id:
-        matches = list(vault_dir.glob(f"{entry_id}*.md"))
+        matches = await asyncio.to_thread(lambda: list(vault_dir.glob(f"{entry_id}*.md")))
         entry_path = matches[0] if matches else None
     else:
-        entry_path = max(vault_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, default=None)
+        entry_path = await asyncio.to_thread(
+            lambda: max(vault_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, default=None)
+        )
 
     if not entry_path:
         return json.dumps({"error": "No codex entry found."})
 
-    entry_content = entry_path.read_text(errors="replace")
+    entry_content = await asyncio.to_thread(entry_path.read_text, errors="replace")
     parts = entry_path.stem.split("-", 1)
     topic = parts[-1].replace("-", " ").title() if len(parts) > 1 else entry_path.stem
 
@@ -261,7 +263,7 @@ async def _codex_to_journal(payload: dict) -> str:
     ) or f"Reflecting on: {topic}\n\n{entry_content[:600]}"
 
     try:
-        path = _write_journal_entry(target_slug, f"Reflection: {topic}", body)
+        path = await asyncio.to_thread(_write_journal_entry, target_slug, f"Reflection: {topic}", body)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps({"success": True, "path": str(path)})
@@ -283,15 +285,17 @@ async def _org_to_journal(payload: dict) -> str:
     plan_name = payload.get("plan_name")
     if plan_name:
         safe = re.sub(r"[^a-z0-9]+", "-", plan_name.lower())
-        matches = list(output_dir.glob(f"*{safe}*.md"))
+        matches = await asyncio.to_thread(lambda: list(output_dir.glob(f"*{safe}*.md")))
         plan_path = matches[0] if matches else None
     else:
-        plan_path = max(output_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, default=None)
+        plan_path = await asyncio.to_thread(
+            lambda: max(output_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, default=None)
+        )
 
     if not plan_path:
         return json.dumps({"error": "No org plan found."})
 
-    plan_content = plan_path.read_text(errors="replace")
+    plan_content = await asyncio.to_thread(plan_path.read_text, errors="replace")
     plan_title = plan_path.stem.replace("-", " ").title()
 
     body = await _ai_synthesize(
@@ -300,7 +304,7 @@ async def _org_to_journal(payload: dict) -> str:
     ) or f"Plan log: {plan_title}\n\n{plan_content[:600]}"
 
     try:
-        path = _write_journal_entry(target_slug, f"Plan Log: {plan_title}", body)
+        path = await asyncio.to_thread(_write_journal_entry, target_slug, f"Plan Log: {plan_title}", body)
     except Exception as exc:
         return json.dumps({"error": str(exc)})
     return json.dumps({"success": True, "path": str(path)})

@@ -2,8 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from nexus.ai.skill_registry import registry
-from nexus.core.config_manager import load_project_config
+from nexus.ai.skill_registry import registry, require_project
 from nexus.core.logger import get
 from modules.backup.backup_ops import restic_ensure_initialized, restic_restore
 
@@ -11,7 +10,7 @@ log = get("skills.backup")
 
 
 def _backup_cfg(slug: str) -> dict:
-    return load_project_config(slug).get("backup", {})
+    return require_project(slug).get("backup", {})
 
 
 # ---------------------------------------------------------------------------
@@ -29,7 +28,7 @@ async def _backup_run_backup(args: dict) -> str:
     if not paths:
         return json.dumps({"error": "No paths configured to back up."})
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     ok, msg = await loop.run_in_executor(None, restic_ensure_initialized, repo, pw)
     if not ok:
         return json.dumps({"error": f"Repository init failed: {msg}"})
@@ -176,7 +175,7 @@ async def _backup_restore(args: dict) -> str:
     if not repo:
         return json.dumps({"error": "No repository configured for this backup project."})
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     ok, msg = await loop.run_in_executor(None, restic_ensure_initialized, repo, pw)
     if not ok:
         return json.dumps({"error": f"Repository init failed: {msg}"})

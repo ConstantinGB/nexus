@@ -105,7 +105,10 @@ class GameProjectScreen(BaseProjectScreen):
         game_name     = self._mod.get("game_name", project_path.name)
         godot_version = self._mod.get("godot_version", "?")
 
-        scene_count = len(list(project_path.rglob("*.tscn"))) if project_path.exists() else 0
+        scene_count = (
+            await asyncio.to_thread(lambda: len(list(project_path.rglob("*.tscn"))))
+            if project_path.exists() else 0
+        )
         bin_found   = shutil.which(godot_bin) is not None
 
         widgets: list = [

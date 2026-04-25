@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -43,7 +44,9 @@ async def _org_list_plans(args: dict) -> str:
     if d is None or not d.exists():
         return json.dumps({"plans": [], "note": "Output directory not configured or missing"})
     try:
-        files = sorted(d.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = await asyncio.to_thread(lambda: sorted(
+            d.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+        ))
         return json.dumps({"plans": [f.name for f in files]})
     except Exception as exc:
         log.exception("org_list_plans skill failed")

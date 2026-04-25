@@ -183,7 +183,7 @@ class BackupProjectScreen(BaseProjectScreen):
             self._append_log("No repository configured.")
             return
         self._append_log("Initialising repository if needed…")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         ok, msg = await loop.run_in_executor(
             None, restic_ensure_initialized, repo, pw
         )
@@ -204,7 +204,7 @@ class BackupProjectScreen(BaseProjectScreen):
     async def _do_snapshots(self) -> None:
         repo, pw = self._repo_and_password()
         self._append_log("Fetching snapshots…")
-        ok, out = await asyncio.get_event_loop().run_in_executor(
+        ok, out = await asyncio.get_running_loop().run_in_executor(
             None, restic_snapshots, repo, pw
         )
         self._append_log(out if out else "(no snapshots)")
@@ -212,7 +212,7 @@ class BackupProjectScreen(BaseProjectScreen):
     async def _do_check(self) -> None:
         repo, pw = self._repo_and_password()
         self._append_log("Checking repository integrity…")
-        ok, out = await asyncio.get_event_loop().run_in_executor(
+        ok, out = await asyncio.get_running_loop().run_in_executor(
             None, restic_check, repo, pw
         )
         self._append_log(out)
@@ -229,7 +229,7 @@ class BackupProjectScreen(BaseProjectScreen):
             f"Forgetting old snapshots (keep-daily={keep_daily}, "
             f"keep-weekly={keep_weekly}) + pruning…"
         )
-        ok, out = await asyncio.get_event_loop().run_in_executor(
+        ok, out = await asyncio.get_running_loop().run_in_executor(
             None, restic_forget, repo, pw, keep_daily, keep_weekly
         )
         self._append_log(out)
@@ -241,7 +241,7 @@ class BackupProjectScreen(BaseProjectScreen):
     async def _do_restore(self, snap_id: str, target: str) -> None:
         repo, pw = self._repo_and_password()
         self._append_log(f"Restoring snapshot {snap_id} → {target}…")
-        ok, out = await asyncio.get_event_loop().run_in_executor(
+        ok, out = await asyncio.get_running_loop().run_in_executor(
             None, restic_restore, repo, pw, snap_id, target
         )
         self._append_log(out)
@@ -256,7 +256,7 @@ class BackupProjectScreen(BaseProjectScreen):
             self._append_log("No repository configured.")
             return
         self._append_log("Fetching snapshot list…")
-        ok, snapshots = await asyncio.get_event_loop().run_in_executor(
+        ok, snapshots = await asyncio.get_running_loop().run_in_executor(
             None, restic_snapshots_json, repo, pw
         )
         if not ok or not snapshots:

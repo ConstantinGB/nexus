@@ -3,6 +3,15 @@ import json
 from typing import Callable, Awaitable
 
 
+def require_project(slug: str) -> dict:
+    """Return project config for *slug*, raising ValueError if the slug is unknown."""
+    from nexus.core.project_manager import list_projects
+    from nexus.core.config_manager import load_project_config
+    if not any(p.slug == slug for p in list_projects()):
+        raise ValueError(f"Unknown project slug: {slug!r}")
+    return load_project_config(slug)
+
+
 class SkillRegistry:
     """Registry of native Nexus skills exposed to AI models as tools.
 

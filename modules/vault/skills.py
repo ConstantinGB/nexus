@@ -3,8 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from nexus.ai.skill_registry import registry
-from nexus.core.config_manager import load_project_config
+from nexus.ai.skill_registry import registry, require_project
 from nexus.core.logger import get
 
 log = get("skills.vault")
@@ -13,7 +12,7 @@ _AGE_KEY = Path.home() / ".age" / "key.txt"
 
 
 def _vault_cfg(slug: str) -> dict:
-    return load_project_config(slug).get("vault", {})
+    return require_project(slug).get("vault", {})
 
 
 async def _get_age_pubkey(key_path: Path) -> str:

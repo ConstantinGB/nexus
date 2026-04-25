@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import re
 from datetime import date
 from pathlib import Path
@@ -66,7 +67,9 @@ class ResearchProjectScreen(BaseProjectScreen):
         ]
 
         if notes_dir.exists():
-            notes = sorted(notes_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            notes = await asyncio.to_thread(lambda: sorted(
+                notes_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+            ))
             widgets.append(
                 Horizontal(
                     Label("Notes:", classes="info-key"),
@@ -76,7 +79,7 @@ class ResearchProjectScreen(BaseProjectScreen):
             )
             widgets.append(Label("Recent notes:", classes="section-label"))
             for note in notes[:20]:
-                first = _first_line(note)
+                first = await asyncio.to_thread(_first_line, note)
                 display = f"  {note.name}" + (f" — {first}" if first else "")
                 widgets.append(Label(display, classes="hint"))
         else:
@@ -135,8 +138,9 @@ class ResearchProjectScreen(BaseProjectScreen):
             return
         out = notes_dir / "export-all.md"
         try:
-            parts = [n.read_text(errors="replace") for n in notes]
-            out.write_text("\n\n---\n\n".join(parts))
+            parts = [await asyncio.to_thread(n.read_text, errors="replace") for n in notes]
+            combined = "\n\n---\n\n".join(parts)
+            await asyncio.to_thread(out.write_text, combined)
             ui_log.write_line(f"✓ Exported {len(notes)} notes → {out.name}")
             self.app.notify(f"Exported {len(notes)} notes to {out.name}")
         except Exception:

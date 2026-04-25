@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import Label, Button, Log, TextArea
 from textual.containers import Vertical, Horizontal
@@ -160,8 +161,15 @@ class ChatPanel(Widget):
             return
         finally:
             self._busy = False
-            self.query_one("#chat-send", Button).disabled = False
+            try:
+                self.query_one("#chat-send", Button).disabled = False
+            except NoMatches:
+                pass
 
+        try:
+            chat_log = self.query_one("#chat-log", Log)
+        except NoMatches:
+            return
         chat_log.write_line(f"[AI] {reply}")
         self._messages.append({"role": "assistant", "content": reply})
         self._save_history()
@@ -266,7 +274,10 @@ class ChatPanel(Widget):
             self._history_path().unlink(missing_ok=True)
         except Exception:
             pass
-        chat_log = self.query_one("#chat-log", Log)
+        try:
+            chat_log = self.query_one("#chat-log", Log)
+        except NoMatches:
+            return
         chat_log.clear()
         chat_log.write_line("[info] Chat history cleared.")
 

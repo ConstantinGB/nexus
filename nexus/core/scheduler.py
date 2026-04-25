@@ -55,7 +55,7 @@ class BackupScheduler:
             await asyncio.sleep(_POLL_SECONDS)
 
     async def _check_all(self) -> None:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # System-level backup
         cfg     = load_global_config()

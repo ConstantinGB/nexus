@@ -97,10 +97,12 @@ async def _streaming_check_logs(args: dict) -> str:
     if not logs_dir.exists():
         return json.dumps({"error": "OBS logs directory not found"})
     try:
-        files = sorted(logs_dir.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = await asyncio.to_thread(lambda: sorted(
+            logs_dir.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True
+        ))
         if not files:
             return json.dumps({"error": "No log files found"})
-        lines = files[0].read_text(errors="replace").splitlines()
+        lines = (await asyncio.to_thread(files[0].read_text, errors="replace")).splitlines()
         return json.dumps({"log_file": files[0].name, "lines": lines[-50:]})
     except Exception as exc:
         log.exception("streaming_check_logs skill failed")

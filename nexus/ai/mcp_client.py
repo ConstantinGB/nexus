@@ -30,10 +30,14 @@ class MCPClient:
                 log.exception("Could not connect to MCP server: %s", server_id)
 
     async def _connect_one(self, server_id: str, cfg: dict) -> None:
-        log.debug("Connecting to MCP server: %s (command=%s)", server_id, cfg.get("command"))
+        command = cfg.get("command", "")
+        if not command:
+            log.warning("MCP server %r has no 'command' key — skipping", server_id)
+            return
+        log.debug("Connecting to MCP server: %s (command=%s)", server_id, command)
         env = {**os.environ, **{k: v for k, v in cfg.get("env", {}).items() if v}}
         params = StdioServerParameters(
-            command=cfg["command"],
+            command=command,
             args=cfg.get("args", []),
             env=env,
         )

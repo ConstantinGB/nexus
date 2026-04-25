@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import re
 from datetime import date
 from pathlib import Path
@@ -95,7 +96,9 @@ class OrgProjectScreen(BaseProjectScreen):
         ]
 
         if output_dir.exists():
-            files = sorted(output_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            files = await asyncio.to_thread(lambda: sorted(
+                output_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+            ))
             widgets.append(
                 Horizontal(
                     Label("Files:", classes="info-key"),
@@ -106,7 +109,7 @@ class OrgProjectScreen(BaseProjectScreen):
             widgets.append(Label("Recent files:", classes="section-label"))
             for f in files[:20]:
                 try:
-                    text = f.read_text(errors="replace")
+                    text  = await asyncio.to_thread(f.read_text, errors="replace")
                     done  = text.count("[x]") + text.count("[X]")
                     total = done + text.count("[ ]")
                     pct   = f"  {done}/{total} done" if total else ""

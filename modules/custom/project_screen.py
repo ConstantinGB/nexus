@@ -134,7 +134,8 @@ class CustomProjectScreen(Screen):
     # ── Custom commands ───────────────────────────────────────────────────────
 
     async def _run_command(self, cmd: str) -> None:
-        chat_log = self.query_one("#chat-panel #chat-log", Log)
+        from nexus.ui.chat_panel import ChatPanel
+        chat_log = self.query_one(ChatPanel).query_one("#chat-log", Log)
         chat_log.write_line(f"[cmd] $ {cmd}")
         try:
             proc = await asyncio.create_subprocess_shell(

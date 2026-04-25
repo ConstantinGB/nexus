@@ -4,15 +4,14 @@ import json
 import shutil
 from pathlib import Path
 
-from nexus.ai.skill_registry import registry
-from nexus.core.config_manager import load_project_config
+from nexus.ai.skill_registry import registry, require_project
 from nexus.core.logger import get
 
 log = get("skills.emulator")
 
 
 def _emu_cfg(slug: str) -> dict:
-    return load_project_config(slug).get("emulator", {})
+    return require_project(slug).get("emulator", {})
 
 
 # ---------------------------------------------------------------------------

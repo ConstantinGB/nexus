@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import re
 from datetime import datetime
 from pathlib import Path
@@ -94,8 +95,14 @@ class CodexProjectScreen(BaseProjectScreen):
         ]
 
         if vault_dir.exists():
-            all_notes = sorted(vault_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
-            notes = [n for n in all_notes if _has_tag(n, self._tag_filter)] if self._tag_filter else all_notes
+            all_notes = await asyncio.to_thread(lambda: sorted(
+                vault_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+            ))
+            if self._tag_filter:
+                tag = self._tag_filter
+                notes = await asyncio.to_thread(lambda: [n for n in all_notes if _has_tag(n, tag)])
+            else:
+                notes = all_notes
             filter_label = f"  (filtered: #{self._tag_filter})" if self._tag_filter else ""
             widgets.append(
                 Horizontal(
@@ -106,7 +113,7 @@ class CodexProjectScreen(BaseProjectScreen):
             )
             widgets.append(Label("Recent entries:", classes="section-label"))
             for note in notes[:20]:
-                heading = _first_heading(note)
+                heading = await asyncio.to_thread(_first_heading, note)
                 widgets.append(Label(f"  {heading}", classes="hint"))
         else:
             widgets.append(Label(f"Vault not found: {vault_dir}", classes="status-err"))

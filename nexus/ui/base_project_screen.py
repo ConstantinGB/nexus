@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Header, Footer, Label, Button, Log, Input
 from textual.containers import Vertical, Horizontal
@@ -163,6 +164,13 @@ class BaseProjectScreen(Screen):
     async def _populate_content(self) -> None:
         """Override to fill #content-area with module-specific widgets."""
 
+    async def _safe_populate(self) -> None:
+        """Wrapper that silently drops NoMatches if the screen is dismissed mid-worker."""
+        try:
+            await self._populate_content()
+        except NoMatches:
+            pass
+
     def _handle_action(self, bid: str | None) -> None:
         """Override to handle module-specific button IDs."""
 
@@ -217,7 +225,7 @@ class BaseProjectScreen(Screen):
         if self._is_configured():
             self.query_one("#setup-pane").display = False
             self.query_one("#action-bar").display = True
-            self.run_worker(self._populate_content())
+            self.run_worker(self._safe_populate())
         else:
             self.query_one("#action-bar").display = False
 
@@ -264,7 +272,7 @@ class BaseProjectScreen(Screen):
         self._load_cfg()
         self.query_one("#setup-pane").display = False
         self.query_one("#action-bar").display = True
-        self.run_worker(self._populate_content())
+        self.run_worker(self._safe_populate())
 
     # ── Command runner ────────────────────────────────────────────────────────
 

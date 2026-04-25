@@ -80,11 +80,11 @@ class JournalProjectScreen(BaseProjectScreen):
         ]
 
         if entries_dir.exists():
-            entries = sorted(
+            entries = await asyncio.to_thread(lambda: sorted(
                 entries_dir.rglob("*.tex"),
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
-            )
+            ))
             widgets.append(
                 Horizontal(
                     Label("Entries:", classes="info-key"),
@@ -95,7 +95,7 @@ class JournalProjectScreen(BaseProjectScreen):
             widgets.append(Label("Recent entries:", classes="section-label"))
             for entry in entries[:15]:
                 try:
-                    wc = len(entry.read_text(errors="replace").split())
+                    wc = len((await asyncio.to_thread(entry.read_text, errors="replace")).split())
                 except Exception:
                     wc = 0
                 widgets.append(Label(f"  {entry.name}  ({wc:,} words)", classes="hint"))

@@ -29,7 +29,10 @@ class _RomPickerModal(ModalScreen):
         self._system_dir = system_dir
 
     def compose(self) -> ComposeResult:
-        roms = sorted(f for f in self._system_dir.iterdir() if f.is_file())
+        try:
+            roms = sorted(f for f in self._system_dir.iterdir() if f.is_file())
+        except (FileNotFoundError, OSError):
+            roms = []
         options = [(r.name, str(r)) for r in roms]
         with Vertical(id="rp-dialog"):
             yield Label(f"ROMs — {self._system_dir.name}", id="rp-title")

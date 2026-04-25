@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import json
 from pathlib import Path
 
@@ -85,7 +86,8 @@ async def _search_logs(args: dict) -> str:
     try:
         if not _LOG_FILE.exists():
             return json.dumps({"lines": [], "note": "Log file not found"})
-        lines = _LOG_FILE.read_text(errors="replace").splitlines()
+        raw = await asyncio.to_thread(_LOG_FILE.read_text, errors="replace")
+        lines = raw.splitlines()
         if query:
             lines = [l for l in lines if query.lower() in l.lower()]
         return json.dumps({"lines": lines[-n:]})
