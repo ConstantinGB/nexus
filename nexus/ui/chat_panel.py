@@ -4,8 +4,9 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.css.query import NoMatches
-from textual.widget import Widget
-from textual.widgets import Label, Button, Log, TextArea
+from textual.events import Key
+from textual.message import Message
+from textual.widgets import Label, Button, RichLog, TextArea
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -20,18 +21,25 @@ _COMPRESS_THRESHOLD = 50
 _COMPRESS_KEEP      = 40
 
 
-class ChatPanel(Widget):
+class _ChatTextArea(TextArea):
+    """TextArea that sends on Enter; Shift+Enter inserts a newline."""
+
+    class Submit(Message):
+        """Posted when the user presses Enter to send."""
+
+    def _on_key(self, event: Key) -> None:
+        if event.key == "enter":
+            event.prevent_default()
+            self.post_message(_ChatTextArea.Submit())
+        elif event.key == "shift+enter":
+            event.prevent_default()
+            self.insert("\n")
+
+
+class ChatPanel(Vertical):
     """Toggleable AI chat panel, mounted inside any BaseProjectScreen."""
 
-    BINDINGS = [("ctrl+enter", "send", "Send message")]
-
     DEFAULT_CSS = """
-    ChatPanel {
-        width: 44;
-        border-left: solid #3A2260;
-        display: none;
-        background: #130822;
-    }
     ChatPanel .pane-title {
         color: #00FF88; text-style: bold; height: 1;
         background: #2D1B4E; padding: 0 1;
@@ -60,8 +68,8 @@ class ChatPanel(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label("💬 AI Chat", classes="pane-title")
-        yield Log(id="chat-log", auto_scroll=True)
-        yield TextArea("", id="chat-input")
+        yield RichLog(id="chat-log", auto_scroll=True, wrap=True, markup=False)
+        yield _ChatTextArea("", id="chat-input")
         with Horizontal(id="chat-btns"):
             yield Button("Send",  id="chat-send", variant="primary")
             yield Button("/init", id="chat-init")
@@ -80,13 +88,13 @@ class ChatPanel(Widget):
             data = json.loads(self._history_path().read_text())
             if isinstance(data, list):
                 self._messages = data
-                chat_log = self.query_one("#chat-log", Log)
+                chat_log = self.query_one("#chat-log", RichLog)
                 for msg in self._messages:
                     role    = msg.get("role", "")
                     content = msg.get("content", "")
                     if isinstance(content, str) and role in ("user", "assistant"):
                         prefix = "You" if role == "user" else "AI"
-                        chat_log.write_line(f"[{prefix}] {content}")
+                        chat_log.write(f"[{prefix}] {content}")
         except (FileNotFoundError, json.JSONDecodeError, Exception):
             self._messages = []
 
@@ -115,7 +123,7 @@ class ChatPanel(Widget):
         elif bid == "chat-clear":
             self._confirm_clear()
 
-    def action_send(self) -> None:
+    def on__chat_text_area_submit(self, _: _ChatTextArea.Submit) -> None:
         self.run_worker(self._send())
 
     # ── Send ──────────────────────────────────────────────────────────────────
@@ -123,19 +131,19 @@ class ChatPanel(Widget):
     async def _send(self) -> None:
         if self._busy:
             return
-        ta   = self.query_one("#chat-input", TextArea)
+        ta   = self.query_one("#chat-input", _ChatTextArea)
         text = ta.text.strip()
         if not text:
             return
 
-        chat_log = self.query_one("#chat-log", Log)
-        await ta.load_text("")
-        chat_log.write_line(f"[You] {text}")
+        chat_log = self.query_one("#chat-log", RichLog)
+        ta.load_text("")
+        chat_log.write(f"[You] {text}")
         self._messages.append({"role": "user", "content": text})
 
         from nexus.core.config_manager import is_ai_configured
         if not is_ai_configured():
-            chat_log.write_line(
+            chat_log.write(
                 "[info] AI not configured — open Settings (s) to add a key or local model."
             )
             self._messages.pop()
@@ -143,9 +151,9 @@ class ChatPanel(Widget):
 
         self._busy = True
         self.query_one("#chat-send", Button).disabled = True
-        chat_log.write_line("[AI] …")
 
         system_prompt = self._read_claude_md()
+        reply: str | None = None
         try:
             from nexus.ai.client import AIClient
             client = AIClient()
@@ -156,9 +164,8 @@ class ChatPanel(Widget):
             )
         except Exception:
             log.exception("Chat send failed for %s", self._slug)
-            chat_log.write_line("[error] AI request failed — see log.")
+            chat_log.write("[error] AI request failed — see log.")
             self._messages.pop()
-            return
         finally:
             self._busy = False
             try:
@@ -166,13 +173,10 @@ class ChatPanel(Widget):
             except NoMatches:
                 pass
 
-        try:
-            chat_log = self.query_one("#chat-log", Log)
-        except NoMatches:
-            return
-        chat_log.write_line(f"[AI] {reply}")
-        self._messages.append({"role": "assistant", "content": reply})
-        self._save_history()
+        if reply is not None:
+            chat_log.write(f"[AI] {reply}")
+            self._messages.append({"role": "assistant", "content": reply})
+            self._save_history()
 
     # ── /init ─────────────────────────────────────────────────────────────────
 
@@ -193,16 +197,16 @@ class ChatPanel(Widget):
         self.run_worker(self._do_init(description))
 
     async def _do_init(self, description: str) -> None:
-        chat_log = self.query_one("#chat-log", Log)
+        chat_log = self.query_one("#chat-log", RichLog)
 
         from nexus.core.config_manager import is_ai_configured
         if not is_ai_configured():
-            chat_log.write_line(
+            chat_log.write(
                 "[info] AI not configured — open Settings (s) to add a key or local model."
             )
             return
 
-        chat_log.write_line("[/init] Reading project context…")
+        chat_log.write("[/init] Reading project context…")
 
         current_md    = self._read_claude_md()
         template      = self._read_template()
@@ -232,7 +236,7 @@ class ChatPanel(Widget):
             "Write the new CLAUDE.md for this project."
         )
 
-        chat_log.write_line("[/init] Generating personalized context…")
+        chat_log.write("[/init] Generating personalized context…")
         try:
             from nexus.ai.client import AIClient
             client = AIClient()
@@ -243,7 +247,7 @@ class ChatPanel(Widget):
             )
         except Exception:
             log.exception("/init AI call failed for %s", self._slug)
-            chat_log.write_line("[error] /init failed — see log.")
+            chat_log.write("[error] /init failed — see log.")
             return
 
         claude_md_path = _PROJECTS_DIR / self._slug / "CLAUDE.md"
@@ -251,10 +255,10 @@ class ChatPanel(Widget):
             claude_md_path.write_text(new_md, encoding="utf-8")
         except Exception:
             log.exception("Failed to write CLAUDE.md for %s", self._slug)
-            chat_log.write_line("[error] Could not write CLAUDE.md — see log.")
+            chat_log.write("[error] Could not write CLAUDE.md — see log.")
             return
 
-        chat_log.write_line("[/init] ✓ CLAUDE.md rewritten with personalized context.")
+        chat_log.write("[/init] ✓ CLAUDE.md rewritten with personalized context.")
         self.app.notify("CLAUDE.md rewritten — this project's AI context is now personalized.")
 
     # ── Clear ─────────────────────────────────────────────────────────────────
@@ -275,11 +279,11 @@ class ChatPanel(Widget):
         except Exception:
             pass
         try:
-            chat_log = self.query_one("#chat-log", Log)
+            chat_log = self.query_one("#chat-log", RichLog)
         except NoMatches:
             return
         chat_log.clear()
-        chat_log.write_line("[info] Chat history cleared.")
+        chat_log.write("[info] Chat history cleared.")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

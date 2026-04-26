@@ -159,6 +159,10 @@ class WebProjectScreen(BaseProjectScreen):
 
         await area.mount(*widgets)
 
+    def _primary_folder(self) -> Path | None:
+        p = Path(self._mod.get("project_path", "")).expanduser()
+        return p if str(p) != "." else None
+
     # ── Button handler ────────────────────────────────────────────────────────
 
     def _handle_action(self, bid: str | None) -> None:

@@ -135,6 +135,11 @@ class VTubeProjectScreen(BaseProjectScreen):
 
         await area.mount(*widgets)
 
+    def _primary_folder(self) -> Path | None:
+        mp = Path(self._mod.get("model_path", "")).expanduser()
+        p = mp.parent if mp.suffix else mp
+        return p if str(p) not in (".", "") else None
+
     # ── Button handler ────────────────────────────────────────────────────────
 
     def _handle_action(self, bid: str | None) -> None:

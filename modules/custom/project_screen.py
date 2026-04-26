@@ -4,7 +4,7 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Label, Button, Log
+from textual.widgets import Header, Footer, Label, Button, Log, RichLog
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -135,8 +135,8 @@ class CustomProjectScreen(Screen):
 
     async def _run_command(self, cmd: str) -> None:
         from nexus.ui.chat_panel import ChatPanel
-        chat_log = self.query_one(ChatPanel).query_one("#chat-log", Log)
-        chat_log.write_line(f"[cmd] $ {cmd}")
+        chat_log = self.query_one(ChatPanel).query_one("#chat-log", RichLog)
+        chat_log.write(f"[cmd] $ {cmd}")
         try:
             proc = await asyncio.create_subprocess_shell(
                 cmd,
@@ -146,16 +146,16 @@ class CustomProjectScreen(Screen):
             )
             if proc.stdout:
                 async for raw in proc.stdout:
-                    chat_log.write_line(raw.decode(errors="replace").rstrip())
+                    chat_log.write(raw.decode(errors="replace").rstrip())
             await proc.wait()
-            chat_log.write_line(
+            chat_log.write(
                 f"[cmd] ✓ done (exit {proc.returncode})"
                 if proc.returncode == 0
                 else f"[cmd] ✗ exit {proc.returncode}"
             )
         except Exception:
             log.exception("Custom command failed: %s", cmd)
-            chat_log.write_line("[cmd] ✗ error — see log.")
+            chat_log.write("[cmd] ✗ error — see log.")
 
     def _on_add_cmd_input(self, value: str | None) -> None:
         if not value or ":" not in value:

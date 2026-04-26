@@ -21,6 +21,9 @@ _yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
 _red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
 _bold()   { printf '\033[1m%s\033[0m\n'   "$*"; }
 
+# Skip sudo when already root (e.g. inside a Docker container)
+_sudo() { if [ "$(id -u)" = "0" ]; then "$@"; else sudo "$@"; fi; }
+
 # ── Distro detection ───────────────────────────────────────────────────────────
 
 detect_pm() {
@@ -42,9 +45,9 @@ PM="$(detect_pm)"
 pkg_install() {
     # pkg_install <pkg...>
     case "$PM" in
-        apt)     sudo apt-get install -y "$@" ;;
-        dnf)     sudo dnf install -y "$@" ;;
-        pacman)  sudo pacman -S --noconfirm "$@" ;;
+        apt)     _sudo apt-get install -y "$@" ;;
+        dnf)     _sudo dnf install -y "$@" ;;
+        pacman)  _sudo pacman -S --noconfirm "$@" ;;
         *)       _red "Unknown package manager. Install manually: $*"; return 1 ;;
     esac
 }
@@ -53,9 +56,9 @@ pkg_download() {
     # Download packages without installing
     mkdir -p "$OFFLINE_DIR"
     case "$PM" in
-        apt)     sudo apt-get install -y --download-only -o Dir::Cache="$OFFLINE_DIR" "$@" ;;
-        dnf)     sudo dnf download --destdir="$OFFLINE_DIR" "$@" ;;
-        pacman)  sudo pacman -Sw --noconfirm --cachedir "$OFFLINE_DIR" "$@" ;;
+        apt)     _sudo apt-get install -y --download-only -o Dir::Cache="$OFFLINE_DIR" "$@" ;;
+        dnf)     _sudo dnf download --destdir="$OFFLINE_DIR" "$@" ;;
+        pacman)  _sudo pacman -Sw --noconfirm --cachedir "$OFFLINE_DIR" "$@" ;;
         *)       _red "Unknown package manager."; return 1 ;;
     esac
 }
@@ -64,15 +67,15 @@ pkg_install_local() {
     # Install from local cache
     case "$PM" in
         apt)
-            sudo apt-get install -y --no-download \
+            _sudo apt-get install -y --no-download \
                 -o Dir::Cache="$OFFLINE_DIR" \
                 -o APT::Get::AllowUnauthenticated=true "$@" 2>/dev/null \
-            || sudo dpkg -i "$OFFLINE_DIR/archives/"*.deb 2>/dev/null || true
+            || _sudo dpkg -i "$OFFLINE_DIR/archives/"*.deb 2>/dev/null || true
             ;;
         dnf)
-            sudo dnf install -y "$OFFLINE_DIR"/*.rpm 2>/dev/null || true ;;
+            _sudo dnf install -y "$OFFLINE_DIR"/*.rpm 2>/dev/null || true ;;
         pacman)
-            sudo pacman -U --noconfirm "$OFFLINE_DIR"/*.pkg.tar.* 2>/dev/null || true ;;
+            _sudo pacman -U --noconfirm "$OFFLINE_DIR"/*.pkg.tar.* 2>/dev/null || true ;;
         *)  _red "Unknown package manager."; return 1 ;;
     esac
 }

@@ -19,6 +19,10 @@ __pycache__/
 dist/
 build/
 
+# ── Docker test chamber (local testing only, not part of the codebase) ───────
+tests/Dockerfile
+tests/run-docker-test.sh
+
 # ── Editor / OS ──────────────────────────────────────────────────────────────
 .vscode/
 .idea/

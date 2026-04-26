@@ -11,6 +11,7 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config, save_project_config
+from nexus.core.platform import open_path
 from nexus.ui.chat_panel import ChatPanel
 
 log = get("ui.base_project_screen")
@@ -118,9 +119,16 @@ class BaseProjectScreen(Screen):
     #setup-btns Button { margin-right: 1; }
 
     #body-row    { height: 1fr; }
-    #main-pane   { width: 1fr; height: 1fr; }
+    #main-pane   { width: 1fr; height: 1fr; min-width: 0; }
     #content-area { height: 1fr; padding: 1 2; overflow-y: auto; }
     #btn-toggle-chat { margin-left: 1; }
+    #btn-open-folder { margin-left: 1; }
+    #chat-panel {
+        width: 1fr;
+        height: 1fr;
+        border-left: solid #3A2260;
+        background: #130822;
+    }
 
     #output-log { height: 8; background: #0A0518; border: solid #3A2260; }
 
@@ -178,6 +186,17 @@ class BaseProjectScreen(Screen):
         """Override to compute extra config keys before saving. Return extra dict."""
         return {}
 
+    def _primary_folder(self) -> Path | None:
+        """Override to return the primary working directory for this project."""
+        return None
+
+    def _open_primary_folder(self) -> None:
+        p = self._primary_folder()
+        if p and p.exists():
+            self.run_worker(self._run_cmd(open_path(p)))
+        else:
+            self.app.notify("No folder configured or folder does not exist.", severity="warning")
+
     # ── Compose ───────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
@@ -190,6 +209,7 @@ class BaseProjectScreen(Screen):
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta, id="project-meta")
+            yield Button("📁", id="btn-open-folder", tooltip="Open project folder")
             yield Button("💬 AI", id="btn-toggle-chat")
         with Horizontal(id="action-bar"):
             yield from self._compose_action_buttons()
@@ -228,6 +248,14 @@ class BaseProjectScreen(Screen):
             self.run_worker(self._safe_populate())
         else:
             self.query_one("#action-bar").display = False
+            self.query_one("#body-row").display = False
+        self.call_after_refresh(self._hide_chat_initial)
+
+    def _hide_chat_initial(self) -> None:
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = False
+        except NoMatches:
+            pass
 
     # ── Button dispatcher ─────────────────────────────────────────────────────
 
@@ -238,6 +266,8 @@ class BaseProjectScreen(Screen):
                 self._handle_save_setup()
             elif bid == "btn-toggle-chat":
                 self._toggle_chat()
+            elif bid == "btn-open-folder":
+                self._open_primary_folder()
             else:
                 self._handle_action(bid)
         except Exception:
@@ -272,6 +302,7 @@ class BaseProjectScreen(Screen):
         self._load_cfg()
         self.query_one("#setup-pane").display = False
         self.query_one("#action-bar").display = True
+        self.query_one("#body-row").display = True
         self.run_worker(self._safe_populate())
 
     # ── Command runner ────────────────────────────────────────────────────────
