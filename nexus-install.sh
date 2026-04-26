@@ -156,17 +156,20 @@ setup_dirs() {
 # ── uv sync ───────────────────────────────────────────────────────────────────
 
 run_uv_sync() {
+    # Use uv from PATH if available, otherwise fall back to the default install location.
+    # (PATH export inside this script doesn't propagate to the parent shell session.)
+    UV_BIN="$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")"
     if [ "$MODE" = "download" ]; then
         _yellow "Downloading Python dependencies…"
-        uv sync --no-install-project 2>/dev/null \
-            || uv pip compile pyproject.toml -o "$OFFLINE_DIR/requirements.txt" 2>/dev/null \
+        "$UV_BIN" sync --no-install-project 2>/dev/null \
+            || "$UV_BIN" pip compile pyproject.toml -o "$OFFLINE_DIR/requirements.txt" 2>/dev/null \
             || true
         _green "Dependencies cached. Transfer offline-packages/ with the project."
         return
     fi
     _yellow "Installing Python dependencies via uv sync…"
     cd "$SCRIPT_DIR"
-    uv sync
+    "$UV_BIN" sync
 }
 
 # ── Mode: download-only ───────────────────────────────────────────────────────
@@ -197,7 +200,7 @@ do_local() {
     setup_dirs
     _green ""
     _green "Nexus installed from local packages."
-    _green "Run: uv run nexus"
+    _green "Run: export PATH=\"\$HOME/.local/bin:\$PATH\" && uv run nexus"
 }
 
 # ── Mode: direct install ──────────────────────────────────────────────────────
@@ -210,10 +213,14 @@ do_direct() {
     setup_dirs
     _green ""
     _green "Nexus installed."
-    _green "Run: uv run nexus"
     _green ""
-    _green "Tip: Press 's' in Nexus to open Settings → Setup to install"
-    _green "     software for individual modules (git, OBS, restic, etc.)."
+    _green "To run Nexus now (this session):"
+    _green "  export PATH=\"\$HOME/.local/bin:\$PATH\" && uv run nexus"
+    _green ""
+    _green "After opening a new terminal uv will be on PATH automatically:"
+    _green "  uv run nexus"
+    _green ""
+    _green "Tip: Press 's' in Nexus to open Settings and configure AI / modules."
 }
 
 # ── Interactive menu ──────────────────────────────────────────────────────────
