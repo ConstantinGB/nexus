@@ -45,9 +45,9 @@ PM="$(detect_pm)"
 pkg_install() {
     # pkg_install <pkg...>
     case "$PM" in
-        apt)     _sudo apt-get install -y "$@" ;;
+        apt)     _sudo apt-get update -qq && _sudo apt-get install -y "$@" ;;
         dnf)     _sudo dnf install -y "$@" ;;
-        pacman)  _sudo pacman -S --noconfirm "$@" ;;
+        pacman)  _sudo pacman -Sy --noconfirm "$@" ;;
         *)       _red "Unknown package manager. Install manually: $*"; return 1 ;;
     esac
 }
@@ -82,8 +82,8 @@ pkg_install_local() {
 
 # ── Core Python packages required by apt/dnf/pacman ───────────────────────────
 
-_PYTHON_PKG_apt="python3.12 python3.12-venv"
-_PYTHON_PKG_dnf="python3.12"
+_PYTHON_PKG_apt="python3 python3-venv"
+_PYTHON_PKG_dnf="python3"
 _PYTHON_PKG_pacman="python"
 
 python_pkg() {
@@ -111,6 +111,8 @@ install_uv() {
     else
         curl -Ls https://astral.sh/uv/install.sh | sh
     fi
+    # Make uv available in the current shell session without requiring a re-login
+    export PATH="$HOME/.local/bin:$PATH"
 }
 
 # ── Install Python ────────────────────────────────────────────────────────────
