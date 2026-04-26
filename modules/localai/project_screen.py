@@ -118,8 +118,9 @@ class LocalAIProjectScreen(Screen):
                     yield TextArea("", id="neg-input")
 
                 with Horizontal(id="action-bar"):
-                    yield Button("▶ Run",          id="btn-run",  variant="primary")
+                    yield Button("▶ Run",          id="btn-run",           variant="primary")
                     yield Button("Test Endpoint",   id="btn-test-ep")
+                    yield Button("Browse Models",   id="btn-browse-models")
                     if self._output_type == "file":
                         yield Button("Open Output", id="btn-open", disabled=True)
 
@@ -156,6 +157,17 @@ class LocalAIProjectScreen(Screen):
 
         elif bid == "btn-test-ep":
             self.run_worker(self._test_endpoint())
+
+        elif bid == "btn-browse-models":
+            from nexus.core.config_manager import load_global_config
+            from modules.localai.model_browser_screen import ModelBrowserScreen
+            endpoint = load_global_config().get("ai", {}).get(
+                "local_endpoint", "http://localhost:11434"
+            )
+            self.app.push_screen(
+                ModelBrowserScreen(self.project.slug, endpoint),
+                self._on_model_selected,
+            )
 
         elif bid == "btn-open":
             if self._last_output_file and self._last_output_file.exists():
@@ -194,6 +206,18 @@ class LocalAIProjectScreen(Screen):
         except Exception as exc:
             log.exception("Test endpoint failed")
             ui_log.write_line(f"✗ {exc}")
+
+    def _on_model_selected(self, model_id: str | None) -> None:
+        if not model_id:
+            return
+        self._load_cfg()
+        model   = self._localai_cfg.get("model", "")
+        purpose = self._localai_cfg.get("purpose", "")
+        meta    = model + (f" · {purpose}" if purpose else "")
+        try:
+            self.query_one("#project-meta", Label).update(meta)
+        except Exception:
+            pass
 
     # ── Inference worker ──────────────────────────────────────────────────────
 

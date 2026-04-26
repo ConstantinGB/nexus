@@ -23,6 +23,7 @@ _REGISTRY: list[ModuleInfo] = [
     ModuleInfo("org",      "Org",      "Organize with timetables, diagrams, and workflows.",                   ["planning"]),
     ModuleInfo("custom",    "Custom",    "A blank project. Write your own description for the AI to work from.",          []),
     ModuleInfo("localai",   "LocalAI",   "Set up and run local AI models — LLMs, diffusion, audio, and more.",           ["ai", "local"],    system=True),
+    ModuleInfo("sdforge",   "SDForge",   "Stable Diffusion Forge — local image generation via A1111-compatible API.",     ["ai", "image", "local"], system=True),
     ModuleInfo("streaming", "Streaming", "OBS-based live streaming and recording setup.",                                 ["media", "obs"]),
     ModuleInfo("vtube",     "VTube",     "Virtual avatar setup — face tracking, Live2D/VRM models, OBS integration.",    ["media", "avatar"]),
     ModuleInfo("emulator",  "Emulator",  "Retro console emulation — RetroArch, Dolphin, PCSX2, RPCS3, and more.",       ["gaming", "retro"]),
@@ -57,6 +58,9 @@ def needs_setup(project) -> bool:
     if project.module == "backup":
         cfg = load_project_config(project.slug)
         return not cfg.get("backup", {}).get("setup_done", False)
+    if project.module == "sdforge":
+        cfg = load_project_config(project.slug)
+        return not cfg.get("sdforge", {}).get("setup_done", False)
     return False
 
 
@@ -71,6 +75,9 @@ def get_setup_screen(project):
     if project.module == "backup":
         from modules.backup.setup_screen import BackupSetupScreen
         return BackupSetupScreen(project)
+    if project.module == "sdforge":
+        from modules.sdforge.setup_screen import SDForgeSetupScreen
+        return SDForgeSetupScreen(project)
     return None
 
 
@@ -121,6 +128,9 @@ def get_project_screen(project):
     if project.module == "backup":
         from modules.backup.project_screen import BackupProjectScreen
         return BackupProjectScreen(project)
+    if project.module == "sdforge":
+        from modules.sdforge.project_screen import SDForgeProjectScreen
+        return SDForgeProjectScreen(project)
     if project.module == "custom":
         from modules.custom.project_screen import CustomProjectScreen
         return CustomProjectScreen(project)

@@ -69,6 +69,48 @@ class InputModal(ModalScreen):
         self.dismiss(val or None)
 
 
+class SudoModal(ModalScreen[str | None]):
+    """Password prompt for sudo commands. Orange accent distinguishes it from InputModal."""
+
+    DEFAULT_CSS = """
+    SudoModal { align: center middle; }
+    #sudo-dialog {
+        background: #2D1B4E; border: solid #FF8800;
+        padding: 1 2; width: 60; height: auto;
+    }
+    #sudo-title  { color: #FF8800; text-style: bold; height: 2; }
+    #sudo-prompt { color: #E0E0FF; height: 1; margin-bottom: 1; }
+    #sudo-input  { margin-bottom: 1; }
+    #sudo-btns   { height: 3; }
+    #sudo-btns Button { margin-right: 1; }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="sudo-dialog"):
+            yield Label("sudo — enter password", id="sudo-title")
+            yield Label("This command requires administrator privileges.", id="sudo-prompt")
+            yield Input(placeholder="password", password=True, id="sudo-input")
+            with Horizontal(id="sudo-btns"):
+                yield Button("OK", id="sudo-ok", variant="primary")
+                yield Button("Cancel", id="sudo-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#sudo-input", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        val = self.query_one("#sudo-input", Input).value
+        self.dismiss(val if event.button.id == "sudo-ok" and val else None)
+
+    def on_input_submitted(self, _: Input.Submitted) -> None:
+        val = self.query_one("#sudo-input", Input).value
+        self.dismiss(val if val else None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class BaseProjectScreen(Screen):
     """
     Shared base for all skeleton module project screens.

@@ -14,6 +14,8 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.config_manager import load_global_config, save_global_config
 from nexus.core.logger import get
+import nexus.core.sudo as _sudo
+from nexus.ui.base_project_screen import SudoModal
 
 log = get("ui.settings_screen")
 
@@ -692,7 +694,7 @@ class SettingsScreen(Screen):
                     apt_pkg.replace("-", ".")
                 )
                 if cmd and self._install_mode == "direct":
-                    self.run_worker(self._run_install(apt_pkg, cmd))
+                    self._maybe_run_install(apt_pkg, cmd)
         except Exception:
             log.exception("Error in settings button handler (button=%s)", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
@@ -906,26 +908,52 @@ class SettingsScreen(Screen):
             except Exception:
                 pass
 
+    def _maybe_run_install(self, apt_pkg: str, cmd: str) -> None:
+        if cmd.startswith("sudo ") and not _sudo.has():
+            self.app.push_screen(
+                SudoModal(),
+                lambda pw: self._on_sudo_password(pw, apt_pkg, cmd),
+            )
+        else:
+            self.run_worker(self._run_install(apt_pkg, cmd))
+
+    def _on_sudo_password(self, password: str | None, apt_pkg: str, cmd: str) -> None:
+        if password is None:
+            self.app.notify("Install cancelled — no password provided.", severity="warning")
+            return
+        _sudo.set_password(password)
+        self.run_worker(self._run_install(apt_pkg, cmd))
+
     async def _run_install(self, apt_pkg: str, cmd: str) -> None:
         log_label = self.query_one("#setup-log", Label)
-        log_label.update(f"Running: {cmd}\n…")
-        log.info("Setup install: %s", cmd)
+        cmd_to_run, stdin_data = _sudo.inject_shell(cmd)
+        log_label.update(f"Running: {cmd_to_run}\n…")
+        log.info("Setup install: %s", cmd_to_run)
         try:
             proc = await asyncio.create_subprocess_shell(
-                cmd,
+                cmd_to_run,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
-            stdout, _ = await proc.communicate()
+            stdout, _ = await proc.communicate(input=stdin_data)
             output = stdout.decode(errors="replace").strip()
             if proc.returncode == 0:
                 log_label.update(f"✓ {apt_pkg} installed.\n{output[-300:]}")
                 self.app.notify(f"{apt_pkg} installed.", severity="information")
             else:
-                log_label.update(f"✗ Install failed (exit {proc.returncode}).\n"
-                                  f"{output[-300:]}")
-                self.app.notify(f"Install failed — see log area.", severity="error")
+                log.warning("Install failed (exit %d): %s", proc.returncode, output[-300:])
+                if "incorrect password" in output.lower() or "sorry, try again" in output.lower():
+                    _sudo.clear()
+                    log_label.update(f"✗ Wrong sudo password.\n{output[-300:]}")
+                    self.app.notify(
+                        "Wrong sudo password — click Install again to retry.",
+                        severity="error",
+                    )
+                else:
+                    log_label.update(f"✗ Install failed (exit {proc.returncode}).\n{output[-300:]}")
+                    self.app.notify("Install failed — see log area.", severity="error")
         except Exception:
-            log.exception("Install subprocess failed: %s", cmd)
+            log.exception("Install subprocess failed: %s", cmd_to_run)
             log_label.update("✗ Subprocess error — see nexus.log.")
             self.app.notify("Install error — see log.", severity="error")

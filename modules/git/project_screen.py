@@ -697,7 +697,11 @@ class GitProjectScreen(Screen):
         self._load_cfg()
         git_type = self._git_cfg.get("type", "git")
         username = self._git_cfg.get("username", "")
-        meta     = git_type.upper() + (f" · {username}" if username else "")
+        if git_type == "github" and username:
+            display_user = username[:4] + "••••••••"
+        else:
+            display_user = username
+        meta = git_type.upper() + (f" · {display_user}" if display_user else "")
 
         yield Header()
         with Horizontal(id="top-bar"):
