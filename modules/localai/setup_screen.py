@@ -1,114 +1,96 @@
 from __future__ import annotations
 import asyncio
-import os
-import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 import yaml
 from textual.app import ComposeResult
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Label, Input, Button, Log, TextArea
+from textual.widgets import (
+    Header, Footer, Label, Input, Button, Log, Switch, TabbedContent, TabPane,
+)
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
+from modules.localai import model_catalog
+from modules.localai.hw_detect import (
+    detect_hardware, save_hardware_json, load_hardware_json,
+)
 
 log = get("localai.setup_screen")
 
 _PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 
-_ALL_STEPS = ["step-config", "step-ai", "step-review", "step-install", "step-done"]
+_ALL_STEPS = ["step-hw", "step-model", "step-pulling", "step-done"]
 
 _STEP_LABELS = {
-    "step-config":  "Step 1 — Configure your local AI",
-    "step-ai":      "Step 2 — AI-assisted setup (detecting hardware + generating script…)",
-    "step-review":  "Step 3 — Review the generated setup script",
-    "step-install": "Step 4 — Running setup script…",
+    "step-hw":      "Step 1 of 3 — Hardware detection",
+    "step-model":   "Step 2 of 3 — Pick a model",
+    "step-pulling": "Pulling model…",
     "step-done":    "Setup complete",
 }
 
-# ---------------------------------------------------------------------------
-# Claude prompt templates
-# ---------------------------------------------------------------------------
+_FIT_LABELS: dict[str, tuple[str, str]] = {
+    "recommended": ("★ GPU fit",   "#00FF88"),
+    "fits":        ("~ GPU tight", "#FFFF44"),
+    "cpu-only":    ("CPU only",    "#00B4FF"),
+    "too-large":   ("✗ Too large", "#FF4444"),
+}
 
-_SYSTEM_PROMPT = """\
-You are an expert at setting up local AI models on Linux systems.
+_FIT_ORDER: dict[str, int] = {"recommended": 0, "cpu-only": 1, "fits": 2, "too-large": 3}
 
-Your task: given the user's hardware and their requirements, produce a complete,
-working bash setup script that downloads, installs, and configures the requested
-AI model so it is ready to run.
 
-You MUST respond with ONLY the structured format below — no prose, no explanation
-outside the delimiters. The delimiters must appear exactly as shown.
+import re as _re
 
----SETUP_SCRIPT---
-#!/bin/bash
-set -e
-# ... complete bash script that installs everything needed ...
----END_SCRIPT---
----RUN_COMMAND---
-# A shell command to run the model.
-# The prompt is passed via the $NEXUS_PROMPT environment variable — use it directly.
-# Use $NEXUS_NEGATIVE_PROMPT for negative prompts (diffusion models only).
-# Example (LLM):   ollama run llama3.2 "$NEXUS_PROMPT"
-# Example (image): python generate.py --prompt "$NEXUS_PROMPT" --negative "$NEXUS_NEGATIVE_PROMPT" --output outputs/image.png
----END_COMMAND---
----OUTPUT_TYPE---
-text
----END_OUTPUT_TYPE---
-
-OUTPUT_TYPE must be exactly "text" (for LLMs) or "file" (for diffusion/audio/video models).
-The run command should be a single shell command that can be executed directly.
-"""
-
-_USER_PROMPT_TEMPLATE = """\
-Please generate a setup script for the following local AI configuration:
-
-## User Inputs
-- Available VRAM: {vram}
-- Purpose / Use case: {purpose}
-- Requested model: {model}
-
-## Detected Hardware
-{hardware}
-
-## Requirements
-1. The setup script must install all required dependencies (Python packages, system packages,
-   model weights, runtime environments, etc.).
-2. Prefer lightweight, well-maintained tools: for LLMs prefer Ollama; for diffusion prefer
-   ComfyUI or Stable Diffusion WebUI (automatic1111); match the tool to the model.
-3. The script must be idempotent (safe to run twice).
-4. Adapt the approach to the detected GPU — use CUDA for NVIDIA, ROCm for AMD, CPU-only if
-   no GPU is detected.
-5. Include model download steps in the script.
-6. The run_command must work after setup completes.
-
-Respond using ONLY the structured format from the system prompt.
-"""
+def _san(s: str) -> str:
+    return _re.sub(r'[^a-zA-Z0-9_-]', '-', s)
 
 
 # ---------------------------------------------------------------------------
-# Response parser
+# Embedded model row for the setup picker
 # ---------------------------------------------------------------------------
 
-def _parse_response(raw: str) -> tuple[str, str, str]:
-    """Return (script, run_command, output_type). Falls back gracefully."""
-    def _between(start: str, end: str) -> str:
-        m = re.search(rf"{re.escape(start)}\s*(.*?)\s*{re.escape(end)}", raw, re.DOTALL)
-        return m.group(1).strip() if m else ""
+class SetupModelRow(Horizontal):
+    """Compact model row used in the setup screen's model picker."""
 
-    script      = _between("---SETUP_SCRIPT---", "---END_SCRIPT---")
-    run_command = _between("---RUN_COMMAND---",   "---END_COMMAND---")
-    output_type = _between("---OUTPUT_TYPE---",   "---END_OUTPUT_TYPE---").lower()
+    DEFAULT_CSS = """
+    SetupModelRow {
+        height: 2; padding: 0 1;
+        border-bottom: solid #241540;
+    }
+    SetupModelRow:hover { background: #2D1B4E; }
+    SetupModelRow.row-selected { background: #0E2A0E; }
+    SetupModelRow .mr-id   { width: 20; color: #E0E0FF; content-align: left middle; }
+    SetupModelRow .mr-size { width: 6;  color: #8080AA; content-align: left middle; }
+    SetupModelRow .mr-fit  { width: 12; content-align: left middle; }
+    SetupModelRow .mr-fit-recommended { color: #00FF88; }
+    SetupModelRow .mr-fit-fits        { color: #FFFF44; }
+    SetupModelRow .mr-fit-cpu-only    { color: #00B4FF; }
+    SetupModelRow .mr-fit-too-large   { color: #FF4444; }
+    SetupModelRow .mr-fit-none        { color: #555555; }
+    SetupModelRow .mr-desc { width: 1fr; color: #555588; content-align: left middle; }
+    SetupModelRow Button   { width: 9; height: 2; min-width: 7; margin-left: 1; }
+    """
 
-    if not output_type:
-        output_type = "file" if any(k in raw.lower() for k in
-                                    ("image", "diffusion", "stable", "comfyui", "audio", "video")) else "text"
-    if output_type not in ("text", "file"):
-        output_type = "text"
+    def __init__(self, model: dict, hw: dict, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._model = model
+        self._hw    = hw
 
-    return script, run_command, output_type
+    def compose(self) -> ComposeResult:
+        m   = self._model
+        fit = model_catalog.fit_rating(m, self._hw) if self._hw else None
+        fit_text = _FIT_LABELS[fit][0] if fit in _FIT_LABELS else ""
+        fit_cls  = f"mr-fit mr-fit-{fit or 'none'}"
+
+        yield Label(m["id"],              classes="mr-id")
+        yield Label(m.get("size", ""),    classes="mr-size")
+        yield Label(fit_text,             classes=fit_cls)
+        yield Label(m.get("desc", ""),    classes="mr-desc")
+        yield Button("Select", id=f"sel-{_san(m['id'])}", variant="primary")
 
 
 # ---------------------------------------------------------------------------
@@ -127,332 +109,422 @@ class LocalAISetupScreen(Screen):
         background: #2D1B4E;
         border: solid #00B4FF;
         padding: 1 2;
-        width: 86;
+        width: 90;
         height: auto;
-        max-height: 46;
+        max-height: 54;
     }
-    #dialog-title   { color: #00B4FF; text-style: bold; height: 2; }
-    #step-label     { color: #666699; height: 1; margin-bottom: 1; }
+    #dialog-title { color: #00B4FF; text-style: bold; height: 2; }
+    #step-label   { color: #666699; height: 1; margin-bottom: 1; }
 
-    #ai-warning {
-        background: #2A1500;
-        border: solid #FFAA00;
-        color: #FFAA00;
-        padding: 0 1;
-        height: 3;
-        margin-bottom: 1;
-    }
-    #ai-warning-ok { color: #00FF88; height: 3; padding: 0 1; margin-bottom: 1; }
+    /* Step 1 — Hardware */
+    #hw-status    { color: #8080AA; height: 1; margin-bottom: 1; }
+    .hw-row       { height: 1; }
+    .hw-key       { color: #8080AA; width: 8; }
+    .hw-val       { color: #E0E0FF; width: 1fr; }
+    #ollama-warn  { color: #FFAA00; height: 2; margin-top: 1; }
 
-    .field-label  { color: #00FF88; height: 1; margin-top: 1; }
-    .hint         { color: #555588; height: 2; }
-    Input         { margin-bottom: 0; }
+    /* Step 2 — Model picker */
+    #search-bar         { height: 3; margin-bottom: 1; }
+    #search-bar Label   { width: 10; color: #00FF88; content-align: left middle; }
+    #search-bar Input   { width: 1fr; }
+    #model-tabs         { height: 20; }
+    .tab-empty          { color: #555588; padding: 1 1; height: 2; }
+    #selected-label     { color: #00FF88; height: 1; margin-top: 1; }
+    #pull-row           { height: 3; margin-top: 1; }
+    #pull-row Switch    { width: 10; }
+    #pull-row Label     { color: #E0E0FF; content-align: left middle; }
+    #btn-advanced       { width: 18; margin-top: 1; }
+    #advanced-pane      { margin-top: 1; }
+    .field-label        { color: #00FF88; height: 1; margin-top: 1; }
+    #custom-cmd         { margin-top: 1; }
 
-    #ai-log       { height: 14; background: #0A0518; border: solid #3A2260; }
-    #review-area  { height: 18; background: #0A0518; border: solid #3A2260; }
-    #install-log  { height: 16; background: #0A0518; border: solid #3A2260; }
-    .parse-warn   { color: #FFAA00; height: 2; margin-bottom: 1; }
+    /* Step 3 — Pulling */
+    #pull-log     { height: 16; background: #0A0518; border: solid #3A2260; }
 
+    /* Step 4 — Done */
+    #done-label   { color: #00FF88; height: 1; }
+    #done-details { color: #E0E0FF; height: auto; margin-top: 1; }
+
+    /* Buttons */
     #btn-row      { height: 3; margin-top: 2; }
     #btn-back     { margin-right: 1; }
     """
 
-    def __init__(self, project: ProjectInfo):
+    def __init__(self, project: ProjectInfo) -> None:
         super().__init__()
-        self.project      = project
-        self._step        = "step-config"
-        self._vram        = ""
-        self._purpose     = ""
-        self._model       = ""
-        self._script      = ""
-        self._run_command = ""
-        self._output_type = "text"
-        self._has_api_key = False
+        self.project               = project
+        self._step                 = "step-hw"
+        self._hw: dict             = {}
+        self._selected_model       = ""
+        self._selected_model_data: dict = {}
+        self._run_command          = ""
+        self._output_type          = "text"
+        self._advanced_visible     = False
+        self._installed: set[str]  = set()
 
     # ── Compose ──────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
-        from nexus.core.config_manager import load_global_config
-        cfg = load_global_config()
-        api_key = cfg.get("ai", {}).get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-        self._has_api_key = bool(api_key)
-
         yield Header()
         with Vertical(id="dialog"):
-            yield Label("LocalAI Module Setup", id="dialog-title")
-            yield Label(_STEP_LABELS["step-config"], id="step-label")
+            yield Label("LocalAI Setup", id="dialog-title")
+            yield Label(_STEP_LABELS["step-hw"], id="step-label")
 
-            # ── Step 1: Config ───────────────────────────────────────────
-            with Vertical(id="step-config"):
-                if self._has_api_key:
-                    yield Label(
-                        "⚠  AI Assisted Setup — Claude will analyse your hardware and "
-                        "generate a tailored installation script.",
-                        id="ai-warning-ok",
+            # Step 1 — Hardware
+            with Vertical(id="step-hw"):
+                yield Label("Detecting hardware…", id="hw-status")
+                with Vertical(id="hw-table"):
+                    pass
+                yield Label("", id="ollama-warn")
+
+            # Step 2 — Model picker
+            with Vertical(id="step-model"):
+                with Horizontal(id="search-bar"):
+                    yield Label("Search:")
+                    yield Input(placeholder="name, tag, or description…", id="model-search")
+                with TabbedContent(id="model-tabs"):
+                    with TabPane("Catalog", id="tab-catalog"):
+                        yield ScrollableContainer(id="catalog-list")
+                    with TabPane("Installed", id="tab-installed"):
+                        yield ScrollableContainer(id="installed-list")
+                yield Label("No model selected — click Select on a row.", id="selected-label")
+                with Horizontal(id="pull-row"):
+                    yield Switch(value=True, id="pull-switch")
+                    yield Label("Pull model now via Ollama")
+                yield Button("Advanced ▼", id="btn-advanced")
+                with Vertical(id="advanced-pane"):
+                    yield Label("Custom run command (overrides auto-generated):",
+                                classes="field-label")
+                    yield Input(
+                        placeholder='ollama run mymodel "$NEXUS_PROMPT"',
+                        id="custom-cmd",
                     )
-                else:
-                    yield Label(
-                        "⚠  AI Assisted Setup requires a Claude API key.\n"
-                        "Configure one in the MCP screen (press m) before continuing.",
-                        id="ai-warning",
-                    )
-                yield Label("Available VRAM (e.g. 8 GB, 16 GB, none):", classes="field-label")
-                yield Input(placeholder="8 GB", id="input-vram")
-                yield Label("Purpose (e.g. text generation, image generation, speech recognition):",
-                            classes="field-label")
-                yield Input(placeholder="text generation", id="input-purpose")
-                yield Label("Model (e.g. llama3.2:7b, stable-diffusion-xl, whisper-large):",
-                            classes="field-label")
-                yield Input(placeholder="llama3.2:7b", id="input-model")
-                yield Label(
-                    "Claude will detect your hardware automatically and generate a setup script.",
-                    classes="hint",
-                )
 
-            # ── Step 2: AI working ───────────────────────────────────────
-            with Vertical(id="step-ai"):
-                yield Label("Detecting hardware and consulting Claude…", classes="field-label")
-                yield Log(id="ai-log", auto_scroll=True)
+            # Step 3 — Pulling
+            with Vertical(id="step-pulling"):
+                yield Label("Pulling model — please wait…", classes="field-label")
+                yield Log(id="pull-log", auto_scroll=True)
 
-            # ── Step 3: Review ───────────────────────────────────────────
-            with Vertical(id="step-review"):
-                yield Label("Generated setup script (you may edit before running):",
-                            classes="field-label")
-                yield Label("", id="parse-warning", classes="parse-warn")
-                yield TextArea("", id="review-area")
-
-            # ── Step 4: Install ──────────────────────────────────────────
-            with Vertical(id="step-install"):
-                yield Label("Running setup script…", classes="field-label")
-                yield Log(id="install-log", auto_scroll=True)
-
-            # ── Step 5: Done ─────────────────────────────────────────────
+            # Step 4 — Done
             with Vertical(id="step-done"):
-                yield Label("", id="done-label")
+                yield Label("✓  Setup complete!", id="done-label")
+                yield Label("", id="done-details")
 
             with Horizontal(id="btn-row"):
-                yield Button("← Back",   id="btn-back")
-                yield Button("Initiate", id="btn-initiate", variant="primary")
-                yield Button("Run Setup", id="btn-run-setup", variant="success")
-                yield Button("Finish",    id="btn-finish",    variant="success")
+                yield Button("← Back",  id="btn-back")
+                yield Button("Next →",  id="btn-next",   variant="primary")
+                yield Button("Finish",  id="btn-finish", variant="success")
 
         yield Footer()
 
     def on_mount(self) -> None:
-        self._show("step-config")
+        try:
+            self.query_one("#advanced-pane").display = False
+        except Exception:
+            pass
+        self._show("step-hw")
+        self.run_worker(self._detect_hardware())
 
-    # ── Step display ─────────────────────────────────────────────────────────
+    # ── Step management ──────────────────────────────────────────────────────
 
     def _show(self, step: str) -> None:
-        log.debug("Setup step: %s -> %s", self._step, step)
+        log.debug("Setup step: %s → %s", self._step, step)
         self._step = step
         for sid in _ALL_STEPS:
             try:
                 self.query_one(f"#{sid}").display = (sid == step)
             except Exception:
                 pass
-        self.query_one("#step-label", Label).update(_STEP_LABELS.get(step, ""))
+        try:
+            self.query_one("#step-label", Label).update(_STEP_LABELS.get(step, ""))
+        except Exception:
+            pass
+        try:
+            self.query_one("#btn-back",   Button).display = step == "step-model"
+            self.query_one("#btn-next",   Button).display = step in ("step-hw", "step-model")
+            self.query_one("#btn-finish", Button).display = step == "step-done"
+        except Exception:
+            pass
 
-        # Button visibility
-        self.query_one("#btn-back",     Button).display = step in ("step-review",)
-        self.query_one("#btn-initiate", Button).display = step == "step-config"
-        self.query_one("#btn-run-setup",Button).display = step == "step-review"
-        self.query_one("#btn-finish",   Button).display = step == "step-done"
+    # ── Hardware detection ───────────────────────────────────────────────────
 
-    # ── Button handler ────────────────────────────────────────────────────────
+    async def _detect_hardware(self) -> None:
+        try:
+            hw_status = self.query_one("#hw-status", Label)
+        except Exception:
+            return
+        try:
+            hw = await asyncio.get_event_loop().run_in_executor(None, detect_hardware)
+            self._hw = hw
+            save_hardware_json(self.project.slug, hw)
+        except Exception:
+            log.exception("Hardware detection failed")
+            hw = {}
+            self._hw = {}
+
+        try:
+            hw_table = self.query_one("#hw-table", Vertical)
+            await hw_table.remove_children()
+            if hw:
+                for key, val in [
+                    ("OS",   hw.get("os",   "—")),
+                    ("CPU",  hw.get("cpu",  "—")),
+                    ("RAM",  hw.get("ram",  "—")),
+                    ("GPU",  hw.get("gpu",  "—")),
+                    ("Disk", hw.get("disk", "—")),
+                ]:
+                    await hw_table.mount(
+                        Horizontal(
+                            Label(f"{key}:", classes="hw-key"),
+                            Label(val,        classes="hw-val"),
+                            classes="hw-row",
+                        )
+                    )
+                hw_status.update("✓ Hardware detected")
+            else:
+                hw_status.update("⚠  Hardware detection failed — you can still continue")
+        except Exception:
+            log.exception("Failed to build hw table")
+
+        try:
+            warn = self.query_one("#ollama-warn", Label)
+            if not shutil.which("ollama"):
+                warn.update(
+                    "⚠  'ollama' not on PATH — you can still pick a model "
+                    "and pull later from the project screen."
+                )
+        except Exception:
+            pass
+
+    # ── Model picker ─────────────────────────────────────────────────────────
+
+    async def _enter_model_step(self) -> None:
+        snapshot = frozenset(self._installed)
+        query    = ""
+        try:
+            query = self.query_one("#model-search", Input).value.strip()
+        except Exception:
+            pass
+        await self._rebuild_catalog(model_catalog.search(query), snapshot)
+        self.run_worker(self._fetch_installed())
+
+    async def _rebuild_catalog(self, models: list[dict], installed: frozenset) -> None:
+        try:
+            container = self.query_one("#catalog-list", ScrollableContainer)
+        except Exception:
+            return
+        await container.remove_children()
+        if not models:
+            await container.mount(Label("No models match.", classes="tab-empty"))
+            return
+        hw = self._hw
+        models_sorted = sorted(
+            models,
+            key=lambda m: _FIT_ORDER.get(model_catalog.fit_rating(m, hw), 4),
+        )
+        for m in models_sorted:
+            await container.mount(
+                SetupModelRow(m, self._hw,
+                              classes="row-selected" if m["id"] == self._selected_model else "")
+            )
+
+    async def _rebuild_installed(self) -> None:
+        try:
+            container = self.query_one("#installed-list", ScrollableContainer)
+        except Exception:
+            return
+        await container.remove_children()
+        if not self._installed:
+            await container.mount(
+                Label("No models found — is Ollama running?", classes="tab-empty")
+            )
+            return
+        for mid in sorted(self._installed):
+            entry = model_catalog.get_by_id(mid) or {
+                "id": mid, "display": mid, "size": "",
+                "tags": [], "desc": "(not in catalog)", "vram_min_gb": 0.0,
+            }
+            await container.mount(
+                SetupModelRow(entry, self._hw,
+                              classes="row-selected" if mid == self._selected_model else "")
+            )
+
+    async def _fetch_installed(self) -> None:
+        from nexus.core.config_manager import load_global_config
+        endpoint = load_global_config().get("ai", {}).get(
+            "local_endpoint", "http://localhost:11434"
+        ).rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{endpoint}/v1/models")
+            if resp.status_code == 200:
+                self._installed = {item["id"] for item in resp.json().get("data", [])}
+            else:
+                self._installed = set()
+        except Exception:
+            self._installed = set()
+        await self._rebuild_installed()
+
+    # ── Model selection ───────────────────────────────────────────────────────
+
+    def _select_model(self, model: dict) -> None:
+        self._selected_model      = model["id"]
+        self._selected_model_data = model
+        try:
+            self.query_one("#selected-label", Label).update(
+                f"Selected: {model['id']}  ({model.get('size', '?')})"
+            )
+        except Exception:
+            pass
+
+    # ── Event handlers ────────────────────────────────────────────────────────
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "model-search" and self._step == "step-model":
+            snapshot = frozenset(self._installed)
+            self.run_worker(
+                self._rebuild_catalog(model_catalog.search(event.value.strip()), snapshot)
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        bid = event.button.id
+        bid = event.button.id or ""
+        # Model selection rows
+        if bid.startswith("sel-"):
+            row = event.button.parent
+            if isinstance(row, SetupModelRow):
+                self._select_model(row._model)
+            return
         try:
             self._handle_button(bid)
         except Exception:
-            log.exception("Error in setup button handler (button=%s)", bid)
+            log.exception("Setup button error: %s", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
 
-    def _handle_button(self, bid: str | None) -> None:
+    def _handle_button(self, bid: str) -> None:
         if bid == "btn-back":
-            if self._step == "step-review":
-                self._show("step-config")
+            if self._step == "step-model":
+                self._show("step-hw")
 
-        elif bid == "btn-initiate":
-            if not self._has_api_key:
-                self.app.notify(
-                    "No Claude API key configured. Add one in the MCP screen (press m → API key).",
-                    severity="error",
+        elif bid == "btn-next":
+            if self._step == "step-hw":
+                self._show("step-model")
+                self.run_worker(self._enter_model_step())
+
+            elif self._step == "step-model":
+                if not self._selected_model:
+                    self.app.notify("Please select a model first.", severity="warning")
+                    return
+                # Build run command
+                custom = ""
+                try:
+                    custom = self.query_one("#custom-cmd", Input).value.strip()
+                except Exception:
+                    pass
+                self._run_command = (
+                    custom or f'ollama run {self._selected_model} "$NEXUS_PROMPT"'
                 )
-                return
-            vram    = self.query_one("#input-vram",    Input).value.strip()
-            purpose = self.query_one("#input-purpose", Input).value.strip()
-            model   = self.query_one("#input-model",   Input).value.strip()
-            if not purpose or not model:
-                self.app.notify("Please fill in Purpose and Model.", severity="error")
-                return
-            self._vram    = vram or "unknown"
-            self._purpose = purpose
-            self._model   = model
-            log.info("Initiating AI setup: vram=%r purpose=%r model=%r",
-                     self._vram, self._purpose, self._model)
-            self._show("step-ai")
-            self.run_worker(self._run_ai_setup())
+                self._output_type = "text"
 
-        elif bid == "btn-run-setup":
-            script = self.query_one("#review-area", TextArea).text.strip()
-            if not script:
-                self.app.notify("Setup script is empty.", severity="error")
-                return
-            self._script = script
-            self._show("step-install")
-            self.run_worker(self._run_install())
+                pull_now = True
+                try:
+                    pull_now = self.query_one("#pull-switch", Switch).value
+                except Exception:
+                    pass
+
+                if pull_now:
+                    if not shutil.which("ollama"):
+                        self.app.notify(
+                            "Ollama not on PATH — skipping pull. "
+                            "Pull later from the project screen.",
+                            severity="warning",
+                        )
+                        self._save_config()
+                        self._show("step-done")
+                        self._update_done_label()
+                    else:
+                        self._show("step-pulling")
+                        self.run_worker(self._pull_model())
+                else:
+                    self._save_config()
+                    self._show("step-done")
+                    self._update_done_label()
+
+        elif bid == "btn-advanced":
+            self._advanced_visible = not self._advanced_visible
+            try:
+                self.query_one("#advanced-pane").display = self._advanced_visible
+                self.query_one("#btn-advanced", Button).label = (
+                    "Advanced ▲" if self._advanced_visible else "Advanced ▼"
+                )
+            except Exception:
+                pass
 
         elif bid == "btn-finish":
             self.dismiss()
 
-    # ── AI setup worker ───────────────────────────────────────────────────────
+    # ── Pull worker ───────────────────────────────────────────────────────────
 
-    async def _run_ai_setup(self) -> None:
-        from nexus.core.config_manager import load_global_config, merged_mcp_servers
-        from nexus.ai.client import AIClient
-        from nexus.ai.mcp_client import MCPClient
-        from modules.localai.hw_detect import detect_hardware, format_hardware
-
-        ui_log = self.query_one("#ai-log", Log)
-
-        # 1. Detect hardware
-        ui_log.write_line("Detecting hardware…")
+    async def _pull_model(self) -> None:
         try:
-            hw = await asyncio.get_event_loop().run_in_executor(None, detect_hardware)
-            for line in format_hardware(hw).splitlines():
-                ui_log.write_line(f"  {line}")
+            pull_log = self.query_one("#pull-log", Log)
         except Exception:
-            log.exception("Hardware detection failed")
-            ui_log.write_line("  (hardware detection failed — Claude will proceed without it)")
-            hw = {}
-
-        # 2. Build prompt
-        from modules.localai.hw_detect import format_hardware as _fmt
-        hw_text = _fmt(hw) if hw else "Hardware detection unavailable."
-        user_msg = _USER_PROMPT_TEMPLATE.format(
-            vram=self._vram, purpose=self._purpose,
-            model=self._model, hardware=hw_text,
-        )
-
-        # 3. Connect MCP (optional — for web fetch tools)
-        cfg     = load_global_config()
-        api_key = cfg.get("ai", {}).get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-        servers = merged_mcp_servers()
-        mcp: MCPClient | None = None
-        if servers:
-            ui_log.write_line(f"\nConnecting to {len(servers)} MCP server(s)…")
-            mcp = MCPClient()
-            try:
-                await mcp.connect_all(servers)
-                tools = await mcp.get_tools()
-                ui_log.write_line(f"  {len(tools)} tools available.")
-            except Exception:
-                log.exception("MCP connect failed — proceeding without web tools")
-                ui_log.write_line("  (MCP connect failed — proceeding without web tools)")
-                mcp = None
-
-        # 4. Call Claude
-        ui_log.write_line("\nAsking Claude to generate the setup script…")
-        ui_log.write_line("(This may take a minute — Claude may search the web for installation details.)")
-        raw = ""
-        try:
-            ai = AIClient(api_key=api_key, mcp=mcp)
-            raw = await ai.chat(
-                [{"role": "user", "content": user_msg}],
-                system_prompt=_SYSTEM_PROMPT,
-            )
-            log.info("Claude response received (%d chars)", len(raw))
-        except Exception:
-            log.exception("Claude API call failed")
-            ui_log.write_line("\n✗ Claude API call failed — see log for details.")
-            self.app.notify("Claude API call failed.", severity="error")
-            self._show("step-config")
             return
-        finally:
-            if mcp:
-                try:
-                    await mcp.disconnect_all()
-                except Exception:
-                    log.warning("MCP disconnect error", exc_info=True)
-
-        # 5. Parse response
-        script, run_command, output_type = _parse_response(raw)
-        self._run_command = run_command
-        self._output_type = output_type
-
-        parse_ok = bool(script and run_command)
-        if not parse_ok:
-            log.warning("Could not parse Claude response — showing raw output")
-            script = raw  # show raw so user can still copy-paste
-
-        self._show("step-review")
-        self.query_one("#review-area", TextArea).load_text(script)
-        if not parse_ok:
-            self.query_one("#parse-warning", Label).update(
-                "⚠  Could not parse structured response — raw Claude output shown. "
-                "Copy the script manually if needed."
-            )
-        else:
-            self.query_one("#parse-warning", Label).update("")
-
-    # ── Install worker ────────────────────────────────────────────────────────
-
-    async def _run_install(self) -> None:
-        ui_log  = self.query_one("#install-log", Log)
-        project_dir = _PROJECTS_DIR / self.project.slug
-
-        # Write script to disk
-        script_path = project_dir / "setup.sh"
         try:
-            script_path.write_text(self._script)
-            script_path.chmod(0o755)
-            log.info("Setup script written: %s", script_path)
+            pull_log.write_line(f"$ ollama pull {self._selected_model}")
         except Exception:
-            log.exception("Failed to write setup.sh")
-            ui_log.write_line("✗ Could not write setup.sh — see log.")
-            self.app.notify("Failed to write setup script.", severity="error")
             return
 
-        ui_log.write_line(f"Running {script_path}…\n")
-
-        # Stream subprocess output
+        proc = None
+        ok   = False
         try:
             proc = await asyncio.create_subprocess_exec(
-                "bash", str(script_path),
+                "ollama", "pull", self._selected_model,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
-                cwd=str(project_dir),
             )
             if proc.stdout is None:
-                log.error("subprocess stdout is None — cannot stream output")
+                try:
+                    pull_log.write_line("✗ ollama pull: stdout unavailable")
+                except Exception:
+                    pass
                 return
-            async for raw_line in proc.stdout:
-                ui_log.write_line(raw_line.decode(errors="replace").rstrip())
+            async for raw in proc.stdout:
+                try:
+                    pull_log.write_line(raw.decode(errors="replace").rstrip())
+                except Exception:
+                    break
             await proc.wait()
             ok = proc.returncode == 0
-            log.info("Setup script exited with code %d", proc.returncode)
+        except FileNotFoundError:
+            try:
+                pull_log.write_line("✗ 'ollama' not found on PATH.")
+            except Exception:
+                pass
         except Exception:
-            log.exception("Setup script execution failed")
-            ui_log.write_line("\n✗ Unexpected error running setup.sh — see log.")
-            self.app.notify("Setup script failed unexpectedly.", severity="error")
-            return
+            log.exception("Pull failed: %s", self._selected_model)
+            try:
+                pull_log.write_line("✗ Unexpected error — see log.")
+            except Exception:
+                pass
+        finally:
+            if proc is not None and proc.returncode is None:
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
 
-        if ok:
-            ui_log.write_line("\n✓ Setup script completed successfully.")
-            self._save_config()
-            self._show("step-done")
-            self.query_one("#done-label", Label).update(
-                f"✓  {self.project.name} is ready!\n"
-                f"   Model: {self._model}   Output: {self._output_type}"
-            )
-        else:
-            ui_log.write_line(f"\n✗ Setup script exited with code {proc.returncode}.")
-            self.app.notify(
-                "Setup script failed. Review the log and try editing the script.",
-                severity="error",
-            )
+        self._save_config()
+        try:
+            if ok:
+                pull_log.write_line(f"\n✓ {self._selected_model} pulled.")
+            else:
+                pull_log.write_line(
+                    "\n⚠  Pull failed or skipped. Pull later from the project screen."
+                )
+        except Exception:
+            pass
+        self._show("step-done")
+        self._update_done_label()
 
     # ── Config save ───────────────────────────────────────────────────────────
 
@@ -460,12 +532,14 @@ class LocalAISetupScreen(Screen):
         cfg_path = _PROJECTS_DIR / self.project.slug / "config.yaml"
         log.info("Saving LocalAI config for %s", self.project.slug)
         try:
-            with cfg_path.open() as f:
-                cfg = yaml.safe_load(f) or {}
+            try:
+                with cfg_path.open() as f:
+                    cfg = yaml.safe_load(f) or {}
+            except FileNotFoundError:
+                cfg = {}
             cfg["localai"] = {
-                "vram":        self._vram,
-                "purpose":     self._purpose,
-                "model":       self._model,
+                "model":       self._selected_model,
+                "purpose":     "",
                 "output_type": self._output_type,
                 "run_command": self._run_command,
                 "output_dir":  "outputs/",
@@ -476,5 +550,15 @@ class LocalAISetupScreen(Screen):
                 yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
             log.debug("LocalAI config saved")
         except Exception:
-            log.exception("Failed to save LocalAI config for %s", self.project.slug)
+            log.exception("Failed to save LocalAI config")
             self.app.notify("Failed to save config — see log.", severity="error")
+
+    def _update_done_label(self) -> None:
+        try:
+            self.query_one("#done-details", Label).update(
+                f"Model:   {self._selected_model}\n"
+                f"Command: {self._run_command}\n\n"
+                "Use the Docker button on the project screen to start Ollama if needed."
+            )
+        except Exception:
+            pass

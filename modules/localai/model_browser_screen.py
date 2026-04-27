@@ -10,36 +10,59 @@ from textual.containers import Horizontal, ScrollableContainer
 from nexus.core.logger import get
 from modules.localai import model_catalog
 
+_FIT_LABELS: dict[str, tuple[str, str]] = {
+    "recommended": ("★ GPU fit",   "#00FF88"),
+    "fits":        ("~ GPU tight", "#FFFF44"),
+    "cpu-only":    ("CPU only",    "#00B4FF"),
+    "too-large":   ("✗ Too large", "#FF4444"),
+}
+
+_FIT_ORDER: dict[str, int] = {"recommended": 0, "cpu-only": 1, "fits": 2, "too-large": 3}
+
 log = get("localai.model_browser")
 
 
+import re as _re
+
 def _san(model_id: str) -> str:
-    return model_id.replace(":", "-").replace(".", "-")
+    return _re.sub(r'[^a-zA-Z0-9_-]', '-', model_id)
 
 
 class ModelRow(Horizontal):
     DEFAULT_CSS = """
     ModelRow { height: 3; padding: 0 1; border-bottom: solid #241540; }
     ModelRow:hover { background: #2D1B4E; }
-    ModelRow .mr-id   { width: 22; color: #E0E0FF; content-align: left middle; }
+    ModelRow .mr-id   { width: 18; color: #E0E0FF; content-align: left middle; }
     ModelRow .mr-size { width: 6;  color: #8080AA; content-align: left middle; }
+    ModelRow .mr-fit  { width: 12; content-align: left middle; }
+    ModelRow .mr-fit-recommended { color: #00FF88; }
+    ModelRow .mr-fit-fits        { color: #FFFF44; }
+    ModelRow .mr-fit-cpu-only    { color: #00B4FF; }
+    ModelRow .mr-fit-too-large   { color: #FF4444; }
+    ModelRow .mr-fit-none        { color: #555555; }
     ModelRow .mr-desc { width: 1fr; color: #555588; content-align: left middle; }
     ModelRow .mr-chk  { width: 3;  color: #00FF88; content-align: left middle; }
     ModelRow Button   { width: 8; height: 3; min-width: 6; margin-left: 1; }
     """
 
     def __init__(self, model: dict, installed: bool = False,
-                 show_pull: bool = True, **kwargs) -> None:
+                 show_pull: bool = True, hw: dict | None = None, **kwargs) -> None:
         super().__init__(id=f"row-{_san(model['id'])}", **kwargs)
         self._model     = model
         self._installed = installed
         self._show_pull = show_pull
+        self._hw        = hw or {}
 
     def compose(self) -> ComposeResult:
         m    = self._model
         safe = _san(m["id"])
+        fit  = model_catalog.fit_rating(m, self._hw) if self._hw else None
+        fit_text = _FIT_LABELS[fit][0] if fit in _FIT_LABELS else ""
+        fit_cls  = f"mr-fit mr-fit-{fit or 'none'}"
+
         yield Label(m["id"],                                      classes="mr-id")
         yield Label(m.get("size", ""),                            classes="mr-size")
+        yield Label(fit_text,                                     classes=fit_cls)
         yield Label(m.get("desc", ""),                            classes="mr-desc")
         yield Label("✓" if self._installed else " ",
                     id=f"chk-{safe}",                             classes="mr-chk")
@@ -65,10 +88,12 @@ class ModelBrowserScreen(Screen):
     #pull-log { height: 8; background: #0A0518; border-top: solid #3A2260; }
     """
 
-    def __init__(self, project_slug: str, local_endpoint: str) -> None:
+    def __init__(self, project_slug: str, local_endpoint: str,
+                 hw: dict | None = None) -> None:
         super().__init__()
         self._slug      = project_slug
         self._endpoint  = local_endpoint.rstrip("/")
+        self._hw        = hw or {}
         self._installed: set[str] = set()
 
     def compose(self) -> ComposeResult:
@@ -102,9 +127,14 @@ class ModelBrowserScreen(Screen):
         if not models:
             await container.mount(Label("No models match.", classes="mb-empty"))
             return
-        for m in models:
+        hw = self._hw
+        models_sorted = sorted(
+            models,
+            key=lambda m: _FIT_ORDER.get(model_catalog.fit_rating(m, hw), 4),
+        )
+        for m in models_sorted:
             await container.mount(
-                ModelRow(m, installed=m["id"] in installed, show_pull=True)
+                ModelRow(m, installed=m["id"] in installed, show_pull=True, hw=self._hw)
             )
 
     async def _rebuild_installed(self) -> None:
@@ -119,7 +149,7 @@ class ModelBrowserScreen(Screen):
             entry = model_catalog.get_by_id(mid) or {
                 "id": mid, "display": mid, "size": "", "tags": [], "desc": "(not in catalog)",
             }
-            await container.mount(ModelRow(entry, installed=True, show_pull=False))
+            await container.mount(ModelRow(entry, installed=True, show_pull=False, hw=self._hw))
 
     # ── Fetch installed ───────────────────────────────────────────────────────
 

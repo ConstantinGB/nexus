@@ -9,6 +9,7 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
+from nexus.ui.text_editor_screen import TextEditorScreen
 
 log = get("journal.project_screen")
 
@@ -39,12 +40,23 @@ class JournalProjectScreen(BaseProjectScreen):
     MODULE_LABEL = "JOURNAL"
     SETUP_FIELDS = [
         {"id": "journal_dir", "label": "Journal directory",
-         "placeholder": "~/journal"},
+         "placeholder": "~/journal", "type": "dir"},
         {"id": "author", "label": "Author name (for LaTeX)",
          "placeholder": "Jane Doe"},
+        {"id": "format",      "label": "Entry format (latex / markdown)",
+         "placeholder": "latex"},
     ]
 
     DEFAULT_CSS = _screen_css("JournalProjectScreen")
+
+    # ── Before-save hook ──────────────────────────────────────────────────────
+
+    def _on_before_save(self, data: dict) -> dict:
+        journal_dir = Path(data.get("journal_dir", "")).expanduser()
+        if journal_dir and not journal_dir.exists():
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            self.app.notify(f"Created: {journal_dir}", severity="information")
+        return {}
 
     # ── Action buttons ────────────────────────────────────────────────────────
 
@@ -128,19 +140,37 @@ class JournalProjectScreen(BaseProjectScreen):
             self.run_worker(self._run_cmd(open_path(journal_dir)))
 
     def _create_entry(self, journal_dir: Path, author: str) -> None:
-        today        = date.today()
-        year_dir     = journal_dir / "entries" / str(today.year)
-        entry_path   = year_dir / f"{today}.tex"
+        today      = date.today()
+        year_dir   = journal_dir / "entries" / str(today.year)
+        entry_path = year_dir / f"{today}.tex"
         try:
             year_dir.mkdir(parents=True, exist_ok=True)
             if not entry_path.exists():
-                content = _LATEX_TEMPLATE.format(entry_date=today, author=author)
-                entry_path.write_text(content)
-            self.app.notify(f"Entry: {entry_path.relative_to(journal_dir)}")
-            self.run_worker(self._populate_content())
+                entry_path.write_text(_LATEX_TEMPLATE.format(entry_date=today, author=author))
+            content = entry_path.read_text(errors="replace")
         except Exception:
             log.exception("Failed to create journal entry: %s", entry_path)
             self.app.notify("Could not create entry — see log.", severity="error")
+            return
+
+        fmt  = self._mod.get("format", "latex")
+        lang = "markdown" if fmt == "markdown" else "text"
+        rel  = entry_path.relative_to(journal_dir)
+        self.app.push_screen(
+            TextEditorScreen(content, language=lang, title=str(rel)),
+            lambda saved, p=entry_path: self._save_entry(p, saved),
+        )
+
+    def _save_entry(self, entry_path: Path, content: str | None) -> None:
+        if content is None:
+            return
+        try:
+            entry_path.write_text(content)
+            self.app.notify(f"Saved: {entry_path.name}", severity="information")
+        except Exception:
+            log.exception("Failed to save journal entry: %s", entry_path)
+            self.app.notify("Could not save entry — see log.", severity="error")
+        self.run_worker(self._populate_content())
 
     def _compile_latest(self, journal_dir: Path) -> None:
         entries_dir = journal_dir / "entries"

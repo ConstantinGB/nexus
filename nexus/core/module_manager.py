@@ -33,6 +33,26 @@ _REGISTRY: list[ModuleInfo] = [
 
 _REGISTRY_BY_ID: dict[str, ModuleInfo] = {m.id: m for m in _REGISTRY}
 
+MODULE_PREFIX: dict[str, str] = {
+    "research": "res",
+    "journal":  "jnl",
+    "codex":    "cod",
+    "git":      "git",
+    "localai":  "loc",
+    "web":      "web",
+    "game":     "gam",
+    "org":      "org",
+    "home":     "hom",
+    "streaming":"str",
+    "vtube":    "vtu",
+    "emulator": "emu",
+    "vault":    "vlt",
+    "server":   "srv",
+    "custom":   "cst",
+    "backup":   "bak",
+    "sdforge":  "sdf",
+}
+
 
 def list_modules() -> list[ModuleInfo]:
     return list(_REGISTRY)

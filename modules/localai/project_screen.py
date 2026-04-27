@@ -58,6 +58,17 @@ class LocalAIProjectScreen(Screen):
         height: auto;
         margin: 2 4;
     }
+
+    #hw-bar {
+        height: 3;
+        padding: 0 1;
+        background: #180828;
+        border-bottom: solid #3A2260;
+    }
+    #hw-bar .hw-label { color: #8080AA; width: 4; content-align: left middle; }
+    #hw-bar .hw-val   { color: #E0E0FF; width: 1fr; content-align: left middle; }
+    #hw-bar .hw-none  { color: #555588; width: 1fr; content-align: left middle; }
+    #btn-redetect     { width: 14; }
     """
 
     def __init__(self, project: ProjectInfo):
@@ -90,15 +101,26 @@ class LocalAIProjectScreen(Screen):
     # ── Compose ───────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
+        from modules.localai.hw_detect import load_hardware_json, hw_summary_str
         self._load_cfg()
         model   = self._localai_cfg.get("model",   "unknown model")
         purpose = self._localai_cfg.get("purpose",  "")
         meta    = f"{model}" + (f" · {purpose}" if purpose else "")
+        hw      = load_hardware_json(self.project.slug)
 
         yield Header()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta,              id="project-meta")
+
+        # Hardware info bar — always shown
+        with Horizontal(id="hw-bar"):
+            yield Label("HW:", classes="hw-label")
+            if hw:
+                yield Label(hw_summary_str(hw), id="hw-summary", classes="hw-val")
+            else:
+                yield Label("Not detected", id="hw-summary", classes="hw-none")
+            yield Button("Re-detect", id="btn-redetect")
 
         if not self._run_command:
             with Vertical(id="main-area"):
@@ -159,14 +181,19 @@ class LocalAIProjectScreen(Screen):
         elif bid == "btn-test-ep":
             self.run_worker(self._test_endpoint())
 
+        elif bid == "btn-redetect":
+            self.run_worker(self._redetect_hardware())
+
         elif bid == "btn-browse-models":
             from nexus.core.config_manager import load_global_config
             from modules.localai.model_browser_screen import ModelBrowserScreen
+            from modules.localai.hw_detect import load_hardware_json
             endpoint = load_global_config().get("ai", {}).get(
                 "local_endpoint", "http://localhost:11434"
             )
+            hw = load_hardware_json(self.project.slug)
             self.app.push_screen(
-                ModelBrowserScreen(self.project.slug, endpoint),
+                ModelBrowserScreen(self.project.slug, endpoint, hw=hw),
                 self._on_model_selected,
             )
 
@@ -230,6 +257,28 @@ class LocalAIProjectScreen(Screen):
         except Exception as exc:
             log.exception("Test endpoint failed")
             ui_log.write_line(f"✗ {exc}")
+
+    async def _redetect_hardware(self) -> None:
+        from modules.localai.hw_detect import (
+            detect_hardware, save_hardware_json, load_hardware_json, hw_summary_str,
+        )
+        self.app.notify("Detecting hardware…")
+        try:
+            hw = await asyncio.get_event_loop().run_in_executor(None, detect_hardware)
+            save_hardware_json(self.project.slug, hw)
+            hw_enriched = load_hardware_json(self.project.slug)
+            summary = hw_summary_str(hw_enriched)
+            try:
+                lbl = self.query_one("#hw-summary", Label)
+                lbl.update(summary)
+                lbl.remove_class("hw-none")
+                lbl.add_class("hw-val")
+            except Exception:
+                pass
+            self.app.notify("Hardware re-detected.", severity="information")
+        except Exception:
+            log.exception("Re-detect hardware failed")
+            self.app.notify("Hardware detection failed — see log.", severity="error")
 
     def _on_model_selected(self, model_id: str | None) -> None:
         if not model_id:

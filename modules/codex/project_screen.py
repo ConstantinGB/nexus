@@ -10,6 +10,7 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.text_editor_screen import TextEditorScreen
 
 log = get("codex.project_screen")
 
@@ -59,16 +60,30 @@ class CodexProjectScreen(BaseProjectScreen):
     MODULE_LABEL = "CODEX"
     SETUP_FIELDS = [
         {"id": "vault_dir", "label": "Notes / vault directory",
-         "placeholder": "~/codex"},
+         "placeholder": "~/codex", "type": "dir"},
+        {"id": "format",    "label": "Note format (markdown / latex)",
+         "placeholder": "markdown"},
     ]
 
-    DEFAULT_CSS = _screen_css("CodexProjectScreen")
-
-    # ── Action buttons ────────────────────────────────────────────────────────
+    DEFAULT_CSS = _screen_css("CodexProjectScreen") + """
+    .note-item { width: 1fr; height: 2; border: none; background: transparent;
+                 color: #8080AA; text-align: left; margin: 0; }
+    .note-item:hover { background: #2D1B4E; color: #E0E0FF; }
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._tag_filter: str = ""
+        self._notes: list[Path] = []
+
+    # ── Before-save hook ──────────────────────────────────────────────────────
+
+    def _on_before_save(self, data: dict) -> dict:
+        vault_dir = Path(data.get("vault_dir", "")).expanduser()
+        if vault_dir and not vault_dir.exists():
+            vault_dir.mkdir(parents=True, exist_ok=True)
+            self.app.notify(f"Created: {vault_dir}", severity="information")
+        return {}
 
     def _compose_action_buttons(self) -> list:
         return [
@@ -111,10 +126,11 @@ class CodexProjectScreen(BaseProjectScreen):
                     classes="info-row",
                 )
             )
-            widgets.append(Label("Recent entries:", classes="section-label"))
-            for note in notes[:20]:
+            self._notes = notes[:20]
+            widgets.append(Label("Recent entries (click to edit):", classes="section-label"))
+            for i, note in enumerate(self._notes):
                 heading = await asyncio.to_thread(_first_heading, note)
-                widgets.append(Label(f"  {heading}", classes="hint"))
+                widgets.append(Button(f"  {heading}", id=f"note-{i}", classes="note-item"))
         else:
             widgets.append(Label(f"Vault not found: {vault_dir}", classes="status-err"))
             widgets.append(Label("Create the directory or check the path in setup.", classes="hint"))
@@ -149,6 +165,13 @@ class CodexProjectScreen(BaseProjectScreen):
             self.run_worker(self._run_cmd(open_path(vault_dir)))
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
+        elif bid and bid.startswith("note-"):
+            try:
+                idx = int(bid.split("-", 1)[1])
+            except ValueError:
+                return
+            if 0 <= idx < len(self._notes):
+                self._open_note(self._notes[idx])
 
     def _do_search(self, q: str | None, vault_dir: Path) -> None:
         if not q:
@@ -163,6 +186,31 @@ class CodexProjectScreen(BaseProjectScreen):
         self._tag_filter = (tag or "").strip()
         self.run_worker(self._populate_content())
 
+    def _open_note(self, note_path: Path) -> None:
+        try:
+            content = note_path.read_text(errors="replace")
+        except Exception:
+            log.exception("Failed to read note: %s", note_path)
+            self.app.notify("Could not read note — see log.", severity="error")
+            return
+        fmt  = self._mod.get("format", "markdown")
+        lang = "markdown" if fmt == "markdown" else "text"
+        self.app.push_screen(
+            TextEditorScreen(content, language=lang, title=note_path.name),
+            lambda saved, p=note_path: self._save_note(p, saved),
+        )
+
+    def _save_note(self, note_path: Path, content: str | None) -> None:
+        if content is None:
+            return
+        try:
+            note_path.write_text(content)
+            self.app.notify(f"Saved: {note_path.name}", severity="information")
+        except Exception:
+            log.exception("Failed to save note: %s", note_path)
+            self.app.notify("Could not save note — see log.", severity="error")
+        self.run_worker(self._populate_content())
+
     def _create_note(self, title: str | None, vault_dir: Path) -> None:
         if not title:
             return
@@ -173,8 +221,8 @@ class CodexProjectScreen(BaseProjectScreen):
             vault_dir.mkdir(parents=True, exist_ok=True)
             if not dest.exists():
                 dest.write_text(_NOTE_TEMPLATE.format(note_id=note_id, title=title))
-            self.app.notify(f"Created: {dest.name}")
-            self.run_worker(self._populate_content())
         except Exception:
             log.exception("Failed to create note: %s", dest)
             self.app.notify("Could not create note — see log.", severity="error")
+            return
+        self._open_note(dest)

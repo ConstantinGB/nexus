@@ -1,10 +1,15 @@
 from __future__ import annotations
+import json
 import platform
+import re
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from nexus.core.logger import get
+
+_PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 
 log = get("localai.hw_detect")
 
@@ -156,3 +161,90 @@ def _detect_disk() -> str:
     except Exception:
         log.exception("Failed to detect disk space")
         return "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# Parsing helpers
+# ---------------------------------------------------------------------------
+
+def parse_vram_gb(gpu_str: str) -> float:
+    """Extract VRAM in GB from nvidia-smi/rocm-smi output. Returns 0.0 if no GPU."""
+    m = re.search(r'(\d+)\s*MiB', gpu_str)
+    if m:
+        return round(int(m.group(1)) / 1024, 1)
+    m = re.search(r'(\d+(?:\.\d+)?)\s*GB', gpu_str, re.IGNORECASE)
+    if m:
+        return float(m.group(1))
+    return 0.0
+
+
+def parse_ram_gb(ram_str: str) -> float:
+    """Extract RAM in GB from a string like '32.0 GB'."""
+    m = re.search(r'(\d+(?:\.\d+)?)\s*GB', ram_str, re.IGNORECASE)
+    return float(m.group(1)) if m else 0.0
+
+
+def parse_gpu_vendor(gpu_str: str) -> str:
+    """Return 'nvidia', 'amd', or 'unknown'."""
+    low = gpu_str.lower()
+    if any(k in low for k in ("nvidia", "geforce", "quadro", "tesla")):
+        return "nvidia"
+    if any(k in low for k in ("amd", "radeon", "rocm")):
+        return "amd"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+def save_hardware_json(slug: str, hw: dict) -> None:
+    """Enrich hw dict with parsed numeric fields and write to projects/<slug>/hardware.json."""
+    data = {
+        "detected_at": datetime.now(timezone.utc).isoformat(),
+        "gpu":         hw.get("gpu", ""),
+        "vram_gb":     parse_vram_gb(hw.get("gpu", "")),
+        "gpu_vendor":  parse_gpu_vendor(hw.get("gpu", "")),
+        "ram":         hw.get("ram", ""),
+        "ram_gb":      parse_ram_gb(hw.get("ram", "")),
+        "cpu":         hw.get("cpu", ""),
+        "os":          hw.get("os", ""),
+        "disk":        hw.get("disk", ""),
+    }
+    out_path = _PROJECTS_DIR / slug / "hardware.json"
+    try:
+        out_path.write_text(json.dumps(data, indent=2))
+        log.info("hardware.json saved: %s", out_path)
+    except Exception:
+        log.exception("Failed to save hardware.json for %s", slug)
+
+
+def load_hardware_json(slug: str) -> dict | None:
+    """Return hardware.json contents for a project, or None if missing/unreadable."""
+    path = _PROJECTS_DIR / slug / "hardware.json"
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return None
+
+
+def hw_summary_str(hw: dict | None) -> str:
+    """One-line human-readable summary for the project screen top bar."""
+    if not hw:
+        return "Not detected"
+    gpu = hw.get("gpu", "")
+    gpu_name = gpu.split(",")[0].strip()
+    gpu_name = (gpu_name
+                .replace("NVIDIA GeForce ", "")
+                .replace("NVIDIA ", "")
+                .replace("AMD Radeon ", ""))
+    if len(gpu_name) > 36:
+        gpu_name = gpu_name[:33] + "…"
+    parts: list[str] = [gpu_name] if gpu_name else []
+    vram = hw.get("vram_gb", 0.0)
+    if vram:
+        parts.append(f"{vram:.1f} GB VRAM")
+    ram = hw.get("ram", "")
+    if ram:
+        parts.append(f"{ram} RAM")
+    return "  ·  ".join(parts) if parts else "Unknown GPU"

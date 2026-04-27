@@ -26,7 +26,7 @@ class VaultProjectScreen(BaseProjectScreen):
     MODULE_LABEL = "VAULT"
     SETUP_FIELDS = [
         {"id": "vault_dir",       "label": "Vault / container directory",
-         "placeholder": "~/vault"},
+         "placeholder": "~/vault", "type": "dir"},
         {"id": "age_key_path",    "label": "age key path (optional)",
          "placeholder": "~/.age/key.txt", "optional": True},
         {"id": "keepassxc_db",    "label": "KeePassXC database path (optional)",

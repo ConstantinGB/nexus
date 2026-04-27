@@ -13,6 +13,14 @@ log = get("core.project_manager")
 _PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 _MODULES_DIR  = Path(__file__).parent.parent.parent / "modules"
 
+_DEFAULT_SUBDIRS: dict[str, list[str]] = {
+    "research": ["notes"],
+    "codex":    ["vault"],
+    "journal":  ["journal"],
+    "org":      ["plans"],
+    "emulator": ["roms"],
+}
+
 
 @dataclass
 class ProjectInfo:
@@ -91,6 +99,9 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
         else:
             log.debug("No template found for module %r, writing default CLAUDE.md", module)
             claude_md.write_text(f"# {name}\n\nA {module} project managed by Nexus.\n")
+
+        for subdir in _DEFAULT_SUBDIRS.get(module, []):
+            (project_dir / subdir).mkdir(exist_ok=True)
 
         log.info("Project created: %s", slug)
     except Exception:

@@ -4,7 +4,7 @@ import configparser
 import shutil
 from pathlib import Path
 
-from textual.widgets import Label, Button, Log
+from textual.widgets import Input, Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -39,12 +39,28 @@ class GameProjectScreen(BaseProjectScreen):
     MODULE_LABEL = "GAME"
     SETUP_FIELDS = [
         {"id": "project_path", "label": "Godot project directory (contains project.godot)",
-         "placeholder": "~/projects/my-game"},
+         "placeholder": "~/projects/my-game", "type": "dir"},
         {"id": "godot_bin", "label": "Godot binary",
          "placeholder": "godot4"},
     ]
 
     DEFAULT_CSS = _screen_css("GameProjectScreen")
+
+    # ── Setup auto-detection ──────────────────────────────────────────────────
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        if not self._is_configured():
+            self.call_after_refresh(self._autofill_setup)
+
+    def _autofill_setup(self) -> None:
+        binary = shutil.which("godot4") or shutil.which("godot")
+        try:
+            inp = self.query_one("#setup-godot_bin", Input)
+            if binary and not inp.value:
+                inp.value = binary
+        except Exception:
+            pass
 
     # ── Before-save hook ──────────────────────────────────────────────────────
 

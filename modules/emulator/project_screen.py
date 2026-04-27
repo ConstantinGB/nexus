@@ -1,9 +1,10 @@
 from __future__ import annotations
+import shutil
 from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
-from textual.widgets import Label, Button, Log, Select
+from textual.widgets import Input, Label, Button, Log, Select
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -70,7 +71,7 @@ class EmulatorProjectScreen(BaseProjectScreen):
     MODULE_LABEL = "EMULATOR"
     SETUP_FIELDS = [
         {"id": "rom_dir",       "label": "ROM directory",
-         "placeholder": "~/Roms"},
+         "placeholder": "~/Roms", "type": "dir"},
         {"id": "retroarch_bin", "label": "RetroArch binary",
          "placeholder": "retroarch"},
     ]
@@ -85,6 +86,24 @@ class EmulatorProjectScreen(BaseProjectScreen):
         super().__init__(*args, **kwargs)
         self._detected_systems: list[str] = []
 
+    # ── Setup auto-detection ──────────────────────────────────────────────────
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        if not self._is_configured():
+            self.call_after_refresh(self._autofill_setup)
+
+    def _autofill_setup(self) -> None:
+        binary = (shutil.which("retroarch")
+                  or shutil.which("retroarch-bin")
+                  or shutil.which("RetroArch"))
+        try:
+            inp = self.query_one("#setup-retroarch_bin", Input)
+            if binary and not inp.value:
+                inp.value = binary
+        except Exception:
+            pass
+
     # ── Before-save hook ──────────────────────────────────────────────────────
 
     def _on_before_save(self, data: dict) -> dict:
@@ -93,6 +112,10 @@ class EmulatorProjectScreen(BaseProjectScreen):
             raise ValueError(
                 f"'{retroarch_bin}' not found on PATH. Install RetroArch or fix the binary path."
             )
+        rom_dir = Path(data.get("rom_dir", "")).expanduser()
+        if rom_dir and not rom_dir.exists():
+            rom_dir.mkdir(parents=True, exist_ok=True)
+            self.app.notify(f"Created: {rom_dir}", severity="information")
         return {}
 
     # ── Action buttons ────────────────────────────────────────────────────────

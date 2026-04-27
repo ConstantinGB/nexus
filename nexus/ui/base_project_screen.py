@@ -13,6 +13,7 @@ from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config, save_project_config
 from nexus.core.platform import open_path
 from nexus.ui.chat_panel import ChatPanel
+from nexus.ui.dir_picker import DirPickerModal
 
 log = get("ui.base_project_screen")
 
@@ -174,6 +175,9 @@ class BaseProjectScreen(Screen):
 
     #output-log { height: 8; background: #0A0518; border: solid #3A2260; }
 
+    .setup-field-row { height: 3; }
+    .setup-field-row Input  { width: 1fr; }
+    .browse-btn { width: 10; margin-left: 1; }
     .field-label   { color: #00FF88; height: 1; margin-top: 1; }
     .section-label { color: #00FF88; height: 1; margin-top: 1; }
     .hint          { color: #555588; height: 1; }
@@ -260,11 +264,21 @@ class BaseProjectScreen(Screen):
             yield Label(f"Configure — {self.project.name}", id="setup-title")
             for field in self.SETUP_FIELDS:
                 yield Label(field["label"], classes="field-label")
-                yield Input(
-                    placeholder=field.get("placeholder", ""),
-                    id=f"setup-{field['id']}",
-                    password=field.get("password", False),
-                )
+                if field.get("type") == "dir":
+                    with Horizontal(classes="setup-field-row"):
+                        yield Input(
+                            placeholder=field.get("placeholder", ""),
+                            id=f"setup-{field['id']}",
+                            password=field.get("password", False),
+                        )
+                        yield Button("Browse…", id=f"btn-browse-{field['id']}",
+                                     classes="browse-btn")
+                else:
+                    yield Input(
+                        placeholder=field.get("placeholder", ""),
+                        id=f"setup-{field['id']}",
+                        password=field.get("password", False),
+                    )
             yield Label("", id="setup-error")
             with Horizontal(id="setup-btns"):
                 yield Button("Save", id="btn-save-setup", variant="primary")
@@ -310,11 +324,30 @@ class BaseProjectScreen(Screen):
                 self._toggle_chat()
             elif bid == "btn-open-folder":
                 self._open_primary_folder()
+            elif bid and bid.startswith("btn-browse-"):
+                field_id = bid[len("btn-browse-"):]
+                try:
+                    inp = self.query_one(f"#setup-{field_id}", Input)
+                    start = inp.value or "~"
+                except NoMatches:
+                    start = "~"
+                self.app.push_screen(
+                    DirPickerModal(start),
+                    lambda p, fid=field_id: self._fill_dir(fid, p),
+                )
             else:
                 self._handle_action(bid)
         except Exception:
             log.exception("Button handler error: %s", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
+
+    def _fill_dir(self, field_id: str, path: str | None) -> None:
+        if not path:
+            return
+        try:
+            self.query_one(f"#setup-{field_id}", Input).value = path
+        except NoMatches:
+            pass
 
     def _handle_save_setup(self) -> None:
         data: dict = {}

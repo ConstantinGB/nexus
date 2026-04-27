@@ -7,8 +7,8 @@ from textual.widget import Widget
 from textual.widgets import Header, Footer, Label, Input, Button
 from textual.containers import Vertical, Horizontal
 
-from nexus.core.module_manager import list_modules, ModuleInfo
-from nexus.core.project_manager import create_project
+from nexus.core.module_manager import list_modules, ModuleInfo, MODULE_PREFIX
+from nexus.core.project_manager import create_project, list_projects
 from nexus.core.logger import get
 
 log = get("ui.add_project_screen")
@@ -143,6 +143,10 @@ class AddProjectScreen(Screen):
         self._selected_module = event.module
         self._go_to_step(2)
 
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id in ("input-name", "input-desc"):
+            self._create()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-back":
             self._go_to_step(1)
@@ -158,8 +162,21 @@ class AddProjectScreen(Screen):
         if not self._selected_module:
             self.app.notify("Please select a module type.", severity="error")
             return
+        import re as _re
+        mod_id = self._selected_module.id
+        prefix = MODULE_PREFIX.get(mod_id, mod_id[:3])
+        prefixed_name = f"{prefix}-{name}"
+        existing_slugs = {p.slug for p in list_projects()}
+        candidate_slug = _re.sub(r"[^a-z0-9-]", "-", prefixed_name.lower().strip())
+        candidate_slug = _re.sub(r"-+", "-", candidate_slug).strip("-")
+        if candidate_slug in existing_slugs:
+            self.app.notify(
+                f"A project named '{name}' already exists for this module.",
+                severity="error",
+            )
+            return
         try:
-            project = create_project(name, self._selected_module.id, desc)
+            project = create_project(prefixed_name, mod_id, desc)
             self.dismiss(project)
         except ValueError as exc:
             self.app.notify(str(exc), severity="error")

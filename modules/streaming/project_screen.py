@@ -1,7 +1,9 @@
 from __future__ import annotations
 from pathlib import Path
 
-from textual.widgets import Label, Button, Log
+import platform as _platform
+import shutil
+from textual.widgets import Input, Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -16,7 +18,7 @@ class StreamingProjectScreen(BaseProjectScreen):
     MODULE_LABEL = "STREAMING"
     SETUP_FIELDS = [
         {"id": "obs_config_dir", "label": "OBS config directory",
-         "placeholder": "~/.config/obs-studio"},
+         "placeholder": "~/.config/obs-studio", "type": "dir"},
         {"id": "platform", "label": "Streaming platform (twitch / youtube / local)",
          "placeholder": "twitch"},
         {"id": "obs_bin", "label": "OBS binary",
@@ -34,6 +36,32 @@ class StreamingProjectScreen(BaseProjectScreen):
                 f"'{obs_bin}' not found on PATH. Install OBS or fix the binary path."
             )
         return {}
+
+    # ── Setup auto-detection ──────────────────────────────────────────────────
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        if not self._is_configured():
+            self.call_after_refresh(self._autofill_setup)
+
+    def _autofill_setup(self) -> None:
+        binary = shutil.which("obs") or shutil.which("obs-studio")
+        try:
+            inp = self.query_one("#setup-obs_bin", Input)
+            if binary and not inp.value:
+                inp.value = binary
+        except Exception:
+            pass
+        if _platform.system() == "Darwin":
+            default_cfg = Path.home() / "Library" / "Application Support" / "obs-studio"
+        else:
+            default_cfg = Path.home() / ".config" / "obs-studio"
+        try:
+            cfg_inp = self.query_one("#setup-obs_config_dir", Input)
+            if default_cfg.exists() and not cfg_inp.value:
+                cfg_inp.value = str(default_cfg)
+        except Exception:
+            pass
 
     # ── Action buttons ────────────────────────────────────────────────────────
 

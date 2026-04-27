@@ -64,10 +64,19 @@ class OrgProjectScreen(BaseProjectScreen):
     MODULE_LABEL = "ORG"
     SETUP_FIELDS = [
         {"id": "output_dir", "label": "Plans / output directory",
-         "placeholder": "~/org"},
+         "placeholder": "~/org", "type": "dir"},
     ]
 
     DEFAULT_CSS = _screen_css("OrgProjectScreen")
+
+    # ── Before-save hook ──────────────────────────────────────────────────────
+
+    def _on_before_save(self, data: dict) -> dict:
+        output_dir = Path(data.get("output_dir", "")).expanduser()
+        if output_dir and not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
+            self.app.notify(f"Created: {output_dir}", severity="information")
+        return {}
 
     # ── Action buttons ────────────────────────────────────────────────────────
 
