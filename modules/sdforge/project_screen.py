@@ -88,12 +88,21 @@ class SDForgeModelBrowserModal(ModalScreen[str | None]):
 
     async def _set_model(self, title: str) -> None:
         from modules.sdforge.api_client import set_model, SDForgeAPIError
-        mb_log = self.query_one("#mb-log", Log)
+        try:
+            mb_log = self.query_one("#mb-log", Log)
+        except Exception:
+            return  # screen dismissed
         mb_log.write_line(f"Setting model: {title}")
-        self.query_one("#btn-set-model", Button).disabled = True
+        try:
+            self.query_one("#btn-set-model", Button).disabled = True
+        except Exception:
+            return
         try:
             await set_model(self._endpoint, title)
-            mb_log.write_line("✓ Model activated.")
+            try:
+                mb_log.write_line("✓ Model activated.")
+            except Exception:
+                pass
             self.app.notify(f"Model set to '{title}'.", severity="information")
 
             from nexus.core.config_manager import load_project_config, save_project_config
@@ -101,13 +110,19 @@ class SDForgeModelBrowserModal(ModalScreen[str | None]):
             cfg.setdefault("sdforge", {})["model"] = title
             save_project_config(self._slug, cfg)
         except SDForgeAPIError as exc:
-            mb_log.write_line(f"✗ {exc}")
-            self.app.notify(f"Failed to set model: {exc}", severity="error")
-            self.query_one("#btn-set-model", Button).disabled = False
+            try:
+                mb_log.write_line(f"✗ {exc}")
+                self.app.notify(f"Failed to set model: {exc}", severity="error")
+                self.query_one("#btn-set-model", Button).disabled = False
+            except Exception:
+                pass
             return
         except Exception:
             log.exception("Failed to set model")
-            self.query_one("#btn-set-model", Button).disabled = False
+            try:
+                self.query_one("#btn-set-model", Button).disabled = False
+            except Exception:
+                pass
             return
         self.dismiss(title)
 
@@ -166,7 +181,7 @@ class SDForgeProjectScreen(Screen):
         self._cfg:  dict       = {}
         self._sdf:  dict       = {}
         self._proc: asyncio.subprocess.Process | None = None
-        self._server_ready     = False
+        self._server_ready     = asyncio.Event()
         self._last_image_path: Path | None = None
 
     # ── Config ────────────────────────────────────────────────────────────────
@@ -200,6 +215,7 @@ class SDForgeProjectScreen(Screen):
             yield Button("Open Web UI",    id="btn-open-webui")
             yield Button("Test Endpoint",  id="btn-test")
             yield Button("Browse Models",  id="btn-models")
+            yield Button("Docker",         id="btn-docker")
 
         with Vertical(id="main-area"):
             yield Label("Prompt:", classes="section-label")
@@ -267,6 +283,8 @@ class SDForgeProjectScreen(Screen):
                 SDForgeModelBrowserModal(self.project.slug, endpoint),
                 self._on_model_set,
             )
+        elif bid == "btn-docker":
+            self._open_docker()
         elif bid == "btn-generate":
             self.run_worker(self._generate())
         elif bid == "btn-open-image":
@@ -278,6 +296,32 @@ class SDForgeProjectScreen(Screen):
                     self.app.notify("Could not open image.", severity="error")
             else:
                 self.app.notify("No image file found.", severity="warning")
+
+    # ── Docker manager ────────────────────────────────────────────────────────
+
+    def _open_docker(self) -> None:
+        import re
+        import shutil as _shutil
+        from nexus.ui.docker_screen import DockerManagerScreen, DockerContainerConfig
+        slug  = self.project.slug
+        image = self._sdf.get("docker_image", "ghcr.io/lllyasviel/stable-diffusion-webui-forge:latest")
+        vram  = self._sdf.get("vram", "none")
+        m     = re.search(r"(\d+(?:\.\d+)?)", vram.lower())
+        gb    = float(m.group(1)) if m else 0.0
+        if gb > 0 and not _shutil.which("nvidia-container-runtime"):
+            self.app.notify(
+                "--gpus all requested but nvidia-container-toolkit may not be installed"
+                " — container start may fail.",
+                severity="warning",
+            )
+        extra = ["--gpus", "all"] if gb > 0 else []
+        cfg   = DockerContainerConfig(
+            name       = f"nexus-sdforge-{slug}",
+            image      = image,
+            ports      = {"7860": "7860"},
+            extra_args = extra,
+        )
+        self.app.push_screen(DockerManagerScreen("SD Forge", cfg))
 
     # ── Server lifecycle ──────────────────────────────────────────────────────
 
@@ -291,13 +335,15 @@ class SDForgeProjectScreen(Screen):
             self.app.notify("SD Forge not installed — run setup again.", severity="error")
             return
 
-        cmd = f"bash webui.sh {launch_args}"
-        ui_log.write_line(f"$ {cmd}")
+        import shlex as _shlex
+        parts = _shlex.split(launch_args) if launch_args.strip() else []
+        display_cmd = "bash webui.sh " + launch_args
+        ui_log.write_line(f"$ {display_cmd}")
         ui_log.write_line(f"  (cwd: {install_dir})")
 
         try:
-            self._proc = await asyncio.create_subprocess_shell(
-                cmd,
+            self._proc = await asyncio.create_subprocess_exec(
+                "bash", "webui.sh", *parts,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(install_dir),
@@ -313,32 +359,40 @@ class SDForgeProjectScreen(Screen):
         self.run_worker(self._stream_server_output())
 
     async def _stream_server_output(self) -> None:
-        if not self._proc or not self._proc.stdout:
+        proc = self._proc
+        if not proc or not proc.stdout:
             return
         ui_log = self.query_one("#output-log", Log)
         ready_signals = ("Running on local URL", "Startup time:", "To create a public link")
-        async for raw in self._proc.stdout:
+        async for raw in proc.stdout:
             line = raw.decode(errors="replace").rstrip()
             ui_log.write_line(line)
-            if not self._server_ready and any(s in line for s in ready_signals):
-                self._server_ready = True
+            if not self._server_ready.is_set() and any(s in line for s in ready_signals):
+                self._server_ready.set()
                 self.call_from_thread(self._on_server_ready)
-        await self._proc.wait()
-        log.info("SD Forge process exited with code %d", self._proc.returncode)
+        await proc.wait()
+        log.info("SD Forge process exited with code %d", proc.returncode)
         self.call_from_thread(self._on_server_stopped)
 
     def _on_server_ready(self) -> None:
-        self._update_status("running")
-        self.query_one("#btn-stop",     Button).disabled = False
-        self.query_one("#btn-generate", Button).disabled = False
-        self.app.notify("SD Forge is ready.", severity="information")
+        self._server_ready.set()
+        try:
+            self._update_status("running")
+            self.query_one("#btn-stop",     Button).disabled = False
+            self.query_one("#btn-generate", Button).disabled = False
+            self.app.notify("SD Forge is ready.", severity="information")
+        except Exception:
+            pass  # Screen may have been dismissed
 
     def _on_server_stopped(self) -> None:
-        self._update_status("stopped")
-        self.query_one("#btn-start",    Button).disabled = False
-        self.query_one("#btn-stop",     Button).disabled = True
-        self.query_one("#btn-generate", Button).disabled = True
-        self._server_ready = False
+        self._server_ready.clear()
+        try:
+            self._update_status("stopped")
+            self.query_one("#btn-start",    Button).disabled = False
+            self.query_one("#btn-stop",     Button).disabled = True
+            self.query_one("#btn-generate", Button).disabled = True
+        except Exception:
+            pass  # Screen may have been dismissed
 
     def _update_status(self, state: str) -> None:
         lbl = self.query_one("#server-status", Label)
@@ -363,8 +417,8 @@ class SDForgeProjectScreen(Screen):
                 self._proc.kill()
                 await self._proc.wait()
         self._proc = None
-        self._server_ready = False
-        self._on_server_stopped()
+        self._server_ready.clear()
+        # _on_server_stopped is called by _stream_server_output via call_from_thread
 
     # ── Endpoint test ─────────────────────────────────────────────────────────
 
@@ -388,10 +442,12 @@ class SDForgeProjectScreen(Screen):
         from modules.sdforge.api_client import txt2img, save_image, SDForgeAPIError
 
         endpoint = self._sdf.get("endpoint", "http://localhost:7860").rstrip("/")
-        ui_log   = self.query_one("#output-log", Log)
-
-        prompt     = self.query_one("#input-prompt",     TextArea).text.strip()
-        neg_prompt = self.query_one("#input-neg-prompt", TextArea).text.strip()
+        try:
+            ui_log     = self.query_one("#output-log", Log)
+            prompt     = self.query_one("#input-prompt",     TextArea).text.strip()
+            neg_prompt = self.query_one("#input-neg-prompt", TextArea).text.strip()
+        except Exception:
+            return  # screen dismissed
 
         def _int(wid: str, default: int) -> int:
             try:
@@ -416,7 +472,10 @@ class SDForgeProjectScreen(Screen):
             self.app.notify("Enter a prompt.", severity="warning")
             return
 
-        self.query_one("#btn-generate", Button).disabled = True
+        try:
+            self.query_one("#btn-generate", Button).disabled = True
+        except Exception:
+            return
         ui_log.write_line(f"Generating: {prompt[:80]}…")
 
         try:
@@ -426,14 +485,20 @@ class SDForgeProjectScreen(Screen):
                 cfg_scale=cfg, sampler_name=sampler, seed=seed,
             )
         except SDForgeAPIError as exc:
-            ui_log.write_line(f"✗ {exc}")
-            self.app.notify(str(exc), severity="error")
-            self.query_one("#btn-generate", Button).disabled = False
+            try:
+                ui_log.write_line(f"✗ {exc}")
+                self.app.notify(str(exc), severity="error")
+                self.query_one("#btn-generate", Button).disabled = False
+            except Exception:
+                pass
             return
         except Exception:
             log.exception("Generation failed")
-            ui_log.write_line("✗ Unexpected error — see log.")
-            self.query_one("#btn-generate", Button).disabled = False
+            try:
+                ui_log.write_line("✗ Unexpected error — see log.")
+                self.query_one("#btn-generate", Button).disabled = False
+            except Exception:
+                pass
             return
 
         out_dir_rel = self._sdf.get("output_dir", "outputs/")
@@ -441,9 +506,12 @@ class SDForgeProjectScreen(Screen):
         saved = save_image(images[0], output_dir)
         self._last_image_path = saved
 
-        ui_log.write_line(f"✓ Saved: {saved.name}")
-        self.query_one("#btn-generate",   Button).disabled = False
-        self.query_one("#btn-open-image", Button).disabled = False
+        try:
+            ui_log.write_line(f"✓ Saved: {saved.name}")
+            self.query_one("#btn-generate",   Button).disabled = False
+            self.query_one("#btn-open-image", Button).disabled = False
+        except Exception:
+            pass
         self.app.notify(f"Image saved: {saved.name}", severity="information")
 
     # ── Model browser callback ────────────────────────────────────────────────

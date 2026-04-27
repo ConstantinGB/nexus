@@ -328,7 +328,11 @@ class BaseProjectScreen(Screen):
                 return
             data[fid] = val
 
-        extra = self._on_before_save(data)
+        try:
+            extra = self._on_before_save(data)
+        except Exception as _e:
+            self.query_one("#setup-error", Label).update(str(_e))
+            return
         data.update(extra)
         self._save_cfg(data)
         self._reload_screen()
@@ -350,7 +354,10 @@ class BaseProjectScreen(Screen):
     # ── Command runner ────────────────────────────────────────────────────────
 
     async def _run_cmd(self, cmd: list[str], cwd: str | None = None) -> None:
-        ui_log = self.query_one("#output-log", Log)
+        try:
+            ui_log = self.query_one("#output-log", Log)
+        except Exception:
+            return  # screen dismissed before worker started
         cmd_str = " ".join(str(c) for c in cmd)
         ui_log.write_line(f"$ {cmd_str}")
         try:
@@ -360,14 +367,28 @@ class BaseProjectScreen(Screen):
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=cwd,
             )
-            assert proc.stdout
+            if proc.stdout is None:
+                log.error("subprocess stdout is None for %s", cmd)
+                return
             async for raw in proc.stdout:
-                ui_log.write_line(raw.decode(errors="replace").rstrip())
+                try:
+                    ui_log.write_line(raw.decode(errors="replace").rstrip())
+                except Exception:
+                    break  # screen dismissed mid-stream
             await proc.wait()
-            ui_log.write_line(f"✓ Exited {proc.returncode}")
+            try:
+                ui_log.write_line(f"✓ Exited {proc.returncode}")
+            except Exception:
+                pass
         except FileNotFoundError:
-            ui_log.write_line(f"✗ Not found: {cmd[0]}")
-            self.app.notify(f"'{cmd[0]}' not found on PATH.", severity="error")
+            try:
+                ui_log.write_line(f"✗ Not found: {cmd[0]}")
+                self.app.notify(f"'{cmd[0]}' not found on PATH.", severity="error")
+            except Exception:
+                pass
         except Exception:
             log.exception("Command failed: %s", cmd)
-            ui_log.write_line("✗ Error — see log.")
+            try:
+                ui_log.write_line("✗ Error — see log.")
+            except Exception:
+                pass

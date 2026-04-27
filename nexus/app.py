@@ -11,6 +11,7 @@ log = get_logger("app")
 class NexusApp(App):
     TITLE = "NEXUS"
     SUB_TITLE = "Project Manager"
+    _docker_containers: set[str] = set()
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("s", "open_settings", "Settings"),
@@ -44,6 +45,15 @@ class NexusApp(App):
     def on_unmount(self) -> None:
         if hasattr(self, "_scheduler"):
             self._scheduler.stop()
+        import subprocess as _sp
+        for name in list(self._docker_containers):
+            try:
+                _sp.run(
+                    ["docker", "stop", "--time=5", name],
+                    timeout=8, capture_output=True,
+                )
+            except Exception:
+                pass
 
     def action_open_settings(self) -> None:
         from nexus.ui.settings_screen import SettingsScreen

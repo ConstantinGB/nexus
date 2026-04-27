@@ -20,10 +20,10 @@ async def _sdforge_txt2img(args: dict) -> str:
     slug      = args["project_slug"]
     prompt    = args["prompt"]
     cfg       = _sdforge_cfg(slug)
-    endpoint  = cfg.get("endpoint", "http://localhost:7860").rstrip("/")
-
-    if not endpoint:
+    raw_endpoint = cfg.get("endpoint", "").strip()
+    if not raw_endpoint:
         return json.dumps({"error": "No endpoint configured for this SDForge project."})
+    endpoint = raw_endpoint.rstrip("/")
 
     neg_prompt  = args.get("negative_prompt", "")
     width       = int(args.get("width",  512))

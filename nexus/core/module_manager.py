@@ -51,7 +51,7 @@ def needs_setup(project) -> bool:
     from nexus.core.config_manager import load_project_config
     if project.module == "git":
         cfg = load_project_config(project.slug)
-        return "git" not in cfg or not cfg["git"].get("type")
+        return "git" not in cfg or not cfg.get("git", {}).get("type")
     if project.module == "localai":
         cfg = load_project_config(project.slug)
         return not cfg.get("localai", {}).get("setup_done", False)

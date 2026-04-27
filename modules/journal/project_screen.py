@@ -163,7 +163,9 @@ class JournalProjectScreen(BaseProjectScreen):
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(journal_dir),
             )
-            assert proc.stdout
+            if proc.stdout is None:
+                log.error("subprocess stdout is None — cannot stream output")
+                return
             error_lines: list[str] = []
             async for raw in proc.stdout:
                 line = raw.decode(errors="replace").rstrip()

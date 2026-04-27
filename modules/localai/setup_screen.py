@@ -425,7 +425,9 @@ class LocalAISetupScreen(Screen):
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(project_dir),
             )
-            assert proc.stdout is not None
+            if proc.stdout is None:
+                log.error("subprocess stdout is None — cannot stream output")
+                return
             async for raw_line in proc.stdout:
                 ui_log.write_line(raw_line.decode(errors="replace").rstrip())
             await proc.wait()

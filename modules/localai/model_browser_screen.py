@@ -88,12 +88,15 @@ class ModelBrowserScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.run_worker(self._rebuild_catalog(model_catalog.CATALOG))
         self.run_worker(self._fetch_installed())
 
     # ── List builders ─────────────────────────────────────────────────────────
 
-    async def _rebuild_catalog(self, models: list[dict]) -> None:
+    async def _rebuild_catalog(
+        self, models: list[dict], installed: frozenset | None = None
+    ) -> None:
+        if installed is None:
+            installed = frozenset(self._installed)
         container = self.query_one("#catalog-list", ScrollableContainer)
         await container.remove_children()
         if not models:
@@ -101,7 +104,7 @@ class ModelBrowserScreen(Screen):
             return
         for m in models:
             await container.mount(
-                ModelRow(m, installed=m["id"] in self._installed, show_pull=True)
+                ModelRow(m, installed=m["id"] in installed, show_pull=True)
             )
 
     async def _rebuild_installed(self) -> None:
@@ -121,7 +124,10 @@ class ModelBrowserScreen(Screen):
     # ── Fetch installed ───────────────────────────────────────────────────────
 
     async def _fetch_installed(self) -> None:
-        pull_log = self.query_one("#pull-log", Log)
+        try:
+            pull_log = self.query_one("#pull-log", Log)
+        except Exception:
+            return  # screen dismissed
         pull_log.write_line(f"$ GET {self._endpoint}/v1/models")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -137,37 +143,71 @@ class ModelBrowserScreen(Screen):
             log.exception("Fetch installed failed")
             pull_log.write_line(f"✗ {exc}")
         await self._rebuild_installed()
+        snapshot = frozenset(self._installed)
         query = self.query_one("#model-search", Input).value.strip()
-        await self._rebuild_catalog(model_catalog.search(query))
+        await self._rebuild_catalog(model_catalog.search(query), snapshot)
 
     # ── Pull ──────────────────────────────────────────────────────────────────
 
     async def _pull_model(self, model_id: str) -> None:
-        pull_log = self.query_one("#pull-log", Log)
-        pull_log.write_line(f"\n$ ollama pull {model_id}")
+        try:
+            pull_log = self.query_one("#pull-log", Log)
+        except Exception:
+            return  # screen dismissed
+        try:
+            pull_log.write_line(f"\n$ ollama pull {model_id}")
+        except Exception:
+            return
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ollama", "pull", model_id,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
-            assert proc.stdout
+            if proc.stdout is None:
+                try:
+                    pull_log.write_line("✗ ollama pull: stdout unavailable")
+                except Exception:
+                    pass
+                return
             async for raw in proc.stdout:
-                pull_log.write_line(raw.decode(errors="replace").rstrip())
+                try:
+                    pull_log.write_line(raw.decode(errors="replace").rstrip())
+                except Exception:
+                    break  # screen dismissed mid-stream
             await proc.wait()
             if proc.returncode == 0:
-                pull_log.write_line(f"✓ {model_id} pulled.")
+                try:
+                    pull_log.write_line(f"✓ {model_id} pulled.")
+                except Exception:
+                    pass
                 self.app.notify(f"'{model_id}' pulled.", severity="information")
                 await self._fetch_installed()
             else:
-                pull_log.write_line(f"✗ Exit {proc.returncode}")
+                try:
+                    pull_log.write_line(f"✗ Exit {proc.returncode}")
+                except Exception:
+                    pass
                 self.app.notify(f"Pull failed for '{model_id}'.", severity="error")
         except FileNotFoundError:
-            pull_log.write_line("✗ 'ollama' not found on PATH.")
+            try:
+                pull_log.write_line("✗ 'ollama' not found on PATH.")
+            except Exception:
+                pass
             self.app.notify("ollama is not installed or not on PATH.", severity="error")
         except Exception:
             log.exception("Pull failed: %s", model_id)
-            pull_log.write_line("✗ Unexpected error — see log.")
+            try:
+                pull_log.write_line("✗ Unexpected error — see log.")
+            except Exception:
+                pass
+        finally:
+            if proc is not None and proc.returncode is None:
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
 
     # ── Use / select ──────────────────────────────────────────────────────────
 
@@ -220,6 +260,7 @@ class ModelBrowserScreen(Screen):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "model-search":
+            snapshot = frozenset(self._installed)
             self.run_worker(
-                self._rebuild_catalog(model_catalog.search(event.value.strip()))
+                self._rebuild_catalog(model_catalog.search(event.value.strip()), snapshot)
             )

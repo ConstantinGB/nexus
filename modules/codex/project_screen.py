@@ -138,9 +138,7 @@ class CodexProjectScreen(BaseProjectScreen):
         elif bid == "btn-search":
             self.app.push_screen(
                 InputModal("Search", "Search query:", "keyword"),
-                lambda q: self.run_worker(self._run_cmd(
-                    ["rg", "-C", "2", "--color", "never", q, str(vault_dir)]
-                )) if q else None,
+                lambda q: self._do_search(q, vault_dir),
             )
         elif bid == "btn-filter-tags":
             self.app.push_screen(
@@ -151,6 +149,15 @@ class CodexProjectScreen(BaseProjectScreen):
             self.run_worker(self._run_cmd(open_path(vault_dir)))
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
+
+    def _do_search(self, q: str | None, vault_dir: Path) -> None:
+        if not q:
+            return
+        import shutil
+        if not shutil.which("rg"):
+            self.app.notify("ripgrep (rg) is not installed — install it to use search.", severity="warning")
+            return
+        self.run_worker(self._run_cmd(["rg", "-C", "2", "--color", "never", q, str(vault_dir)]))
 
     def _apply_tag_filter(self, tag: str | None) -> None:
         self._tag_filter = (tag or "").strip()

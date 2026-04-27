@@ -105,7 +105,7 @@ class ResearchProjectScreen(BaseProjectScreen):
         elif bid == "btn-search":
             self.app.push_screen(
                 InputModal("Search", "Search query:", "keyword"),
-                lambda q: self.run_worker(self._run_cmd(["rg", "-n", q, str(notes_dir)])) if q else None,
+                lambda q: self._do_search(q, notes_dir),
             )
         elif bid == "btn-export-urls":
             self.run_worker(self._run_cmd(["grep", "-rh", "http", str(notes_dir)]))
@@ -113,6 +113,15 @@ class ResearchProjectScreen(BaseProjectScreen):
             self.run_worker(self._export_all(notes_dir))
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
+
+    def _do_search(self, q: str | None, notes_dir: Path) -> None:
+        if not q:
+            return
+        import shutil
+        if not shutil.which("rg"):
+            self.app.notify("ripgrep (rg) is not installed — install it to use search.", severity="warning")
+            return
+        self.run_worker(self._run_cmd(["rg", "-n", q, str(notes_dir)]))
 
     def _create_note(self, title: str | None, notes_dir: Path) -> None:
         if not title:

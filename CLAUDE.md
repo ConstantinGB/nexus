@@ -400,3 +400,81 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 - **Backup skill init safety**: the `backup_run_backup` skill calls `restic_ensure_initialized()` before every backup, matching the UI behaviour — AI-triggered backups on uninitialised repos initialise automatically instead of failing silently.
 - **Backup paths**: all restic paths go through `_p()` (`os.path.abspath(os.path.expanduser(path))`) in `modules/backup/backup_ops.py` before subprocess calls. `restic_ensure_initialized()` auto-creates the repo directory and runs `restic init` on first use, treating "already initialized" as success.
 - **Cross-platform open**: all "open file/URL" actions go through `nexus.core.platform.open_path()` which selects `xdg-open` / `open` / `start` per platform — avoids hard-coding `xdg-open` everywhere.
+- **Vault path containment**: `VaultProjectScreen._validate_file_in_vault()` resolves both the vault directory and the user-supplied path with `Path.resolve()` and checks `startswith(vault_dir + "/")` before passing either to `age` or `gpg` — prevents `../../../../etc/shadow`-style traversal attacks.
+- **SDForge `launch_args`**: the user-editable `launch_args` field is split with `shlex.split()` and passed as individual arguments to `asyncio.create_subprocess_exec` rather than interpolated into a shell string via `create_subprocess_shell` — eliminates shell injection from config-file metacharacters.
+- **Docker daemon check**: `docker_ops.is_available()` is async and runs `docker ps` to confirm the daemon is reachable, not merely that the `docker` binary exists on PATH.
+- **`~/.ollama` mount safety**: `LocalAIProjectScreen._open_docker()` checks `is_symlink()` and refuses to mount symlinked paths into Docker, then calls `mkdir(parents=True, exist_ok=True)` to ensure the directory is created by the user (not as root by Docker).
+
+## Robustness Patterns
+
+These patterns are enforced throughout the codebase. Follow them in all new async workers and subprocess calls.
+
+### Worker-after-dismiss guard
+
+Textual `run_worker()` workers continue executing after the screen that launched them is dismissed. Any `query_one()` call in an async worker will raise `NoMatches` once the screen is gone. Always wrap the initial lookup and every subsequent UI write:
+
+```python
+async def _my_worker(self) -> None:
+    try:
+        ui_log = self.query_one("#output-log", Log)
+    except Exception:
+        return  # screen already dismissed
+    ...
+    async for line in stream:
+        try:
+            ui_log.write_line(line)
+        except Exception:
+            break  # screen dismissed mid-stream
+```
+
+`BaseProjectScreen._run_cmd` already applies this pattern — it is the canonical implementation. For screens with their own workers (LocalAI, SDForge, Vault, model browser), guard each `query_one` individually.
+
+### Explicit stdout check (replaces `assert proc.stdout`)
+
+`assert proc.stdout` is silently disabled under `python -O` and its `AssertionError` is swallowed by outer `except Exception` handlers. Always use an explicit check:
+
+```python
+proc = await asyncio.create_subprocess_exec(...)
+if proc.stdout is None:
+    log.error("stdout unavailable for %s", cmd)
+    return  # or raise DockerError(...)
+async for raw in proc.stdout:
+    ...
+```
+
+### asyncio.Event for shared ready flags
+
+Use `asyncio.Event` rather than a plain `bool` to signal readiness between coroutines. A plain bool can be read stale by a concurrent coroutine that ran before the write. Example from SDForge:
+
+```python
+self._server_ready = asyncio.Event()
+# In _stream_server_output when URL detected:
+self._server_ready.set()
+# In _stop_server:
+self._server_ready.clear()
+# In _generate before sending request:
+if not self._server_ready.is_set():
+    ...
+```
+
+### Frozen snapshot for concurrent set reads
+
+When a mutable set is reassigned by one worker while another worker iterates it, pass a `frozenset` snapshot as an argument rather than reading `self._field` inside the second worker:
+
+```python
+# Caller (before spawning worker):
+snapshot = frozenset(self._installed)
+self.run_worker(self._rebuild_catalog(models, snapshot))
+
+# Worker signature:
+async def _rebuild_catalog(self, models, installed: frozenset | None = None) -> None:
+    if installed is None:
+        installed = frozenset(self._installed)
+    ...
+```
+
+### Docker container lifecycle
+
+`NexusApp._docker_containers: set[str]` tracks all containers opened by `DockerManagerScreen`. Screens register on `on_mount` and deregister on `on_dismiss`. `NexusApp.on_unmount` calls `subprocess.run(["docker", "stop", "--time=5", name])` synchronously for each tracked name (blocking stdlib call is correct here — asyncio event loop may already be shutting down).
+
+`docker_ops.stop_container` ignores "No such container" errors so stopping an already-removed container is idempotent and never raises.

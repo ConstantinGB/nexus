@@ -30,9 +30,8 @@ class StreamingProjectScreen(BaseProjectScreen):
     def _on_before_save(self, data: dict) -> dict:
         obs_bin = data.get("obs_bin", "obs")
         if not check_binary(obs_bin):
-            self.app.notify(
-                f"'{obs_bin}' not found — saved anyway. Fix the binary path when it's available.",
-                severity="warning",
+            raise ValueError(
+                f"'{obs_bin}' not found on PATH. Install OBS or fix the binary path."
             )
         return {}
 
@@ -104,6 +103,10 @@ class StreamingProjectScreen(BaseProjectScreen):
         obs_bin        = self._mod.get("obs_bin", "obs")
 
         if bid == "btn-launch-obs":
+            import shutil
+            if not shutil.which(obs_bin):
+                self.app.notify(f"'{obs_bin}' not found on PATH.", severity="error")
+                return
             self.run_worker(self._run_cmd([obs_bin]))
 
         elif bid == "btn-check-logs":

@@ -121,6 +121,7 @@ class LocalAIProjectScreen(Screen):
                     yield Button("▶ Run",          id="btn-run",           variant="primary")
                     yield Button("Test Endpoint",   id="btn-test-ep")
                     yield Button("Browse Models",   id="btn-browse-models")
+                    yield Button("Docker",          id="btn-docker")
                     if self._output_type == "file":
                         yield Button("Open Output", id="btn-open", disabled=True)
 
@@ -169,6 +170,9 @@ class LocalAIProjectScreen(Screen):
                 self._on_model_selected,
             )
 
+        elif bid == "btn-docker":
+            self._open_docker()
+
         elif bid == "btn-open":
             if self._last_output_file and self._last_output_file.exists():
                 log.info("Opening output file: %s", self._last_output_file)
@@ -179,6 +183,26 @@ class LocalAIProjectScreen(Screen):
                     self.app.notify("Could not open file.", severity="error")
             else:
                 self.app.notify("No output file found yet.", severity="warning")
+
+    # ── Docker manager ────────────────────────────────────────────────────────
+
+    def _open_docker(self) -> None:
+        from pathlib import Path
+        from nexus.ui.docker_screen import DockerManagerScreen, DockerContainerConfig
+        slug        = self.project.slug
+        image       = self._localai_cfg.get("docker_image", "ollama/ollama")
+        ollama_path = Path.home() / ".ollama"
+        if ollama_path.is_symlink():
+            self.app.notify("~/.ollama is a symlink — refusing to mount.", severity="error")
+            return
+        ollama_path.mkdir(parents=True, exist_ok=True)
+        cfg = DockerContainerConfig(
+            name     = f"nexus-localai-{slug}",
+            image    = image,
+            ports    = {"11434": "11434"},
+            volumes  = {str(ollama_path): "/root/.ollama"},
+        )
+        self.app.push_screen(DockerManagerScreen("LocalAI (Ollama)", cfg))
 
     # ── Endpoint test ─────────────────────────────────────────────────────────
 
@@ -223,7 +247,10 @@ class LocalAIProjectScreen(Screen):
 
     async def _run_inference(self, prompt: str, negative_prompt: str) -> None:
         import os
-        ui_log = self.query_one("#output-log", Log)
+        try:
+            ui_log = self.query_one("#output-log", Log)
+        except Exception:
+            return  # screen dismissed
         ui_log.clear()
 
         # Replace legacy {prompt}/{negative_prompt} placeholders with env var references.
@@ -263,7 +290,10 @@ class LocalAIProjectScreen(Screen):
                 ui_log.write_line("✗ Failed to open process stdout.")
                 return
             async for raw_line in proc.stdout:
-                ui_log.write_line(raw_line.decode(errors="replace").rstrip())
+                try:
+                    ui_log.write_line(raw_line.decode(errors="replace").rstrip())
+                except Exception:
+                    break  # screen dismissed mid-stream
             await proc.wait()
             log.info("Inference process exited with code %d", proc.returncode)
         except Exception:

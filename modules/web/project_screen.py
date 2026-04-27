@@ -211,7 +211,9 @@ class WebProjectScreen(BaseProjectScreen):
                 cwd=cwd,
             )
             self._running_proc = proc
-            assert proc.stdout
+            if proc.stdout is None:
+                log.error("subprocess stdout is None — cannot stream output")
+                return
             async for raw in proc.stdout:
                 ui_log.write_line(raw.decode(errors="replace").rstrip())
             await proc.wait()

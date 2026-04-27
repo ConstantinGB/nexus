@@ -216,6 +216,20 @@ class VaultProjectScreen(BaseProjectScreen):
             vault_dir.mkdir(parents=True, exist_ok=True)
             self.run_worker(self._run_cmd(open_path(vault_dir)))
 
+    def _validate_file_in_vault(self, file_path: Path) -> bool:
+        """Return True if file_path is inside the configured vault directory."""
+        raw_vault = self._mod.get("vault_dir", "").strip()
+        if not raw_vault:
+            return True  # no vault dir configured — skip containment check
+        vault_dir = Path(raw_vault).expanduser().resolve()
+        resolved  = file_path.resolve()
+        inside = str(resolved).startswith(str(vault_dir) + "/") or resolved == vault_dir
+        if not inside:
+            self.app.notify(
+                "File must be inside the vault directory.", severity="error"
+            )
+        return inside
+
     def _pubkey_from_age_key(self) -> str:
         """Return public key via age-keygen -y, falling back to comment parsing."""
         import subprocess
@@ -228,9 +242,14 @@ class VaultProjectScreen(BaseProjectScreen):
                 return r.stdout.strip()
         except FileNotFoundError:
             pass
-        for line in self._age_key_path.read_text(errors="replace").splitlines():
-            if line.startswith("# public key:"):
-                return line.split(":", 1)[1].strip()
+        if not self._age_key_path.exists():
+            return ""
+        try:
+            for line in self._age_key_path.read_text(errors="replace").splitlines():
+                if line.startswith("# public key:"):
+                    return line.split(":", 1)[1].strip()
+        except Exception:
+            pass
         return ""
 
     def _encrypt_with_age(self, file_path_str: str | None) -> None:
@@ -239,6 +258,8 @@ class VaultProjectScreen(BaseProjectScreen):
         file_path = Path(file_path_str).expanduser()
         if not file_path.exists():
             self.app.notify(f"File not found: {file_path}", severity="error")
+            return
+        if not self._validate_file_in_vault(file_path):
             return
         output_path = file_path.with_suffix(file_path.suffix + ".age")
         try:
@@ -269,12 +290,17 @@ class VaultProjectScreen(BaseProjectScreen):
         if not file_path.exists():
             self.app.notify(f"File not found: {file_path}", severity="error")
             return
+        if not self._validate_file_in_vault(file_path):
+            return
         self.run_worker(self._run_cmd(["gpg", "--import", str(file_path)]))
 
     async def _kp_list(self, db: str, password: str) -> None:
         import asyncio as _aio
         from textual.widgets import Log as _Log
-        ui_log = self.query_one("#output-log", _Log)
+        try:
+            ui_log = self.query_one("#output-log", _Log)
+        except Exception:
+            return  # screen dismissed
         ui_log.write_line(f"$ keepassxc-cli ls {db}")
         try:
             proc = await _aio.create_subprocess_exec(
@@ -299,6 +325,11 @@ class VaultProjectScreen(BaseProjectScreen):
         file_path = Path(file_path_str).expanduser()
         if not file_path.exists():
             self.app.notify(f"File not found: {file_path}", severity="error")
+            return
+        if not self._validate_file_in_vault(file_path):
+            return
+        if not self._age_key_path.exists():
+            self.app.notify(f"Age key not found: {self._age_key_path}", severity="error")
             return
         if file_path.suffix == ".age":
             output_path = file_path.with_suffix("")

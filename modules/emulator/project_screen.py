@@ -90,9 +90,8 @@ class EmulatorProjectScreen(BaseProjectScreen):
     def _on_before_save(self, data: dict) -> dict:
         retroarch_bin = data.get("retroarch_bin", "retroarch")
         if not check_binary(retroarch_bin):
-            self.app.notify(
-                f"'{retroarch_bin}' not found — saved anyway. Fix the binary path when it's available.",
-                severity="warning",
+            raise ValueError(
+                f"'{retroarch_bin}' not found on PATH. Install RetroArch or fix the binary path."
             )
         return {}
 
@@ -165,6 +164,10 @@ class EmulatorProjectScreen(BaseProjectScreen):
         retroarch_bin = self._mod.get("retroarch_bin", "retroarch")
 
         if bid == "btn-launch-ra":
+            import shutil as _shutil
+            if not _shutil.which(retroarch_bin):
+                self.app.notify(f"'{retroarch_bin}' not found on PATH.", severity="error")
+                return
             self.run_worker(self._run_cmd([retroarch_bin]))
 
         elif bid == "btn-browse-system":
@@ -189,6 +192,10 @@ class EmulatorProjectScreen(BaseProjectScreen):
         system_dir = rom_dir / system
         if not system_dir.exists():
             self.app.notify(f"System directory not found: {system}", severity="warning")
+            return
+        import shutil as _shutil
+        if not _shutil.which(retroarch_bin):
+            self.app.notify(f"'{retroarch_bin}' not found on PATH.", severity="error")
             return
         self.app.push_screen(
             _RomPickerModal(system_dir),

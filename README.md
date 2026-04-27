@@ -168,6 +168,11 @@ All module skills take the project slug as their first argument so the AI always
 - **LocalAI**: user prompt values are passed to inference commands via environment variables (`$NEXUS_PROMPT`, `$NEXUS_NEGATIVE_PROMPT`), never interpolated into shell strings.
 - **Home Assistant token**: passed via Python `httpx` headers — never exposed in subprocess arguments visible in `ps aux`.
 - **Vault age key**: public key extracted via `age-keygen -y` (the correct API) rather than comment-line parsing.
+- **Vault path containment**: all age/gpg operations resolve file paths with `Path.resolve()` and verify the result is inside the configured vault directory — prevents directory traversal attacks.
+- **SDForge launch args**: extra server arguments from your config are split with `shlex.split` and passed as individual arguments (not a shell string) — eliminates shell injection from config-file content.
+- **Docker daemon check**: Nexus verifies the Docker daemon is actually running (not just that the binary exists) before attempting any container operation.
+- **Docker `~/.ollama` mount**: the LocalAI Docker manager checks for symlinks and refuses to mount a symlinked `~/.ollama` path, preventing accidental exposure of unintended host directories inside the container.
+- **Docker container cleanup**: containers started by Nexus are tracked and stopped cleanly when the app exits, preventing orphaned containers from holding ports on the next launch.
 - **Backup**: `backup_run_backup` skill auto-initialises the restic repo before running, matching the UI behaviour. Repo and source paths are tilde-expanded before use.
 - **Cross-platform open**: all "open file/URL" actions use `nexus.core.platform.open_path()` (`xdg-open` / `open` / `start`) rather than hard-coded `xdg-open`.
 - All credentials and personal data stay on your machine — `config/settings.yaml` and `projects/` are git-ignored.

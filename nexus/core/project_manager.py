@@ -25,12 +25,10 @@ class ProjectInfo:
 
 
 def _slugify(name: str) -> str:
-    return (
-        name.lower().strip()
-        .replace(" ", "-")
-        .replace("/", "-")
-        .replace("\\", "-")
-    )
+    import re
+    slug = re.sub(r"[^a-z0-9-]", "-", name.lower().strip())
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug or "project"
 
 
 def list_projects() -> list[ProjectInfo]:

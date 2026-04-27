@@ -58,7 +58,9 @@ class GameProjectScreen(BaseProjectScreen):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
-            assert proc.stdout
+            if proc.stdout is None:
+                log.error("subprocess stdout is None — cannot stream output")
+                return
             errors = warnings = 0
             async for raw in proc.stdout:
                 line = raw.decode(errors="replace").rstrip()
@@ -154,8 +156,14 @@ class GameProjectScreen(BaseProjectScreen):
         godot_bin    = self._mod.get("godot_bin", "godot4")
 
         if bid == "btn-editor":
+            if not shutil.which(godot_bin):
+                self.app.notify(f"'{godot_bin}' not found on PATH.", severity="error")
+                return
             self.run_worker(self._run_cmd([godot_bin, "--editor", "--path", project_path]))
         elif bid == "btn-run":
+            if not shutil.which(godot_bin):
+                self.app.notify(f"'{godot_bin}' not found on PATH.", severity="error")
+                return
             self.run_worker(self._run_cmd([godot_bin, "--path", project_path]))
         elif bid == "btn-lint":
             if shutil.which("gdlint"):
@@ -166,6 +174,9 @@ class GameProjectScreen(BaseProjectScreen):
                     severity="warning",
                 )
         elif bid == "btn-export":
+            if not shutil.which(godot_bin):
+                self.app.notify(f"'{godot_bin}' not found on PATH.", severity="error")
+                return
             from nexus.ui.base_project_screen import InputModal
             self.app.push_screen(
                 InputModal("Export Game", "Target platform (linux / windows / mac / web):", "linux"),
