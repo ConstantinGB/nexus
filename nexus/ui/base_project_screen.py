@@ -219,7 +219,8 @@ class BaseProjectScreen(Screen):
     #body-row    { height: 1fr; }
     #main-pane   { width: 1fr; height: 1fr; min-width: 0; }
     #content-area { height: 1fr; padding: 1 2; overflow-y: auto; }
-    #btn-toggle-chat   { margin-left: 1; }
+    .panel-btn          { margin-left: 1; }
+    .panel-btn-active   { border: solid #00FF88; color: #00FF88; }
     #btn-open-folder   { margin-left: 1; }
     #btn-edit-project  { margin-left: 1; }
     #chat-panel {
@@ -249,6 +250,7 @@ class BaseProjectScreen(Screen):
         self.project = project
         self._cfg: dict = {}
         self._mod: dict = {}
+        self._panel_mode: str = "none"
 
     # ── Config helpers ────────────────────────────────────────────────────────
 
@@ -313,7 +315,8 @@ class BaseProjectScreen(Screen):
             yield Label(meta, id="project-meta")
             yield Button("📁", id="btn-open-folder", tooltip="Open project folder")
             yield Button("⚙", id="btn-edit-project", tooltip="Edit name & description")
-            yield Button("💬 AI", id="btn-toggle-chat")
+            yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
+            yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
         with Horizontal(id="action-bar"):
             yield from self._compose_action_buttons()
 
@@ -363,6 +366,7 @@ class BaseProjectScreen(Screen):
             self.query_one("#action-bar").display = False
             self.query_one("#body-row").display = False
         self.call_after_refresh(self._hide_chat_initial)
+        self.call_after_refresh(self._apply_panel_default)
 
     def _hide_chat_initial(self) -> None:
         try:
@@ -377,8 +381,15 @@ class BaseProjectScreen(Screen):
         try:
             if bid == "btn-save-setup":
                 self._handle_save_setup()
-            elif bid == "btn-toggle-chat":
-                self._toggle_chat()
+            elif bid == "btn-panel-chat":
+                new_mode = "none" if self._panel_mode == "chat" else "chat"
+                self._set_panel_mode(new_mode)
+            elif bid == "btn-panel-claude":
+                if self._panel_mode == "claude_code":
+                    self._launch_claude()
+                else:
+                    self._set_panel_mode("claude_code")
+                    self._launch_claude()
             elif bid == "btn-open-folder":
                 self._open_primary_folder()
             elif bid == "btn-edit-project":
@@ -448,12 +459,43 @@ class BaseProjectScreen(Screen):
         self._save_cfg(data)
         self._reload_screen()
 
-    def _toggle_chat(self) -> None:
+    def _apply_panel_default(self) -> None:
+        if not self._is_configured():
+            return
+        from nexus.core.config_manager import load_global_config
+        default = load_global_config().get("ai", {}).get("default_panel", "chat")
+        if default == "chat":
+            self._set_panel_mode("chat")
+        elif default == "claude_code":
+            self._set_panel_mode("claude_code")
+
+    def _set_panel_mode(self, mode: str) -> None:
+        self._panel_mode = mode
         try:
-            panel = self.query_one("#chat-panel", ChatPanel)
-            panel.display = not panel.display
-        except Exception:
+            chat = self.query_one("#chat-panel", ChatPanel)
+            chat.display = (mode == "chat")
+        except NoMatches:
             pass
+        for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+            try:
+                btn = self.query_one(f"#{bid}", Button)
+                if mode == active_mode:
+                    btn.add_class("panel-btn-active")
+                else:
+                    btn.remove_class("panel-btn-active")
+            except NoMatches:
+                pass
+
+    def _launch_claude(self) -> None:
+        import shutil, subprocess
+        if not shutil.which("claude"):
+            self.app.notify(
+                "'claude' not found on PATH — install Claude Code first.",
+                severity="error",
+            )
+            return
+        with self.app.suspend():
+            subprocess.run(["claude"], cwd=str(self.project.path))
 
     def _reload_screen(self) -> None:
         self._load_cfg()

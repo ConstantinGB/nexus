@@ -19,6 +19,7 @@ _DEFAULT_CONFIG: dict = {
         "local_model":    "",
         "model_mode":     "basic",
         "model":          "",
+        "default_panel":  "chat",
         "models": {
             "reasoning":        {"enabled": True,  "model": ""},
             "coding":           {"enabled": True,  "model": ""},

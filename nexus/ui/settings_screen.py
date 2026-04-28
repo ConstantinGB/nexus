@@ -229,9 +229,11 @@ class SettingsScreen(Screen):
     #save-bar         { height: 3; margin-top: 1; }
     #save-bar Button  { margin-right: 1; }
 
-    .general-row    { height: 3; padding: 0 1; border-bottom: solid #241540; }
-    .general-label  { color: #E0E0FF; width: 1fr; }
-    .general-value  { color: #8080AA; }
+    .general-row         { height: 3; padding: 0 1; border-bottom: solid #241540; }
+    .general-label       { color: #E0E0FF; width: 1fr; }
+    .general-value       { color: #8080AA; }
+    .general-row Select  { width: 30; }
+    #general-save-bar    { height: 3; margin-top: 1; }
 
     /* System Modules tab */
     .sysmod-card { height: auto; }
@@ -573,6 +575,18 @@ class SettingsScreen(Screen):
                     with Horizontal(classes="general-row"):
                         yield Label("MCP servers", classes="general-label")
                         yield Label("Managed via MCP screen (press m)", classes="general-value")
+                    with Horizontal(classes="general-row"):
+                        yield Label("Default AI panel", classes="general-label")
+                        yield Select(
+                            [("Chat (built-in)", "chat"),
+                             ("Claude Code CLI", "claude_code"),
+                             ("None", "none")],
+                            value=self._cfg.get("ai", {}).get("default_panel", "chat"),
+                            id="select-default-panel",
+                            allow_blank=False,
+                        )
+                    with Horizontal(id="general-save-bar"):
+                        yield Button("Save", id="btn-general-save", variant="primary")
 
         yield Footer()
 
@@ -691,6 +705,8 @@ class SettingsScreen(Screen):
                 self._save()
             elif bid == "btn-close":
                 self.dismiss()
+            elif bid == "btn-general-save":
+                self._save_general()
             elif bid == "btn-sysmod-save":
                 self._save_system_modules()
             elif bid == "btn-sysmod-backup-now":
@@ -830,6 +846,20 @@ class SettingsScreen(Screen):
         except Exception:
             log.exception("Failed to save settings")
             self.app.notify("Failed to save settings — see log.", severity="error")
+
+    def _save_general(self) -> None:
+        log.info("Saving general settings")
+        try:
+            cfg = load_global_config()
+            cfg.setdefault("ai", {})
+            cfg["ai"]["default_panel"] = str(
+                self.query_one("#select-default-panel", Select).value
+            )
+            save_global_config(cfg)
+            self.app.notify("General settings saved.", severity="information")
+        except Exception:
+            log.exception("Failed to save general settings")
+            self.app.notify("Failed to save — see log.", severity="error")
 
     # ── System Modules save ───────────────────────────────────────────────────
 

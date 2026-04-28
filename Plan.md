@@ -1,252 +1,221 @@
-# Security Module — Implementation Plan
+# Claude Code Panel — Implementation Plan
 
 ## Context
 
-New Nexus module for network security, privacy, and anti-surveillance tooling.
-Covers: firewalls, VPNs, DNS privacy, open-port auditing, intrusion detection,
-system hardening, and anonymization tools.
+Replace the single "💬 AI" toggle with a two-button AI panel selector on every project
+screen. Users can open either the existing in-app chat panel or a full Claude Code
+terminal session (`claude` CLI via `app.suspend()`). A setting controls which mode
+is active by default when any project is opened.
 
 ---
 
-## 1 — Module Registration
+## 1 — How `app.suspend()` works
 
-### `nexus/core/module_manager.py`
+`App.suspend()` is a Textual built-in (synchronous context manager). It:
 
-**Add to `_REGISTRY`** (after vault entry):
-
-```python
-ModuleInfo("security", "Security", "Firewall, VPN, DNS privacy and system hardening", ["security", "privacy", "network"]),
-```
-
-**Add to `MODULE_PREFIX`**:
+1. Pauses Textual's event loop and restores the raw terminal.
+2. Runs the block inside — blocking is fine here, the TUI is paused.
+3. Resumes Textual when the block exits (i.e. when the user `/exit`s claude).
 
 ```python
-"security": "sec",
+import subprocess, shutil
+with self.app.suspend():
+    subprocess.run(["claude"], cwd=str(self.project.path))
 ```
 
-**Add to `get_project_screen()`** (same pattern as vault):
-
-```python
-elif project.module == "security":
-    from modules.security.project_screen import SecurityProjectScreen
-    return SecurityProjectScreen(project)
-```
-
-**Add to `_MODULE_DISPLAY` in `nexus/ui/tiles.py`**:
-
-```python
-"security": "Security",
-```
+No new dependencies. Works from any synchronous event handler.
 
 ---
 
-## 2 — File Structure
+## 2 — Settings — add `ai.default_panel`
 
-Create directory `modules/security/` with:
+### `nexus/core/config_manager.py`
 
-```text
-modules/security/
-  __init__.py          (empty)
-  project_screen.py    (main UI)
-  skills.py            (AI skills)
-  CLAUDE.template.md   (project template)
-```
-
-No multi-step setup screen needed — inline SETUP_FIELDS is sufficient.
-
----
-
-## 3 — `modules/security/project_screen.py`
-
-### Class skeleton
+Add `"default_panel": "chat"` inside `_DEFAULT_CONFIG["ai"]`:
 
 ```python
-class SecurityProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "security"
-    MODULE_LABEL = "SECURITY"
-    SETUP_FIELDS = [
-        {"id": "vpn_provider",    "label": "VPN provider (wireguard / openvpn / mullvad / protonvpn / custom)",
-         "placeholder": "wireguard"},
-        {"id": "vpn_config_dir", "label": "VPN config directory",
-         "placeholder": "~/.config/wireguard", "type": "dir"},
-        {"id": "wireguard_iface","label": "WireGuard interface name (optional)",
-         "placeholder": "wg0", "optional": True},
-        {"id": "dns_mode",       "label": "DNS privacy mode (system / dnscrypt / pihole / doh)",
-         "placeholder": "system", "optional": True},
-    ]
+"ai": {
+    ...
+    "default_panel": "chat",   # "chat" | "claude_code" | "none"
+},
 ```
 
-### Action buttons
+### `nexus/ui/settings_screen.py`
+
+**In `compose()`**, replace the General tab's static rows with a live one for panel
+default. Add below the existing readonly rows in `tab_general`:
 
 ```python
-def _compose_action_buttons(self) -> list:
-    return [
-        Button("Firewall Status",   id="btn-fw-status",   variant="primary"),
-        Button("VPN Connect",       id="btn-vpn-up"),
-        Button("VPN Disconnect",    id="btn-vpn-down"),
-        Button("VPN Status",        id="btn-vpn-status"),
-        Button("Open Ports",        id="btn-ports"),
-        Button("DNS Check",         id="btn-dns-check"),
-        Button("Fail2ban",          id="btn-fail2ban"),
-        Button("System Audit",      id="btn-audit"),
-        Button("Public IP",         id="btn-pubip"),
-    ]
+yield Label("Default AI panel:", classes="general-label")
+with Horizontal(classes="general-row"):
+    yield Label("Default AI panel", classes="general-label")
+    yield Select(
+        [("Chat (built-in)", "chat"),
+         ("Claude Code CLI", "claude_code"),
+         ("None", "none")],
+        value=self._cfg.get("ai", {}).get("default_panel", "chat"),
+        id="select-default-panel",
+        allow_blank=False,
+    )
 ```
 
-### Content pane (`_populate_content`)
-
-Display in `#content-area`:
-
-**Tool inventory** — check each with `shutil.which()`:
-
-| Tool | Package | Purpose |
-| --- | --- | --- |
-| `ufw` | ufw | Firewall frontend |
-| `wg` | wireguard-tools | WireGuard CLI |
-| `openvpn` | openvpn | OpenVPN daemon |
-| `mullvad` | mullvad-vpn | Mullvad CLI |
-| `protonvpn-cli` | protonvpn | ProtonVPN CLI |
-| `fail2ban-client` | fail2ban | Brute-force protection |
-| `lynis` | lynis | System hardening audit |
-| `nmap` | nmap | Network scanner |
-| `dnscrypt-proxy` | dnscrypt-proxy | Encrypted DNS |
-| `macchanger` | macchanger | MAC address spoofing |
-| `torsocks` | torsocks | Tor proxy wrapper |
-
-**WireGuard interface status** — `wg show <iface>` parsed:
-
-- Interface up/down (status-ok / status-err class)
-- Peer count, latest handshake time
-
-**Firewall status** — `ufw status` single-line:
-
-- Active / Inactive (status-ok / status-err class)
-
-**DNS resolver** — read `/etc/resolv.conf`, show `nameserver` lines.
-
-**Config dir info** — path + whether it exists.
-
-**Hint label** — `"Note: some commands require sudo — configure NOPASSWD or run with sudo."`
-
-### Button handler (`_handle_action`)
+**In `_save()`**, persist the value alongside the other AI settings:
 
 ```python
-"btn-fw-status"  → _run_cmd(["sudo", "ufw", "status", "verbose"])
-                   (fall back to nft if ufw not found)
-
-"btn-vpn-up"     → dispatch on vpn_provider:
-                     wireguard  → _run_cmd(["sudo", "wg-quick", "up", iface])
-                     openvpn    → _run_cmd(["sudo", "openvpn", "--config", first_ovpn_in_dir])
-                     mullvad    → _run_cmd(["mullvad", "connect"])
-                     protonvpn  → _run_cmd(["protonvpn-cli", "connect", "--fastest"])
-
-"btn-vpn-down"   → dispatch on vpn_provider:
-                     wireguard  → _run_cmd(["sudo", "wg-quick", "down", iface])
-                     openvpn    → _run_cmd(["sudo", "killall", "openvpn"])
-                     mullvad    → _run_cmd(["mullvad", "disconnect"])
-                     protonvpn  → _run_cmd(["protonvpn-cli", "disconnect"])
-
-"btn-vpn-status" → dispatch on vpn_provider:
-                     wireguard  → _run_cmd(["sudo", "wg", "show"])
-                     mullvad    → _run_cmd(["mullvad", "status"])
-                     protonvpn  → _run_cmd(["protonvpn-cli", "status"])
-                     openvpn    → _run_cmd(["sudo", "systemctl", "status", "openvpn"])
-
-"btn-ports"      → _run_cmd(["ss", "-tulnp"])
-
-"btn-dns-check"  → _run_cmd(["cat", "/etc/resolv.conf"])
-                   then also _run_cmd(["resolvectl", "status"]) if available
-
-"btn-fail2ban"   → _run_cmd(["sudo", "fail2ban-client", "status"])
-
-"btn-audit"      → _run_cmd(["sudo", "lynis", "audit", "system", "--quick", "--no-colors"])
-
-"btn-pubip"      → async httpx GET https://api.ipify.org
-                   write "Contacting api.ipify.org (external server)..." warning first
-                   then write the returned IP to the log
-```
-
----
-
-## 4 — `modules/security/skills.py`
-
-Register 4 skills under scope `"security"`:
-
-```python
-registry.register(
-    scope="security", name="security_firewall_status",
-    description="Show current firewall rules (ufw or nftables).",
-    schema={"type": "object", "properties": {"project_slug": {"type": "string"}}, "required": ["project_slug"]},
-    handler=_firewall_status,
-)
-
-registry.register(
-    scope="security", name="security_vpn_status",
-    description="Check VPN connection state for this project's configured provider.",
-    schema={"type": "object", "properties": {"project_slug": {"type": "string"}}, "required": ["project_slug"]},
-    handler=_vpn_status,
-)
-
-registry.register(
-    scope="security", name="security_open_ports",
-    description="List open listening ports using ss.",
-    schema={"type": "object", "properties": {"project_slug": {"type": "string"}}, "required": ["project_slug"]},
-    handler=_open_ports,
-)
-
-registry.register(
-    scope="security", name="security_dns_check",
-    description="Show current DNS resolver configuration.",
-    schema={"type": "object", "properties": {"project_slug": {"type": "string"}}, "required": ["project_slug"]},
-    handler=_dns_check,
+cfg["ai"]["default_panel"] = str(
+    self.query_one("#select-default-panel", Select).value
 )
 ```
 
-Each handler: load project config via `load_project_config(slug)` → run subprocess → return stdout as string.
-
 ---
 
-## 5 — `modules/security/CLAUDE.template.md`
+## 3 — `nexus/ui/base_project_screen.py`
 
-Sections to include:
+### 3a — Replace the single AI button with a paired group
 
-- **Title**: `# {project_name} — Security`
-- **Key software**: ufw, WireGuard/wg-quick, OpenVPN, Mullvad, ProtonVPN, fail2ban, lynis, dnscrypt-proxy, nmap, ss, macchanger, torsocks — each with typical commands
-- **Security principles**: least-privilege firewall, encrypted DNS, VPN kill-switch, regular audits, VPN vs Tor threat model distinction
-- **WireGuard kill-switch with ufw**: example rule set (default deny → allow only via wg0 → allow VPN server UDP 51820)
-- **Typical AI tasks**: write ufw rule sets, generate WireGuard configs, audit resolv.conf, explain lynis findings, write fail2ban jails
-- **Your setup** (comment placeholders): VPN provider, WireGuard interface, DNS strategy, threat model, exposed services
-- **Notes for the AI** (comment placeholder)
-
----
-
-## 6 — Register skills at startup
-
-In `nexus/app.py`, add alongside other module skill imports:
+Current top-bar compose (inside `compose()`):
 
 ```python
-from modules.security import skills as _security_skills  # noqa: F401
+yield Button("💬 AI", id="btn-toggle-chat")
 ```
+
+Replace with:
+
+```python
+yield Button("💬 Chat",   id="btn-panel-chat",   classes="panel-btn")
+yield Button("⌨ Claude",  id="btn-panel-claude",  classes="panel-btn")
+```
+
+### 3b — CSS additions to `DEFAULT_CSS`
+
+Replace the existing `#btn-toggle-chat` rule and add:
+
+```css
+.panel-btn          { margin-left: 1; }
+.panel-btn-active   { border: solid #00FF88; color: #00FF88; }
+```
+
+Remove old rule: `#btn-toggle-chat { ... }` if it exists (it doesn't have one in the
+current CSS so no removal needed — `margin-left: 1` is the only required addition).
+
+### 3c — State tracking
+
+Add instance attribute in `__init__`:
+
+```python
+self._panel_mode: str = "none"   # "none" | "chat" | "claude_code"
+```
+
+### 3d — `on_mount` — apply default
+
+```python
+def on_mount(self) -> None:
+    ...  # existing lines unchanged
+    self.call_after_refresh(self._apply_panel_default)
+```
+
+```python
+def _apply_panel_default(self) -> None:
+    from nexus.core.config_manager import load_global_config
+    default = load_global_config().get("ai", {}).get("default_panel", "chat")
+    if default == "chat":
+        self._set_panel_mode("chat")
+    elif default == "claude_code":
+        self._set_panel_mode("claude_code")
+    # "none" → leave both inactive (chat already hidden by _hide_chat_initial)
+```
+
+### 3e — `_set_panel_mode(mode)` helper
+
+Centralises all mode transitions:
+
+```python
+def _set_panel_mode(self, mode: str) -> None:
+    self._panel_mode = mode
+    # Chat panel visibility
+    try:
+        chat = self.query_one("#chat-panel", ChatPanel)
+        chat.display = (mode == "chat")
+    except NoMatches:
+        pass
+    # Button highlight
+    for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+        try:
+            btn = self.query_one(f"#{bid}", Button)
+            if mode == active_mode:
+                btn.add_class("panel-btn-active")
+            else:
+                btn.remove_class("panel-btn-active")
+        except NoMatches:
+            pass
+```
+
+### 3f — Button handler additions
+
+Inside `on_button_pressed`, add alongside the existing elif chain:
+
+```python
+elif bid == "btn-panel-chat":
+    # toggle: if already active, close it
+    new_mode = "none" if self._panel_mode == "chat" else "chat"
+    self._set_panel_mode(new_mode)
+
+elif bid == "btn-panel-claude":
+    if self._panel_mode == "claude_code":
+        # already "active" — treat second click as launch
+        self._launch_claude()
+    else:
+        self._set_panel_mode("claude_code")
+        # immediately launch on first click too
+        self._launch_claude()
+```
+
+> **UX rationale:** Chat toggles open/close. Claude launches immediately on every
+> click (there's nothing to "show" in the pane — the full terminal takes over).
+> The highlight on the Claude button is a persistent reminder of which mode is
+> preferred / was last used.
+
+### 3g — `_launch_claude()` method
+
+```python
+def _launch_claude(self) -> None:
+    import shutil, subprocess
+    if not shutil.which("claude"):
+        self.app.notify(
+            "'claude' not found on PATH — install Claude Code first.",
+            severity="error",
+        )
+        return
+    project_dir = str(self.project.path)
+    with self.app.suspend():
+        subprocess.run(["claude"], cwd=project_dir)
+```
+
+### 3h — Remove old `_toggle_chat` method and `btn-toggle-chat` handler
+
+Delete the `_toggle_chat` method and its `elif bid == "btn-toggle-chat"` branch.
+The `_set_panel_mode("chat")` / `_set_panel_mode("none")` path replaces it entirely.
+`_hide_chat_initial` can stay as-is (it hides the panel at startup regardless).
 
 ---
 
-## 7 — Verification
+## 4 — Verification
 
 ```bash
-python -m py_compile modules/security/project_screen.py
-python -m py_compile modules/security/skills.py
-python -m py_compile nexus/core/module_manager.py
-python -m py_compile nexus/ui/tiles.py
-python -c "from modules.security.project_screen import SecurityProjectScreen; print('OK')"
+python -m py_compile nexus/core/config_manager.py
+python -m py_compile nexus/ui/base_project_screen.py
+python -m py_compile nexus/ui/settings_screen.py
 uv run nexus
 ```
 
 Manual checks:
 
-- "Add Project" tile grid shows Security module with correct tile label
-- Create a `sec-test` project → inline setup form shows 4 fields; Browse works on VPN config dir
-- After saving setup → content pane shows tool inventory (✓/✗), WG status, firewall status, DNS nameservers
-- Firewall Status button → output log shows ufw output
-- VPN Connect / Disconnect → wg-quick output appears in log
-- Open Ports → `ss -tulnp` output in log
-- Public IP → external-server warning then IP address in log
+- Open any project — two buttons appear: **💬 Chat** and **⌨ Claude**.
+- Default is Chat: chat panel opens automatically, Chat button highlighted green.
+- Click **💬 Chat** again → panel closes, button un-highlights.
+- Click **⌨ Claude** → Nexus suspends, `claude` opens in the project directory,
+  CLAUDE.md is picked up automatically. Exit claude → Nexus resumes cleanly.
+- Settings → General → change "Default AI panel" to **Claude Code CLI** → Save.
+- Open a project → no chat panel, Claude button highlighted; click it → claude launches.
+- Settings → change default to **None** → no panel and no highlight on open.
+- If `claude` is not on PATH → error notify, no crash.
