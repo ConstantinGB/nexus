@@ -229,6 +229,12 @@ class BaseProjectScreen(Screen):
         border-left: solid #3A2260;
         background: #130822;
     }
+    #terminal-panel {
+        width: 1fr;
+        height: 1fr;
+        border-left: solid #3A2260;
+        display: none;
+    }
 
     #output-log { height: 8; background: #0A0518; border: solid #3A2260; }
 
@@ -353,6 +359,7 @@ class BaseProjectScreen(Screen):
                 ["global", self.MODULE_KEY],
                 id="chat-panel",
             )
+            yield Vertical(id="terminal-panel")
 
         yield Log(id="output-log", auto_scroll=True)
         yield Footer()
@@ -386,10 +393,9 @@ class BaseProjectScreen(Screen):
                 self._set_panel_mode(new_mode)
             elif bid == "btn-panel-claude":
                 if self._panel_mode == "claude_code":
-                    self._launch_claude()
+                    self._set_panel_mode("none")
                 else:
-                    self._set_panel_mode("claude_code")
-                    self._launch_claude()
+                    self.run_worker(self._launch_claude())
             elif bid == "btn-open-folder":
                 self._open_primary_folder()
             elif bid == "btn-edit-project":
@@ -467,13 +473,16 @@ class BaseProjectScreen(Screen):
         if default == "chat":
             self._set_panel_mode("chat")
         elif default == "claude_code":
-            self._set_panel_mode("claude_code")
+            self.run_worker(self._launch_claude())
 
     def _set_panel_mode(self, mode: str) -> None:
         self._panel_mode = mode
         try:
-            chat = self.query_one("#chat-panel", ChatPanel)
-            chat.display = (mode == "chat")
+            self.query_one("#chat-panel", ChatPanel).display = (mode == "chat")
+        except NoMatches:
+            pass
+        try:
+            self.query_one("#terminal-panel").display = (mode == "claude_code")
         except NoMatches:
             pass
         for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
@@ -486,16 +495,54 @@ class BaseProjectScreen(Screen):
             except NoMatches:
                 pass
 
-    def _launch_claude(self) -> None:
-        import shutil, subprocess
+    async def _launch_claude(self) -> None:
+        import shutil
+        from nexus.ui.terminal_widget import Terminal
+
         if not shutil.which("claude"):
             self.app.notify(
                 "'claude' not found on PATH — install Claude Code first.",
                 severity="error",
             )
             return
-        with self.app.suspend():
-            subprocess.run(["claude"], cwd=str(self.project.path))
+
+        self._set_panel_mode("claude_code")
+
+        # Session already alive — just make the panel visible
+        try:
+            self.query_one("#claude-terminal")
+            return
+        except NoMatches:
+            pass
+
+        terminal = Terminal(
+            command="claude",
+            cwd=str(self.project.path),
+            id="claude-terminal",
+        )
+        try:
+            panel = self.query_one("#terminal-panel")
+        except NoMatches:
+            return
+        await panel.mount(terminal)
+        terminal.start()
+        terminal.focus()
+
+    def on_terminal_process_stopped(self, _event) -> None:
+        try:
+            self.query_one("#claude-terminal").remove()
+        except NoMatches:
+            pass
+        if self._panel_mode == "claude_code":
+            self._set_panel_mode("none")
+
+    def action_dismiss(self, result=None) -> None:
+        try:
+            from nexus.ui.terminal_widget import Terminal
+            self.query_one("#claude-terminal", Terminal).stop()
+        except NoMatches:
+            pass
+        self.dismiss(result)
 
     def _reload_screen(self) -> None:
         self._load_cfg()

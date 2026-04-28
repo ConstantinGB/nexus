@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Label, Button, Log, RichLog
 from textual.containers import Vertical, Horizontal
@@ -28,6 +29,8 @@ class CustomProjectScreen(Screen):
     #top-bar       { height: 3; background: #2D1B4E; padding: 0 2;
                      border-bottom: solid #3A2260; }
     #project-title { color: #00B4FF; text-style: bold; width: 1fr; }
+    .panel-btn        { margin-left: 1; }
+    .panel-btn-active { border: solid #00FF88; color: #00FF88; }
 
     #pane-row      { height: 1fr; }
 
@@ -38,6 +41,9 @@ class CustomProjectScreen(Screen):
 
     CustomProjectScreen ChatPanel { display: block; width: 1fr; border-left: none; }
 
+    #terminal-panel { width: 1fr; height: 1fr;
+                      border-left: solid #3A2260; display: none; }
+
     #cmd-bar       { height: 3; background: #2D1B4E;
                      border-top: solid #3A2260; padding: 0 1; }
     #cmd-bar Button { margin-right: 1; height: 3; }
@@ -47,8 +53,9 @@ class CustomProjectScreen(Screen):
 
     def __init__(self, project: ProjectInfo) -> None:
         super().__init__()
-        self.project   = project
+        self.project    = project
         self._commands: list[dict] = []
+        self._panel_mode: str = "chat"
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
@@ -75,6 +82,7 @@ class CustomProjectScreen(Screen):
         yield Header()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
+            yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
 
         with Horizontal(id="pane-row"):
             with Vertical(id="context-pane"):
@@ -87,6 +95,7 @@ class CustomProjectScreen(Screen):
                 ["global", "custom"],
                 id="chat-panel",
             )
+            yield Vertical(id="terminal-panel")
 
         with Horizontal(id="cmd-bar"):
             for i, cmd in enumerate(self._commands):
@@ -111,7 +120,12 @@ class CustomProjectScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
         try:
-            if bid == "btn-add-cmd":
+            if bid == "btn-panel-claude":
+                if self._panel_mode == "claude_code":
+                    self._set_panel_mode("chat")
+                else:
+                    self.run_worker(self._launch_claude())
+            elif bid == "btn-add-cmd":
                 self.app.push_screen(
                     InputModal(
                         "Add Command",
@@ -130,6 +144,75 @@ class CustomProjectScreen(Screen):
         except Exception:
             log.exception("Button handler error (bid=%s)", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
+
+    def action_dismiss(self, result=None) -> None:
+        try:
+            from nexus.ui.terminal_widget import Terminal
+            self.query_one("#claude-terminal", Terminal).stop()
+        except NoMatches:
+            pass
+        self.dismiss(result)
+
+    # ── Terminal panel ────────────────────────────────────────────────────────
+
+    def _set_panel_mode(self, mode: str) -> None:
+        self._panel_mode = mode
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = (mode == "chat")
+        except NoMatches:
+            pass
+        try:
+            self.query_one("#terminal-panel").display = (mode == "claude_code")
+        except NoMatches:
+            pass
+        try:
+            btn = self.query_one("#btn-panel-claude", Button)
+            if mode == "claude_code":
+                btn.add_class("panel-btn-active")
+            else:
+                btn.remove_class("panel-btn-active")
+        except NoMatches:
+            pass
+
+    async def _launch_claude(self) -> None:
+        import shutil
+        from nexus.ui.terminal_widget import Terminal
+
+        if not shutil.which("claude"):
+            self.app.notify(
+                "'claude' not found on PATH — install Claude Code first.",
+                severity="error",
+            )
+            return
+
+        self._set_panel_mode("claude_code")
+
+        try:
+            self.query_one("#claude-terminal")
+            return
+        except NoMatches:
+            pass
+
+        terminal = Terminal(
+            command="claude",
+            cwd=str(_PROJECTS_DIR / self.project.slug),
+            id="claude-terminal",
+        )
+        try:
+            panel = self.query_one("#terminal-panel")
+        except NoMatches:
+            return
+        await panel.mount(terminal)
+        terminal.start()
+        terminal.focus()
+
+    def on_terminal_process_stopped(self, _event) -> None:
+        try:
+            self.query_one("#claude-terminal").remove()
+        except NoMatches:
+            pass
+        if self._panel_mode == "claude_code":
+            self._set_panel_mode("chat")
 
     # ── Custom commands ───────────────────────────────────────────────────────
 

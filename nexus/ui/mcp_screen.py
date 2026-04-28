@@ -160,11 +160,12 @@ class MCPScreen(Screen):
         pass
 
     def on_click(self, event) -> None:
-        # Handle clicks on available server rows
-        for node in event.path:
-            if isinstance(node, ServerRow):
-                self._show_config_form(node.spec)
+        widget = event.widget
+        while widget is not None:
+            if isinstance(widget, ServerRow):
+                self._show_config_form(widget.spec)
                 break
+            widget = widget.parent
 
     def _show_config_form(self, spec: MCPServerSpec) -> None:
         # Remove any existing form

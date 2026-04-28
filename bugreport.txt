@@ -1,0 +1,29 @@
+╭────────────────────────────────────────────────────────────────────────── Traceback (most recent call last) ──────────────────────────────────────────────────────────────────────────╮
+│ /home/constantin/nexus/nexus/ui/mcp_screen.py:164 in on_click                                                                                                                         │
+│                                                                                                                                                                                       │
+│   161 │                                                                                                                                                                               │
+│   162 │   def on_click(self, event) -> None:                                                                                                                                          │
+│   163 │   │   # Handle clicks on available server rows                                                                                                                                │
+│ ❱ 164 │   │   for node in event.path:                                                                                                                                                 │
+│   165 │   │   │   if isinstance(node, ServerRow):                                                                                                                                     │
+│   166 │   │   │   │   self._show_config_form(node.spec)                                                                                                                               │
+│   167 │   │   │   │   break                                                                                                                                                           │
+│                                                                                                                                                                                       │
+│ ╭───────────────────────────────────────────────────────── locals ─────────────────────────────────────────────────────────╮                                                          │
+│ │ event = Click(                                                                                                           │                                                          │
+│ │         │   Label(classes='empty-label'),                                                                                │                                                          │
+│ │         │   x=28,                                                                                                        │                                                          │
+│ │         │   y=3,                                                                                                         │                                                          │
+│ │         │   pointer_x=28,                                                                                                │                                                          │
+│ │         │   pointer_y=3,                                                                                                 │                                                          │
+│ │         │   screen_y=9,                                                                                                  │                                                          │
+│ │         │   button=1,                                                                                                    │                                                          │
+│ │         │   style=Style(                                                                                                 │                                                          │
+│ │         │   │   bgcolor=Color('#382b49', ColorType.TRUECOLOR, triplet=ColorTriplet(red=56, green=43, blue=73))           │                                                          │
+│ │         │   ),                                                                                                           │                                                          │
+│ │         │   chain=1                                                                                                      │                                                          │
+│ │         )                                                                                                                │                                                          │
+│ │  self = MCPScreen()                                                                                                      │                                                          │
+│ ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯                                                          │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+AttributeError: 'Click' object has no attribute 'path'

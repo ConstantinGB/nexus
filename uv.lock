@@ -448,6 +448,7 @@ dependencies = [
     { name = "mcp" },
     { name = "pyyaml" },
     { name = "textual" },
+    { name = "textual-terminal" },
 ]
 
 [package.metadata]
@@ -456,6 +457,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.27.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "textual", specifier = ">=8.2.4" },
+    { name = "textual-terminal", specifier = ">=0.3.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -604,6 +606,18 @@ wheels = [
 [package.optional-dependencies]
 crypto = [
     { name = "cryptography" },
+]
+
+[[package]]
+name = "pyte"
+version = "0.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wcwidth" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ab/ab/b599762933eba04de7dc5b31ae083112a6c9a9db15b01d3109ad797559d9/pyte-0.8.2.tar.gz", hash = "sha256:5af970e843fa96a97149d64e170c984721f20e52227a2f57f0a54207f08f083f", size = 92301, upload-time = "2023-11-12T09:33:43.217Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/d0/bb522283b90853afbf506cd5b71c650cf708829914efd0003d615cf426cd/pyte-0.8.2-py3-none-any.whl", hash = "sha256:85db42a35798a5aafa96ac4d8da78b090b2c933248819157fc0e6f78876a0135", size = 31627, upload-time = "2023-11-12T09:33:41.096Z" },
 ]
 
 [[package]]
@@ -847,6 +861,19 @@ wheels = [
 ]
 
 [[package]]
+name = "textual-terminal"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyte" },
+    { name = "textual" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bb/fe/94e6a50d388c9c8ce0da27f71ca5abecd99a15d4347b3d6dccc1dedfe76f/textual_terminal-0.3.0.tar.gz", hash = "sha256:594e7323b74d1e395cf3ce39216cef78cb7c64d01ea71a60ea7b0f9b198e4c87", size = 9482, upload-time = "2023-01-29T14:19:12.464Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/3d/c9202997d383a317b14de28e2c7925b56a83edb0a74012ee39b86217850f/textual_terminal-0.3.0-py3-none-any.whl", hash = "sha256:f00b22f5a59ef6d60b61453d7a98354647487c00342d4b0324221db18c4a90f1", size = 12529, upload-time = "2023-01-29T14:19:11.006Z" },
+]
+
+[[package]]
 name = "typing-extensions"
 version = "4.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -887,4 +914,13 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/eb/2e/62b0d9a2cfc8b4de6771322dae30f2db76c66dae9ec32e94e176a44ad563/uvicorn-0.45.0.tar.gz", hash = "sha256:3fe650df136c5bd2b9b06efc5980636344a2fbb840e9ddd86437d53144fa335d", size = 87818, upload-time = "2026-04-21T10:43:46.815Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/88/d0f7512465b166a4e931ccf7e77792be60fb88466a43964c7566cbaff752/uvicorn-0.45.0-py3-none-any.whl", hash = "sha256:2db26f588131aeec7439de00f2dd52d5f210710c1f01e407a52c90b880d1fd4f", size = 69838, upload-time = "2026-04-21T10:43:45.029Z" },
+]
+
+[[package]]
+name = "wcwidth"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/a2/8e3becb46433538a38726c948d3399905a4c7cabd0df578ede5dc51f0ec2/wcwidth-0.6.0.tar.gz", hash = "sha256:cdc4e4262d6ef9a1a57e018384cbeb1208d8abbc64176027e2c2455c81313159", size = 159684, upload-time = "2026-02-06T19:19:40.919Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/5a/199c59e0a824a3db2b89c5d2dade7ab5f9624dbf6448dc291b46d5ec94d3/wcwidth-0.6.0-py3-none-any.whl", hash = "sha256:1a3a1e510b553315f8e146c54764f4fb6264ffad731b3d78088cdb1478ffbdad", size = 94189, upload-time = "2026-02-06T19:19:39.646Z" },
 ]
