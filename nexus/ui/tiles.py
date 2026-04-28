@@ -10,6 +10,34 @@ from nexus.core.logger import get
 
 log = get("ui.tiles")
 
+_MODULE_DISPLAY: dict[str, str] = {
+    "research":  "Research",
+    "journal":   "Journal",
+    "codex":     "Codex",
+    "git":       "Git",
+    "localai":   "Local AI",
+    "web":       "Web",
+    "game":      "Game",
+    "org":       "Org",
+    "home":      "Home",
+    "streaming": "Streaming",
+    "vtube":     "VTube",
+    "emulator":  "Emulator",
+    "vault":     "Vault",
+    "server":    "Server",
+    "custom":    "Custom",
+    "backup":    "Backup",
+    "sdforge":   "SD Forge",
+}
+
+
+def _display_name(project: ProjectInfo) -> str:
+    from nexus.core.module_manager import MODULE_PREFIX
+    prefix = MODULE_PREFIX.get(project.module, "")
+    if prefix and project.name.lower().startswith(prefix + "-"):
+        return project.name[len(prefix) + 1:]
+    return project.name
+
 
 # ── Confirm-delete modal ───────────────────────────────────────────────────────
 
@@ -64,19 +92,36 @@ class ProjectTile(Widget):
         background: #3A2260;
     }
 
-    ProjectTile #tile-header   { height: 2; }
-    ProjectTile .module-label  { color: #00B4FF; text-style: bold; width: 1fr; }
-    ProjectTile #btn-del       {
+    ProjectTile #tile-header  { height: 1; }
+    ProjectTile .tile-spacer  { width: 1fr; }
+    ProjectTile #btn-del      {
         width: 4; height: 1;
         min-width: 4;
         border: none;
         background: transparent;
         color: #555588;
-        margin-top: 1;
     }
     ProjectTile #btn-del:hover { color: #FF4444; background: transparent; }
-    ProjectTile .project-name  { color: #E0E0FF; height: 1; }
-    ProjectTile .project-desc  { color: #8080AA; height: 1; }
+    ProjectTile .project-name {
+        text-align: center;
+        text-style: bold;
+        color: #E0E0FF;
+        width: 100%;
+        height: 2;
+        content-align: center middle;
+    }
+    ProjectTile .module-label {
+        text-align: center;
+        color: #00B4FF;
+        width: 100%;
+        height: 1;
+    }
+    ProjectTile .project-desc {
+        text-align: center;
+        color: #8080AA;
+        width: 100%;
+        height: 1;
+    }
     """
 
     def __init__(self, project: ProjectInfo, **kwargs):
@@ -85,9 +130,13 @@ class ProjectTile(Widget):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="tile-header"):
-            yield Label(f"[ {self.project.module.upper()} ]", classes="module-label")
+            yield Label("", classes="tile-spacer")
             yield Button("✕", id="btn-del")
-        yield Label(self.project.name, classes="project-name")
+        yield Label(_display_name(self.project), classes="project-name")
+        yield Label(
+            _MODULE_DISPLAY.get(self.project.module, self.project.module.title()),
+            classes="module-label",
+        )
         if self.project.description:
             yield Label(self.project.description, classes="project-desc")
 

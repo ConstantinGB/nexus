@@ -120,6 +120,17 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
     )
 
 
+def update_project_meta(slug: str, name: str, description: str) -> None:
+    cfg_path = _PROJECTS_DIR / slug / "config.yaml"
+    with open(cfg_path) as f:
+        cfg = yaml.safe_load(f) or {}
+    cfg["name"] = name
+    cfg["description"] = description
+    with open(cfg_path, "w") as f:
+        yaml.safe_dump(cfg, f, allow_unicode=True)
+    log.info("Updated project meta: slug=%r name=%r", slug, name)
+
+
 def delete_project(slug: str) -> None:
     log.info("Deleting project: %s", slug)
     project_dir = _PROJECTS_DIR / slug

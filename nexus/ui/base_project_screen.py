@@ -9,7 +9,7 @@ from textual.widgets import Header, Footer, Label, Button, Log, Input
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
-from nexus.core.project_manager import ProjectInfo
+from nexus.core.project_manager import ProjectInfo, update_project_meta
 from nexus.core.config_manager import load_project_config, save_project_config
 from nexus.core.platform import open_path
 from nexus.ui.chat_panel import ChatPanel
@@ -112,6 +112,61 @@ class SudoModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class EditProjectModal(ModalScreen):
+    DEFAULT_CSS = """
+    EditProjectModal { align: center middle; }
+    #ep-dialog {
+        background: #2D1B4E; border: solid #00B4FF;
+        padding: 1 2; width: 60; height: auto;
+    }
+    #ep-title  { color: #00B4FF; text-style: bold; height: 2; }
+    #ep-btns   { height: 3; margin-top: 1; }
+    #ep-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self, name: str, description: str) -> None:
+        super().__init__()
+        self._name = name
+        self._description = description
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="ep-dialog"):
+            yield Label("Edit Project", id="ep-title")
+            yield Label("Name:", classes="field-label")
+            yield Input(value=self._name, id="ep-name")
+            yield Label("Description:", classes="field-label")
+            yield Input(value=self._description, id="ep-desc")
+            with Horizontal(id="ep-btns"):
+                yield Button("Save", id="ep-save", variant="primary")
+                yield Button("Cancel", id="ep-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "ep-save":
+            name = self.query_one("#ep-name", Input).value.strip()
+            if name:
+                self.dismiss({
+                    "name": name,
+                    "description": self.query_one("#ep-desc", Input).value.strip(),
+                })
+            else:
+                self.app.notify("Name cannot be empty.", severity="error")
+        else:
+            self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "ep-name":
+            self.query_one("#ep-desc", Input).focus()
+        elif event.input.id == "ep-desc":
+            name = self.query_one("#ep-name", Input).value.strip()
+            if name:
+                self.dismiss({
+                    "name": name,
+                    "description": self.query_one("#ep-desc", Input).value.strip(),
+                })
+            else:
+                self.app.notify("Name cannot be empty.", severity="error")
+
+
 class BaseProjectScreen(Screen):
     """
     Shared base for all skeleton module project screens.
@@ -164,8 +219,9 @@ class BaseProjectScreen(Screen):
     #body-row    { height: 1fr; }
     #main-pane   { width: 1fr; height: 1fr; min-width: 0; }
     #content-area { height: 1fr; padding: 1 2; overflow-y: auto; }
-    #btn-toggle-chat { margin-left: 1; }
-    #btn-open-folder { margin-left: 1; }
+    #btn-toggle-chat   { margin-left: 1; }
+    #btn-open-folder   { margin-left: 1; }
+    #btn-edit-project  { margin-left: 1; }
     #chat-panel {
         width: 1fr;
         height: 1fr;
@@ -256,6 +312,7 @@ class BaseProjectScreen(Screen):
             yield Label(self.project.name, id="project-title")
             yield Label(meta, id="project-meta")
             yield Button("📁", id="btn-open-folder", tooltip="Open project folder")
+            yield Button("⚙", id="btn-edit-project", tooltip="Edit name & description")
             yield Button("💬 AI", id="btn-toggle-chat")
         with Horizontal(id="action-bar"):
             yield from self._compose_action_buttons()
@@ -324,6 +381,11 @@ class BaseProjectScreen(Screen):
                 self._toggle_chat()
             elif bid == "btn-open-folder":
                 self._open_primary_folder()
+            elif bid == "btn-edit-project":
+                self.app.push_screen(
+                    EditProjectModal(self.project.name, self.project.description),
+                    self._apply_project_edit,
+                )
             elif bid and bid.startswith("btn-browse-"):
                 field_id = bid[len("btn-browse-"):]
                 try:
@@ -340,6 +402,22 @@ class BaseProjectScreen(Screen):
         except Exception:
             log.exception("Button handler error: %s", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
+
+    def _apply_project_edit(self, result: dict | None) -> None:
+        if not result:
+            return
+        new_name = result["name"]
+        new_desc = result["description"]
+        update_project_meta(self.project.slug, new_name, new_desc)
+        self.project.name = new_name
+        self.project.description = new_desc
+        try:
+            self.query_one("#project-title", Label).update(new_name)
+            meta = f"{self.MODULE_LABEL} · {new_desc}" if new_desc else self.MODULE_LABEL
+            self.query_one("#project-meta", Label).update(meta)
+        except Exception:
+            pass
+        self.app.notify("Project updated.", severity="information")
 
     def _fill_dir(self, field_id: str, path: str | None) -> None:
         if not path:
