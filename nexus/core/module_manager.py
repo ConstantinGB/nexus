@@ -29,6 +29,7 @@ _REGISTRY: list[ModuleInfo] = [
     ModuleInfo("emulator",  "Emulator",  "Retro console emulation — RetroArch, Dolphin, PCSX2, RPCS3, and more.",       ["gaming", "retro"]),
     ModuleInfo("vault",     "Vault",     "Encrypted file storage and secrets management — GPG, VeraCrypt, KeePassXC.",   ["security", "crypto"]),
     ModuleInfo("backup",    "Backup",    "Encrypted, deduplicated backups via restic — local, NAS (SFTP), or NFS.",      ["system", "backup"], system=True),
+    ModuleInfo("security",  "Security",  "Firewall, VPN, DNS privacy and system hardening.",                              ["security", "privacy", "network"]),
 ]
 
 _REGISTRY_BY_ID: dict[str, ModuleInfo] = {m.id: m for m in _REGISTRY}
@@ -51,6 +52,7 @@ MODULE_PREFIX: dict[str, str] = {
     "custom":   "cst",
     "backup":   "bak",
     "sdforge":  "sdf",
+    "security": "sec",
 }
 
 
@@ -154,4 +156,7 @@ def get_project_screen(project):
     if project.module == "custom":
         from modules.custom.project_screen import CustomProjectScreen
         return CustomProjectScreen(project)
+    if project.module == "security":
+        from modules.security.project_screen import SecurityProjectScreen
+        return SecurityProjectScreen(project)
     return None

@@ -28,6 +28,7 @@ _MODULE_DISPLAY: dict[str, str] = {
     "custom":    "Custom",
     "backup":    "Backup",
     "sdforge":   "SD Forge",
+    "security":  "Security",
 }
 
 

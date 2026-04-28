@@ -81,7 +81,8 @@ def _register_skills() -> None:
     import modules.backup.skills       # noqa: F401
     import modules.localai.skills      # noqa: F401
     import modules.sdforge.skills      # noqa: F401
-    import modules.custom.skills       # noqa: F401
+    import modules.custom.skills        # noqa: F401
+    import modules.security.skills     # noqa: F401
     from nexus.ai.flow_handlers import register_flow_handlers
     register_flow_handlers()
     from nexus.ai.skill_registry import registry
