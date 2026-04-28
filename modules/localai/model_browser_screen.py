@@ -86,15 +86,18 @@ class ModelBrowserScreen(Screen):
     .tab-hint { color: #666699; height: 2; padding: 0 2; }
     .mb-empty { color: #555588; padding: 1 2; height: 3; }
     #pull-log { height: 8; background: #0A0518; border-top: solid #3A2260; }
+    #btn-fetch-more { width: 100%; height: 3; margin: 0; }
     """
 
     def __init__(self, project_slug: str, local_endpoint: str,
                  hw: dict | None = None) -> None:
         super().__init__()
-        self._slug      = project_slug
-        self._endpoint  = local_endpoint.rstrip("/")
-        self._hw        = hw or {}
+        self._slug              = project_slug
+        self._endpoint          = local_endpoint.rstrip("/")
+        self._hw                = hw or {}
         self._installed: set[str] = set()
+        self._extra_models: list[dict] = []
+        self._catalog_lock      = asyncio.Lock()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -109,11 +112,31 @@ class ModelBrowserScreen(Screen):
                 yield Label("Popular Ollama models — Pull to download, Use to activate.",
                             classes="tab-hint")
                 yield ScrollableContainer(id="catalog-list")
+                yield Button("⬇ Fetch more from Ollama…", id="btn-fetch-more")
         yield Log(id="pull-log", auto_scroll=True)
         yield Footer()
 
     def on_mount(self) -> None:
         self.run_worker(self._fetch_installed())
+
+    # ── Catalog helpers ───────────────────────────────────────────────────────
+
+    def _all_catalog(self) -> list[dict]:
+        seen = {m["id"] for m in model_catalog.CATALOG}
+        extra = [m for m in self._extra_models if m["id"] not in seen]
+        return model_catalog.CATALOG + extra
+
+    def _search_catalog(self, query: str) -> list[dict]:
+        if not query:
+            return self._all_catalog()
+        q = query.lower()
+        return [
+            m for m in self._all_catalog()
+            if q in m["id"].lower()
+            or q in m.get("display", m["id"]).lower()
+            or q in m.get("desc", "").lower()
+            or any(q in t for t in m.get("tags", []))
+        ]
 
     # ── List builders ─────────────────────────────────────────────────────────
 
@@ -122,7 +145,16 @@ class ModelBrowserScreen(Screen):
     ) -> None:
         if installed is None:
             installed = frozenset(self._installed)
-        container = self.query_one("#catalog-list", ScrollableContainer)
+        async with self._catalog_lock:
+            await self._do_rebuild_catalog(models, installed)
+
+    async def _do_rebuild_catalog(
+        self, models: list[dict], installed: frozenset
+    ) -> None:
+        try:
+            container = self.query_one("#catalog-list", ScrollableContainer)
+        except Exception:
+            return  # screen dismissed
         await container.remove_children()
         if not models:
             await container.mount(Label("No models match.", classes="mb-empty"))
@@ -174,8 +206,68 @@ class ModelBrowserScreen(Screen):
             pull_log.write_line(f"✗ {exc}")
         await self._rebuild_installed()
         snapshot = frozenset(self._installed)
-        query = self.query_one("#model-search", Input).value.strip()
-        await self._rebuild_catalog(model_catalog.search(query), snapshot)
+        try:
+            query = self.query_one("#model-search", Input).value.strip()
+        except Exception:
+            return
+        await self._rebuild_catalog(self._search_catalog(query), snapshot)
+
+    # ── Fetch more from Ollama ────────────────────────────────────────────────
+
+    async def _fetch_more_from_ollama(self) -> None:
+        import re as _re
+        import html as _html
+        try:
+            pull_log = self.query_one("#pull-log", Log)
+        except Exception:
+            return
+        pull_log.write_line("$ Fetching model list from ollama.com/library…")
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                resp = await client.get("https://ollama.com/library")
+            if resp.status_code != 200:
+                pull_log.write_line(f"✗ HTTP {resp.status_code}")
+                self.app.notify("Could not reach ollama.com.", severity="warning")
+                return
+            html_text = resp.text
+            # Parse model blocks — each has x-test-model-title title="<name>"
+            existing_ids = {m["id"] for m in self._all_catalog()}
+            new_models: list[dict] = []
+            for match in _re.finditer(r'x-test-model-title[^>]+title="([^"]+)"', html_text):
+                mid = match.group(1).strip()
+                if not mid or mid in existing_ids:
+                    continue
+                chunk = html_text[match.start(): match.start() + 1000]
+                desc_m = _re.search(r'<p[^>]*>(.*?)</p>', chunk, _re.DOTALL)
+                desc = _html.unescape(
+                    _re.sub(r'<[^>]+>', '', desc_m.group(1)).strip()
+                ) if desc_m else ""
+                new_models.append({
+                    "id": mid,
+                    "display": mid,
+                    "size": "",
+                    "vram_min_gb": 0.0,
+                    "tags": [],
+                    "desc": desc[:120],
+                })
+                existing_ids.add(mid)  # prevent duplicates within this batch
+            self._extra_models.extend(new_models)
+            pull_log.write_line(f"✓ {len(new_models)} additional model(s) loaded")
+            self.app.notify(f"{len(new_models)} new models added to catalog.", severity="information")
+        except httpx.ConnectError:
+            pull_log.write_line("✗ Cannot connect to ollama.com — check internet connection")
+            self.app.notify("Cannot reach ollama.com.", severity="warning")
+            return
+        except Exception as exc:
+            log.exception("Failed to fetch Ollama library")
+            pull_log.write_line(f"✗ {exc}")
+            return
+        try:
+            query = self.query_one("#model-search", Input).value.strip()
+        except Exception:
+            return
+        snapshot = frozenset(self._installed)
+        await self._rebuild_catalog(self._search_catalog(query), snapshot)
 
     # ── Pull ──────────────────────────────────────────────────────────────────
 
@@ -261,7 +353,9 @@ class ModelBrowserScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
         try:
-            if bid.startswith("use-"):
+            if bid == "btn-fetch-more":
+                self.run_worker(self._fetch_more_from_ollama())
+            elif bid.startswith("use-"):
                 model_id = self._model_id_from_bid(bid, "use-")
                 if model_id:
                     self._use_model(model_id)
@@ -288,9 +382,23 @@ class ModelBrowserScreen(Screen):
 
     # ── Search ────────────────────────────────────────────────────────────────
 
+    def _do_search(self, query: str) -> None:
+        if query:
+            try:
+                self.query_one(TabbedContent).active = "tab-catalog"
+            except Exception:
+                pass
+        snapshot = frozenset(self._installed)
+        self.run_worker(
+            self._rebuild_catalog(self._search_catalog(query), snapshot),
+            exclusive=True,
+            group="catalog-rebuild",
+        )
+
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "model-search":
-            snapshot = frozenset(self._installed)
-            self.run_worker(
-                self._rebuild_catalog(model_catalog.search(event.value.strip()), snapshot)
-            )
+            self._do_search(event.value.strip())
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "model-search":
+            self._do_search(event.value.strip())

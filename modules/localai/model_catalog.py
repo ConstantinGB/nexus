@@ -24,7 +24,34 @@ CATALOG: list[dict] = [
     # ── Embedding ────────────────────────────────────────────────────────
     {"id": "nomic-embed-text",  "display": "Nomic Embed Text",  "size": "137M", "vram_min_gb": 0.5, "tags": ["embedding"],         "desc": "High-quality text embeddings, 8192 context window"},
     {"id": "mxbai-embed-large", "display": "MxBai Embed Large", "size": "335M", "vram_min_gb": 0.8, "tags": ["embedding"],         "desc": "MixedBread AI large embedding model"},
-    {"id": "all-minilm",        "display": "All-MiniLM",        "size": "23M",  "vram_min_gb": 0.2, "tags": ["embedding"],         "desc": "Sentence-transformers MiniLM: fast lightweight embeddings"},
+    {"id": "all-minilm",        "display": "All-MiniLM",        "size": "23M",  "vram_min_gb": 0.2, "tags": ["embedding"],              "desc": "Sentence-transformers MiniLM: fast lightweight embeddings"},
+    # ── Large / Frontier ─────────────────────────────────────────────────
+    {"id": "llama3.3",          "display": "Llama 3.3",         "size": "70B",  "vram_min_gb": 42.0, "tags": ["chat", "text"],          "desc": "Meta's flagship 70B model, state-of-the-art on benchmarks"},
+    {"id": "llama3.1:70b",      "display": "Llama 3.1 70B",     "size": "70B",  "vram_min_gb": 42.0, "tags": ["chat", "text"],          "desc": "Meta Llama 3.1 70B — best open-weight reasoning"},
+    {"id": "mixtral",           "display": "Mixtral 8x7B",      "size": "47B",  "vram_min_gb": 28.0, "tags": ["chat", "text"],          "desc": "Mistral sparse MoE: 47B params, 13B active — very fast"},
+    {"id": "command-r",         "display": "Command R",         "size": "35B",  "vram_min_gb": 22.0, "tags": ["chat", "text"],          "desc": "Cohere Command R: optimised for RAG and tool use"},
+    {"id": "command-r-plus",    "display": "Command R+",        "size": "104B", "vram_min_gb": 64.0, "tags": ["chat", "text"],          "desc": "Cohere Command R+ 104B — frontier-class open model"},
+    # ── Reasoning ────────────────────────────────────────────────────────
+    {"id": "deepseek-r1:14b",   "display": "DeepSeek R1 14B",   "size": "14B",  "vram_min_gb": 9.0,  "tags": ["chat", "reasoning"],     "desc": "DeepSeek R1 distill 14B: strong CoT on consumer GPU"},
+    {"id": "deepseek-r1:32b",   "display": "DeepSeek R1 32B",   "size": "32B",  "vram_min_gb": 20.0, "tags": ["chat", "reasoning"],     "desc": "DeepSeek R1 distill 32B: near-frontier reasoning"},
+    {"id": "qwq",               "display": "QwQ 32B",           "size": "32B",  "vram_min_gb": 20.0, "tags": ["chat", "reasoning"],     "desc": "Qwen reasoning model — strong math and logic"},
+    {"id": "phi4-mini",         "display": "Phi-4 Mini",        "size": "3.8B", "vram_min_gb": 2.5,  "tags": ["chat", "reasoning"],     "desc": "Microsoft Phi-4 Mini: efficient reasoning, runs on CPU"},
+    # ── More coding ──────────────────────────────────────────────────────
+    {"id": "devstral",          "display": "Devstral",          "size": "22B",  "vram_min_gb": 14.0, "tags": ["coding"],                "desc": "Mistral coding model optimised for agentic tasks"},
+    {"id": "deepseek-coder-v2", "display": "DeepSeek Coder V2", "size": "16B",  "vram_min_gb": 10.0, "tags": ["coding"],                "desc": "DeepSeek Coder V2: state-of-the-art open code model"},
+    {"id": "codegemma",         "display": "CodeGemma",         "size": "7B",   "vram_min_gb": 4.5,  "tags": ["coding"],                "desc": "Google CodeGemma: code generation and completion"},
+    {"id": "yi-coder",          "display": "Yi Coder",          "size": "9B",   "vram_min_gb": 5.5,  "tags": ["coding"],                "desc": "01.AI Yi Coder: strong multilingual code model"},
+    # ── Multimodal ───────────────────────────────────────────────────────
+    {"id": "gemma3",            "display": "Gemma 3",           "size": "12B",  "vram_min_gb": 7.5,  "tags": ["vision", "chat"],        "desc": "Google Gemma 3 multimodal: image + text, excellent quality"},
+    {"id": "minicpm-v",         "display": "MiniCPM-V",         "size": "8B",   "vram_min_gb": 5.0,  "tags": ["vision", "chat"],        "desc": "Efficient vision-language model with OCR support"},
+    {"id": "qwen2.5vl",         "display": "Qwen2.5-VL",        "size": "7B",   "vram_min_gb": 4.5,  "tags": ["vision", "chat"],        "desc": "Alibaba Qwen2.5 Vision-Language model"},
+    # ── Specialised / Small ──────────────────────────────────────────────
+    {"id": "aya",               "display": "Aya Expanse",       "size": "8B",   "vram_min_gb": 5.0,  "tags": ["chat", "multilingual"],  "desc": "Cohere Aya Expanse: 23-language multilingual assistant"},
+    {"id": "smollm2",           "display": "SmolLM2",           "size": "1.7B", "vram_min_gb": 1.2,  "tags": ["chat", "text"],          "desc": "HuggingFace SmolLM2: tiny but capable, ideal for CPU"},
+    {"id": "tinyllama",         "display": "TinyLlama",         "size": "1.1B", "vram_min_gb": 0.8,  "tags": ["chat", "text"],          "desc": "Tiny 1.1B Llama — runs anywhere, fast responses"},
+    {"id": "falcon3",           "display": "Falcon3",           "size": "7B",   "vram_min_gb": 4.5,  "tags": ["chat", "text"],          "desc": "TII Falcon3: efficient instruct model"},
+    {"id": "solar-pro",         "display": "Solar Pro",         "size": "22B",  "vram_min_gb": 14.0, "tags": ["chat", "text"],          "desc": "Upstage Solar Pro: strong instruction following"},
+    {"id": "nemotron-mini",     "display": "Nemotron Mini",     "size": "4B",   "vram_min_gb": 3.0,  "tags": ["chat", "text"],          "desc": "NVIDIA Nemotron Mini 4B: efficient conversational model"},
 ]
 
 
