@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.screen import Screen, ModalScreen
 from textual.widgets import (
     Header, Footer, Label, Button, Checkbox, TextArea, Log, Input,
@@ -13,6 +14,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
+from nexus.ui.chat_panel import ChatPanel
 
 log = get("git.project_screen")
 
@@ -661,8 +663,16 @@ class GitProjectScreen(Screen):
     #action-bar Button  { margin-right: 1; }
     #btn-delete         { border: solid #FF4444; color: #FF4444; }
 
-    #repo-scroll  { height: 1fr; }
+    .panel-btn          { margin-left: 1; }
+    .panel-btn-active   { border: solid #00FF88; color: #00FF88; }
+
+    #body-row     { height: 1fr; }
+    #repo-scroll  { width: 1fr; height: 1fr; }
     #no-repos     { color: #555588; padding: 2 4; }
+    #chat-panel   { width: 1fr; height: 1fr; border-left: solid #3A2260;
+                    background: #130822; display: none; }
+    #terminal-panel { width: 1fr; height: 1fr; border-left: solid #3A2260;
+                      display: none; }
 
     #delete-confirm-bar {
         height: 3;
@@ -679,6 +689,7 @@ class GitProjectScreen(Screen):
         self._git_cfg     = {}
         self._repos: list[dict] = []
         self._delete_mode = False
+        self._panel_mode  = "none"
 
     def _load_cfg(self) -> None:
         cfg_path = _PROJECTS_DIR / self.project.slug / "config.yaml"
@@ -707,15 +718,102 @@ class GitProjectScreen(Screen):
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta,              id="project-meta")
+            yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
+            yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
         with Horizontal(id="action-bar"):
             yield Button("Pull All",    id="btn-pull-all")
             yield Button("Clone / Add", id="btn-clone-add")
             yield Button("Delete",      id="btn-delete")
-        yield ScrollableContainer(id="repo-scroll")
+        with Horizontal(id="body-row"):
+            yield ScrollableContainer(id="repo-scroll")
+            yield ChatPanel(
+                self.project.slug, "git", ["global", "git"], id="chat-panel"
+            )
+            yield Vertical(id="terminal-panel")
         yield Footer()
 
     def on_mount(self) -> None:
         self.run_worker(self._render_repos)
+        self.call_after_refresh(self._hide_chat_initial)
+        self.call_after_refresh(self._apply_panel_default)
+
+    def _hide_chat_initial(self) -> None:
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = False
+        except NoMatches:
+            pass
+
+    def _apply_panel_default(self) -> None:
+        from nexus.core.config_manager import load_global_config
+        default = load_global_config().get("ai", {}).get("default_panel", "chat")
+        if default == "chat":
+            self._set_panel_mode("chat")
+        elif default == "claude_code":
+            self.run_worker(self._launch_claude())
+
+    def _set_panel_mode(self, mode: str) -> None:
+        self._panel_mode = mode
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = (mode == "chat")
+        except NoMatches:
+            pass
+        try:
+            self.query_one("#terminal-panel").display = (mode == "claude_code")
+        except NoMatches:
+            pass
+        for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+            try:
+                btn = self.query_one(f"#{bid}", Button)
+                if mode == active_mode:
+                    btn.add_class("panel-btn-active")
+                else:
+                    btn.remove_class("panel-btn-active")
+            except NoMatches:
+                pass
+
+    async def _launch_claude(self) -> None:
+        import shutil
+        from nexus.ui.terminal_widget import Terminal
+        if not shutil.which("claude"):
+            self.app.notify(
+                "'claude' not found on PATH — install Claude Code first.",
+                severity="error",
+            )
+            return
+        self._set_panel_mode("claude_code")
+        try:
+            self.query_one("#claude-terminal")
+            return
+        except NoMatches:
+            pass
+        terminal = Terminal(
+            command="claude",
+            cwd=str(_PROJECTS_DIR / self.project.slug),
+            id="claude-terminal",
+        )
+        try:
+            panel = self.query_one("#terminal-panel")
+        except NoMatches:
+            return
+        await panel.mount(terminal)
+        terminal.start()
+        terminal.focus()
+
+    def on_terminal_process_stopped(self, _event) -> None:
+        try:
+            self.query_one("#claude-terminal").remove()
+        except NoMatches:
+            pass
+        if self._panel_mode == "claude_code":
+            self._set_panel_mode("none")
+
+    def action_dismiss(self, result=None) -> None:
+        try:
+            from nexus.ui.terminal_widget import Terminal
+            self.query_one("#claude-terminal", Terminal).stop()
+        except NoMatches:
+            pass
+        self.dismiss(result)
 
     # ── Render ────────────────────────────────────────────────────────────────
 
@@ -759,6 +857,17 @@ class GitProjectScreen(Screen):
         return _PROJECTS_DIR / self.project.slug / repo_meta.get("path", f"repos/{repo_name}")
 
     def _handle_button(self, bid: str | None) -> None:
+        if bid == "btn-panel-chat":
+            new_mode = "none" if self._panel_mode == "chat" else "chat"
+            self._set_panel_mode(new_mode)
+            return
+        elif bid == "btn-panel-claude":
+            if self._panel_mode == "claude_code":
+                self._set_panel_mode("none")
+            else:
+                self.run_worker(self._launch_claude())
+            return
+
         if bid == "btn-pull-all":
             self.run_worker(self._pull_all())
 

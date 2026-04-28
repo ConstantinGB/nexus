@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Label, Button, Log, TextArea
 from textual.containers import Vertical, Horizontal
@@ -12,6 +13,7 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
+from nexus.ui.chat_panel import ChatPanel
 
 log = get("localai.project_screen")
 
@@ -35,7 +37,15 @@ class LocalAIProjectScreen(Screen):
     #project-title { color: #00B4FF; text-style: bold; width: 1fr; }
     #project-meta  { color: #8080AA; }
 
-    #main-area { height: 1fr; padding: 1 2; }
+    .panel-btn          { margin-left: 1; }
+    .panel-btn-active   { border: solid #00FF88; color: #00FF88; }
+
+    #body-row   { height: 1fr; }
+    #main-area  { width: 1fr; height: 1fr; padding: 1 2; }
+    #chat-panel { width: 1fr; height: 1fr; border-left: solid #3A2260;
+                  background: #130822; display: none; }
+    #terminal-panel { width: 1fr; height: 1fr; border-left: solid #3A2260;
+                      display: none; }
 
     .section-label { color: #00FF88; height: 1; margin-top: 1; }
     .hint          { color: #555588; height: 1; }
@@ -78,6 +88,7 @@ class LocalAIProjectScreen(Screen):
         self._output_type = "text"
         self._run_command = ""
         self._output_dir  = Path("outputs")
+        self._panel_mode  = "none"
         self._last_output_file: Path | None = None
 
     # ── Config loading ────────────────────────────────────────────────────────
@@ -112,6 +123,8 @@ class LocalAIProjectScreen(Screen):
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta,              id="project-meta")
+            yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
+            yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
 
         # Hardware info bar — always shown
         with Horizontal(id="hw-bar"):
@@ -122,35 +135,127 @@ class LocalAIProjectScreen(Screen):
                 yield Label("Not detected", id="hw-summary", classes="hw-none")
             yield Button("Re-detect", id="btn-redetect")
 
-        if not self._run_command:
-            with Vertical(id="main-area"):
-                yield Label(
-                    "⚠  No run command configured. "
-                    "This project may not have completed setup, or the config is missing.\n"
-                    "Delete this project and create it again to re-run setup.",
-                    id="no-setup-banner",
-                )
-        else:
-            with Vertical(id="main-area"):
-                yield Label("Prompt:", classes="section-label")
-                yield TextArea("", id="prompt-input")
+        with Horizontal(id="body-row"):
+            if not self._run_command:
+                with Vertical(id="main-area"):
+                    yield Label(
+                        "⚠  No run command configured. "
+                        "This project may not have completed setup, or the config is missing.\n"
+                        "Delete this project and create it again to re-run setup.",
+                        id="no-setup-banner",
+                    )
+            else:
+                with Vertical(id="main-area"):
+                    yield Label("Prompt:", classes="section-label")
+                    yield TextArea("", id="prompt-input")
 
-                if self._output_type == "file":
-                    yield Label("Negative prompt (optional):", classes="section-label")
-                    yield TextArea("", id="neg-input")
-
-                with Horizontal(id="action-bar"):
-                    yield Button("▶ Run",          id="btn-run",           variant="primary")
-                    yield Button("Test Endpoint",   id="btn-test-ep")
-                    yield Button("Browse Models",   id="btn-browse-models")
-                    yield Button("Docker",          id="btn-docker")
                     if self._output_type == "file":
-                        yield Button("Open Output", id="btn-open", disabled=True)
+                        yield Label("Negative prompt (optional):", classes="section-label")
+                        yield TextArea("", id="neg-input")
 
-                yield Label("Output:", id="output-label")
-                yield Log(id="output-log", auto_scroll=True)
+                    with Horizontal(id="action-bar"):
+                        yield Button("▶ Run",          id="btn-run",           variant="primary")
+                        yield Button("Test Endpoint",   id="btn-test-ep")
+                        yield Button("Browse Models",   id="btn-browse-models")
+                        yield Button("Docker",          id="btn-docker")
+                        if self._output_type == "file":
+                            yield Button("Open Output", id="btn-open", disabled=True)
+
+                    yield Label("Output:", id="output-label")
+                    yield Log(id="output-log", auto_scroll=True)
+
+            yield ChatPanel(
+                self.project.slug, "localai", ["global", "localai"], id="chat-panel"
+            )
+            yield Vertical(id="terminal-panel")
 
         yield Footer()
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self._hide_chat_initial)
+        self.call_after_refresh(self._apply_panel_default)
+
+    def _hide_chat_initial(self) -> None:
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = False
+        except NoMatches:
+            pass
+
+    def _apply_panel_default(self) -> None:
+        from nexus.core.config_manager import load_global_config
+        default = load_global_config().get("ai", {}).get("default_panel", "chat")
+        if default == "chat":
+            self._set_panel_mode("chat")
+        elif default == "claude_code":
+            self.run_worker(self._launch_claude())
+
+    def action_dismiss(self, result=None) -> None:
+        try:
+            from nexus.ui.terminal_widget import Terminal
+            self.query_one("#claude-terminal", Terminal).stop()
+        except NoMatches:
+            pass
+        self.dismiss(result)
+
+    # ── Panel control ─────────────────────────────────────────────────────────
+
+    def _set_panel_mode(self, mode: str) -> None:
+        self._panel_mode = mode
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = (mode == "chat")
+        except NoMatches:
+            pass
+        try:
+            self.query_one("#terminal-panel").display = (mode == "claude_code")
+        except NoMatches:
+            pass
+        for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+            try:
+                btn = self.query_one(f"#{bid}", Button)
+                if mode == active_mode:
+                    btn.add_class("panel-btn-active")
+                else:
+                    btn.remove_class("panel-btn-active")
+            except NoMatches:
+                pass
+
+    async def _launch_claude(self) -> None:
+        import shutil
+        from nexus.ui.terminal_widget import Terminal
+        if not shutil.which("claude"):
+            self.app.notify(
+                "'claude' not found on PATH — install Claude Code first.",
+                severity="error",
+            )
+            return
+        self._set_panel_mode("claude_code")
+        try:
+            self.query_one("#claude-terminal")
+            return
+        except NoMatches:
+            pass
+        terminal = Terminal(
+            command="claude",
+            cwd=str(_PROJECTS_DIR / self.project.slug),
+            id="claude-terminal",
+        )
+        try:
+            panel = self.query_one("#terminal-panel")
+        except NoMatches:
+            return
+        await panel.mount(terminal)
+        terminal.start()
+        terminal.focus()
+
+    def on_terminal_process_stopped(self, _event) -> None:
+        try:
+            self.query_one("#claude-terminal").remove()
+        except NoMatches:
+            pass
+        if self._panel_mode == "claude_code":
+            self._set_panel_mode("none")
 
     # ── Button handler ────────────────────────────────────────────────────────
 
@@ -163,6 +268,17 @@ class LocalAIProjectScreen(Screen):
             self.app.notify("Unexpected error — see log.", severity="error")
 
     def _handle_button(self, bid: str | None) -> None:
+        if bid == "btn-panel-chat":
+            new_mode = "none" if self._panel_mode == "chat" else "chat"
+            self._set_panel_mode(new_mode)
+            return
+        elif bid == "btn-panel-claude":
+            if self._panel_mode == "claude_code":
+                self._set_panel_mode("none")
+            else:
+                self.run_worker(self._launch_claude())
+            return
+
         if bid == "btn-run":
             prompt = self.query_one("#prompt-input", TextArea).text.strip()
             if not prompt:

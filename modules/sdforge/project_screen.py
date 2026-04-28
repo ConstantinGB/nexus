@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.screen import Screen, ModalScreen
 from textual.widgets import Header, Footer, Label, Button, Input, Log, TextArea, Select
 from textual.containers import Vertical, Horizontal, ScrollableContainer
@@ -12,6 +13,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
+from nexus.ui.chat_panel import ChatPanel
 
 log = get("sdforge.project_screen")
 
@@ -158,7 +160,15 @@ class SDForgeProjectScreen(Screen):
     }
     #action-bar Button { margin-right: 1; }
 
-    #main-area { height: 1fr; padding: 1 2; overflow-y: auto; }
+    .panel-btn          { margin-left: 1; }
+    .panel-btn-active   { border: solid #00FF88; color: #00FF88; }
+
+    #body-row   { height: 1fr; }
+    #main-area  { width: 1fr; height: 1fr; padding: 1 2; overflow-y: auto; }
+    #chat-panel { width: 1fr; height: 1fr; border-left: solid #3A2260;
+                  background: #130822; display: none; }
+    #terminal-panel { width: 1fr; height: 1fr; border-left: solid #3A2260;
+                      display: none; }
 
     .section-label { color: #00B4FF; text-style: bold; height: 1; margin-top: 1; }
     .field-label   { color: #00FF88; height: 1; margin-top: 1; }
@@ -183,6 +193,7 @@ class SDForgeProjectScreen(Screen):
         self._proc: asyncio.subprocess.Process | None = None
         self._server_ready     = asyncio.Event()
         self._last_image_path: Path | None = None
+        self._panel_mode       = "none"
 
     # ── Config ────────────────────────────────────────────────────────────────
 
@@ -208,6 +219,8 @@ class SDForgeProjectScreen(Screen):
             yield Label(self.project.name, id="project-title")
             yield Label(meta,              id="project-meta")
             yield Label("● STOPPED",       id="server-status")
+            yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
+            yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
 
         with Horizontal(id="action-bar"):
             yield Button("▶ Start Server", id="btn-start",      variant="primary")
@@ -217,41 +230,133 @@ class SDForgeProjectScreen(Screen):
             yield Button("Browse Models",  id="btn-models")
             yield Button("Docker",         id="btn-docker")
 
-        with Vertical(id="main-area"):
-            yield Label("Prompt:", classes="section-label")
-            yield TextArea("", id="input-prompt")
+        with Horizontal(id="body-row"):
+            with Vertical(id="main-area"):
+                yield Label("Prompt:", classes="section-label")
+                yield TextArea("", id="input-prompt")
 
-            yield Label("Negative Prompt:", classes="field-label")
-            yield TextArea("", id="input-neg-prompt")
+                yield Label("Negative Prompt:", classes="field-label")
+                yield TextArea("", id="input-neg-prompt")
 
-            with Horizontal(id="param-row"):
-                with Vertical(classes="param-col"):
-                    yield Label("Width:", classes="field-label")
-                    yield Input("512", id="input-width")
-                with Vertical(classes="param-col"):
-                    yield Label("Height:", classes="field-label")
-                    yield Input("512", id="input-height")
-                with Vertical(classes="param-col"):
-                    yield Label("Steps:", classes="field-label")
-                    yield Input("20", id="input-steps")
-                with Vertical(classes="param-col"):
-                    yield Label("CFG Scale:", classes="field-label")
-                    yield Input("7", id="input-cfg")
-                with Vertical(classes="param-col"):
-                    yield Label("Seed:", classes="field-label")
-                    yield Input("-1", id="input-seed")
-                with Vertical(classes="param-col"):
-                    yield Label("Sampler:", classes="field-label")
-                    yield Input("Euler a", id="input-sampler")
+                with Horizontal(id="param-row"):
+                    with Vertical(classes="param-col"):
+                        yield Label("Width:", classes="field-label")
+                        yield Input("512", id="input-width")
+                    with Vertical(classes="param-col"):
+                        yield Label("Height:", classes="field-label")
+                        yield Input("512", id="input-height")
+                    with Vertical(classes="param-col"):
+                        yield Label("Steps:", classes="field-label")
+                        yield Input("20", id="input-steps")
+                    with Vertical(classes="param-col"):
+                        yield Label("CFG Scale:", classes="field-label")
+                        yield Input("7", id="input-cfg")
+                    with Vertical(classes="param-col"):
+                        yield Label("Seed:", classes="field-label")
+                        yield Input("-1", id="input-seed")
+                    with Vertical(classes="param-col"):
+                        yield Label("Sampler:", classes="field-label")
+                        yield Input("Euler a", id="input-sampler")
 
-            with Horizontal(id="gen-bar"):
-                yield Button("Generate",   id="btn-generate",   variant="primary", disabled=True)
-                yield Button("Open Image", id="btn-open-image", disabled=True)
+                with Horizontal(id="gen-bar"):
+                    yield Button("Generate",   id="btn-generate",   variant="primary", disabled=True)
+                    yield Button("Open Image", id="btn-open-image", disabled=True)
 
-            yield Label("Log:", classes="section-label")
-            yield Log(id="output-log", auto_scroll=True)
+                yield Label("Log:", classes="section-label")
+                yield Log(id="output-log", auto_scroll=True)
+
+            yield ChatPanel(
+                self.project.slug, "sdforge", ["global", "sdforge"], id="chat-panel"
+            )
+            yield Vertical(id="terminal-panel")
 
         yield Footer()
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self._hide_chat_initial)
+        self.call_after_refresh(self._apply_panel_default)
+
+    def _hide_chat_initial(self) -> None:
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = False
+        except NoMatches:
+            pass
+
+    def _apply_panel_default(self) -> None:
+        from nexus.core.config_manager import load_global_config
+        default = load_global_config().get("ai", {}).get("default_panel", "chat")
+        if default == "chat":
+            self._set_panel_mode("chat")
+        elif default == "claude_code":
+            self.run_worker(self._launch_claude())
+
+    def action_dismiss(self, result=None) -> None:
+        try:
+            from nexus.ui.terminal_widget import Terminal
+            self.query_one("#claude-terminal", Terminal).stop()
+        except NoMatches:
+            pass
+        self.dismiss(result)
+
+    # ── Panel control ─────────────────────────────────────────────────────────
+
+    def _set_panel_mode(self, mode: str) -> None:
+        self._panel_mode = mode
+        try:
+            self.query_one("#chat-panel", ChatPanel).display = (mode == "chat")
+        except NoMatches:
+            pass
+        try:
+            self.query_one("#terminal-panel").display = (mode == "claude_code")
+        except NoMatches:
+            pass
+        for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+            try:
+                btn = self.query_one(f"#{bid}", Button)
+                if mode == active_mode:
+                    btn.add_class("panel-btn-active")
+                else:
+                    btn.remove_class("panel-btn-active")
+            except NoMatches:
+                pass
+
+    async def _launch_claude(self) -> None:
+        import shutil
+        from nexus.ui.terminal_widget import Terminal
+        if not shutil.which("claude"):
+            self.app.notify(
+                "'claude' not found on PATH — install Claude Code first.",
+                severity="error",
+            )
+            return
+        self._set_panel_mode("claude_code")
+        try:
+            self.query_one("#claude-terminal")
+            return
+        except NoMatches:
+            pass
+        terminal = Terminal(
+            command="claude",
+            cwd=str(_PROJECTS_DIR / self.project.slug),
+            id="claude-terminal",
+        )
+        try:
+            panel = self.query_one("#terminal-panel")
+        except NoMatches:
+            return
+        await panel.mount(terminal)
+        terminal.start()
+        terminal.focus()
+
+    def on_terminal_process_stopped(self, _event) -> None:
+        try:
+            self.query_one("#claude-terminal").remove()
+        except NoMatches:
+            pass
+        if self._panel_mode == "claude_code":
+            self._set_panel_mode("none")
 
     # ── Button handler ────────────────────────────────────────────────────────
 
@@ -264,6 +369,17 @@ class SDForgeProjectScreen(Screen):
             self.app.notify("Unexpected error — see log.", severity="error")
 
     def _handle_button(self, bid: str | None) -> None:
+        if bid == "btn-panel-chat":
+            new_mode = "none" if self._panel_mode == "chat" else "chat"
+            self._set_panel_mode(new_mode)
+            return
+        elif bid == "btn-panel-claude":
+            if self._panel_mode == "claude_code":
+                self._set_panel_mode("none")
+            else:
+                self.run_worker(self._launch_claude())
+            return
+
         if bid == "btn-start":
             self.run_worker(self._start_server())
         elif bid == "btn-stop":

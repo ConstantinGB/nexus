@@ -82,6 +82,7 @@ class CustomProjectScreen(Screen):
         yield Header()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
+            yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
             yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
 
         with Horizontal(id="pane-row"):
@@ -109,6 +110,15 @@ class CustomProjectScreen(Screen):
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._init_context)
+        self.call_after_refresh(self._apply_panel_default)
+
+    def _apply_panel_default(self) -> None:
+        from nexus.core.config_manager import load_global_config
+        default = load_global_config().get("ai", {}).get("default_panel", "chat")
+        if default == "chat":
+            self._set_panel_mode("chat")
+        elif default == "claude_code":
+            self.run_worker(self._launch_claude())
 
     def _init_context(self) -> None:
         ctx = self.query_one("#context-log", Log)
@@ -120,9 +130,12 @@ class CustomProjectScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
         try:
-            if bid == "btn-panel-claude":
+            if bid == "btn-panel-chat":
+                new_mode = "none" if self._panel_mode == "chat" else "chat"
+                self._set_panel_mode(new_mode)
+            elif bid == "btn-panel-claude":
                 if self._panel_mode == "claude_code":
-                    self._set_panel_mode("chat")
+                    self._set_panel_mode("none")
                 else:
                     self.run_worker(self._launch_claude())
             elif bid == "btn-add-cmd":
@@ -165,14 +178,15 @@ class CustomProjectScreen(Screen):
             self.query_one("#terminal-panel").display = (mode == "claude_code")
         except NoMatches:
             pass
-        try:
-            btn = self.query_one("#btn-panel-claude", Button)
-            if mode == "claude_code":
-                btn.add_class("panel-btn-active")
-            else:
-                btn.remove_class("panel-btn-active")
-        except NoMatches:
-            pass
+        for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+            try:
+                btn = self.query_one(f"#{bid}", Button)
+                if mode == active_mode:
+                    btn.add_class("panel-btn-active")
+                else:
+                    btn.remove_class("panel-btn-active")
+            except NoMatches:
+                pass
 
     async def _launch_claude(self) -> None:
         import shutil
@@ -212,7 +226,7 @@ class CustomProjectScreen(Screen):
         except NoMatches:
             pass
         if self._panel_mode == "claude_code":
-            self._set_panel_mode("chat")
+            self._set_panel_mode("none")
 
     # ── Custom commands ───────────────────────────────────────────────────────
 

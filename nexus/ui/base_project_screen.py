@@ -477,6 +477,22 @@ class BaseProjectScreen(Screen):
 
     def _set_panel_mode(self, mode: str) -> None:
         self._panel_mode = mode
+        # body-row must be visible for any panel to be visible
+        if mode in ("chat", "claude_code"):
+            try:
+                self.query_one("#body-row").display = True
+            except NoMatches:
+                pass
+        elif not self._is_configured():
+            try:
+                self.query_one("#body-row").display = False
+            except NoMatches:
+                pass
+        # hide output-log while a panel is open so body-row gets full height
+        try:
+            self.query_one("#output-log").display = (mode == "none")
+        except NoMatches:
+            pass
         try:
             self.query_one("#chat-panel", ChatPanel).display = (mode == "chat")
         except NoMatches:
