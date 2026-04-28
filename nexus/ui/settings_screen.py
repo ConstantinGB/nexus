@@ -49,6 +49,10 @@ _PROVIDER_BTN = {
 
 # (module_id, binary_to_check, display_name, apt_pkg_or_None)
 _MODULE_DEPS: list[tuple[str, str, str, str | None]] = [
+    # ── System-wide ───────────────────────────────────────────────────────────
+    ("system",  "xclip",           "xclip (clipboard paste, X11)",  "xclip"),
+    ("system",  "wl-paste",        "wl-clipboard (clipboard, Wayland)", "wl-clipboard"),
+    # ── Module deps ───────────────────────────────────────────────────────────
     ("git",       "git",             "Git",               "git"),
     ("web",       "node",            "Node.js",           "nodejs"),
     ("web",       "npm",             "npm",               "npm"),
@@ -80,6 +84,8 @@ _MODULE_DEPS: list[tuple[str, str, str, str | None]] = [
 ]
 
 _INSTALL_CMDS: dict[str, str] = {
+    "xclip":              "sudo apt install -y xclip",
+    "wl-clipboard":       "sudo apt install -y wl-clipboard",
     "git":                "sudo apt install -y git",
     "nodejs":             "sudo apt install -y nodejs npm",
     "npm":                "sudo apt install -y nodejs npm",

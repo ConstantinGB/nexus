@@ -29,13 +29,16 @@ uv run nexus     # run the app
 
 ```
 nexus/
-  app.py                 — NexusApp (Textual App), entry point
+  app.py                 — NexusApp (Textual App), entry point; overrides clipboard property +
+                           copy_to_clipboard() to integrate system clipboard (xclip/wl-paste/pbpaste)
   core/
     config_manager.py    — read/write settings.yaml + per-project config.yaml; is_ai_configured() helper
     logger.py            — centralised logging (RotatingFileHandler → logs/nexus.log)
     module_manager.py    — module registry + screen dispatch
     mycelium.py          — inter-module communication bus
-    platform.py          — cross-platform helpers: open_path() → xdg-open/open/start; check_binary() → shutil.which + path check
+    platform.py          — cross-platform helpers: open_path() → xdg-open/open/start; check_binary() →
+                           shutil.which + path check; read_clipboard() / write_clipboard() → system
+                           clipboard via pyperclip / wl-paste / xclip / xsel / pbpaste / PowerShell
     project_manager.py   — create / list / delete project instances
     scheduler.py         — BackupScheduler: asyncio polling loop; fires restic backups on daily/weekly schedules
   ai/
@@ -51,15 +54,18 @@ nexus/
     add_project_screen.py — full-screen tile grid of module types (ModuleTile) + name/desc form;
                             Custom tile always last with distinct purple styling; grid auto-sizes
     settings_screen.py   — AI provider config (api_key / local / login) + general settings;
-                           Test Connection button for local provider; Verify button for api_key
+                           Test Connection button for local provider; Verify button for api_key;
+                           Setup tab: per-module dependency installer + system group (xclip, wl-clipboard)
     mcp_screen.py        — MCP server manager (Active / Add Servers tabs)
-    base_project_screen.py — BaseProjectScreen: shared layout (top-bar, action-bar, setup-pane,
-                             main-pane, output log), _run_cmd async helper, InputModal; all 12
-                             non-git/localai modules subclass this
+    base_project_screen.py — BaseProjectScreen: shared layout (top-bar with 💬 Chat + ⌨ Claude
+                             panel buttons, action-bar, setup-pane, main-pane, output log),
+                             _run_cmd async helper, InputModal; all skeleton modules subclass this;
+                             panels work in both configured and unconfigured states; output-log
+                             auto-hides while a panel is active
 modules/
   git/                   — Git module (FULLY IMPLEMENTED)
     setup_screen.py      — 6-step wizard: name → type → credentials (optional for public repos) → git config → software → repos → clone
-    project_screen.py    — repo management: pull/push/commit/info/delete per repo;
+    project_screen.py    — repo management: pull/push/commit/info/delete per repo; 💬 Chat + ⌨ Claude panel buttons;
                            BranchModal: switch/create/delete branch + Open PR link (GitHub/GitLab);
                            AddRepoModal for cloning via SSH or HTTPS URL
     git_ops.py           — subprocess wrappers for git, all return (bool, str); get_remote_url + pr_url helpers
@@ -67,18 +73,21 @@ modules/
     skills.py            — git_status, git_pull, git_push, git_commit, git_log, git_clone
   localai/               — LocalAI module (FULLY IMPLEMENTED)
     setup_screen.py      — 5-step wizard: config → AI generates script → review → install → done
-    project_screen.py    — inference UI: prompt input, output log, optional negative prompt + file open; Test Endpoint button
+    project_screen.py    — inference UI: prompt input, output log, optional negative prompt + file open;
+                           Test Endpoint button; 💬 Chat + ⌨ Claude panel buttons
     hw_detect.py         — hardware detection (GPU via nvidia-smi/rocm-smi/lspci, RAM, CPU, OS, disk)
     skills.py            — localai_run_inference
   custom/                — AI-first open project: CLAUDE.md viewer + conversational AI chat + user-defined shell commands
-    project_screen.py    — CustomProjectScreen: two-pane layout (context | chat), dynamic command buttons,
+    project_screen.py    — CustomProjectScreen: two-pane layout (context | chat | Claude Code terminal),
+                           💬 Chat + ⌨ Claude panel toggles, dynamic command buttons,
                            graceful degradation without AI; skill_scopes=["global","custom"]
     skills.py            — custom_run_command, custom_ask
   web/                   — project_screen: Dev/Build/Test/Lint/Install via package manager; Run Script…
                            picker (all package.json scripts); Stop button for long-running processes;
                            auto-detects framework; inline setup for project_path + pm
                            skills.py: web_list_scripts, web_run_script
-  research/              — project_screen: note list (.md files), New Note (YAML frontmatter: date/topic/tags) /
+  research/              — project_screen: note list (.md files) with YAML-frontmatter-aware title display
+                           and per-note ✕ delete button; New Note (YAML frontmatter: date/topic/tags) /
                            Search / Export URLs / Export All; inline setup for topic + notes_dir
                            skills.py: research_list_notes, research_new_note, research_search
   codex/                 — project_screen: Zettelkasten note list, New Note with frontmatter skeleton,

@@ -2,6 +2,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer
 
 from nexus.core.logger import setup as setup_logging, get as get_logger
+from nexus.core.platform import read_clipboard, write_clipboard
 from nexus.ui.tiles import TileGrid
 from nexus.ui.mcp_screen import MCPScreen
 
@@ -54,6 +55,19 @@ class NexusApp(App):
                 )
             except Exception:
                 pass
+
+    @property
+    def clipboard(self) -> str:
+        """Read from the OS system clipboard, falling back to Textual's internal buffer."""
+        system = read_clipboard()
+        if system:
+            return system
+        return self._clipboard
+
+    def copy_to_clipboard(self, text: str) -> None:
+        """Write to both the OS system clipboard and Textual's internal buffer."""
+        self._clipboard = text
+        write_clipboard(text)
 
     def action_open_settings(self) -> None:
         from nexus.ui.settings_screen import SettingsScreen

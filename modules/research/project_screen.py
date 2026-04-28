@@ -21,8 +21,22 @@ def _slugify(title: str) -> str:
 
 
 def _first_line(path: Path) -> str:
+    """Return the first meaningful title line, skipping YAML frontmatter."""
     try:
-        return path.read_text(errors="replace").splitlines()[0].lstrip("#").strip()
+        lines = path.read_text(errors="replace").splitlines()
+        in_front = len(lines) > 0 and lines[0].strip() == "---"
+        for i, line in enumerate(lines):
+            if i == 0 and in_front:
+                continue
+            if in_front and line.strip() == "---":
+                in_front = False
+                continue
+            if in_front:
+                continue
+            stripped = line.lstrip("#").strip()
+            if stripped:
+                return stripped
+        return ""
     except Exception:
         return ""
 
@@ -40,9 +54,13 @@ class ResearchProjectScreen(BaseProjectScreen):
     ]
 
     DEFAULT_CSS = _screen_css("ResearchProjectScreen") + """
-    .note-item { width: 1fr; height: 2; border: none; background: transparent;
+    .note-row  { height: 3; width: 1fr; }
+    .note-item { width: 1fr; height: 3; border: none; background: transparent;
                  color: #8080AA; text-align: left; margin: 0; }
     .note-item:hover { background: #2D1B4E; color: #E0E0FF; }
+    .note-del-btn { width: 5; height: 3; background: transparent;
+                    border: none; color: #553333; margin: 0; }
+    .note-del-btn:hover { color: #FF4444; background: #2D1B1B; }
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -102,8 +120,15 @@ class ResearchProjectScreen(BaseProjectScreen):
             widgets.append(Label("Recent notes (click to edit):", classes="section-label"))
             for i, note in enumerate(self._notes):
                 first = await asyncio.to_thread(_first_line, note)
-                display = f"  {note.name}" + (f" — {first}" if first else "")
-                widgets.append(Button(display, id=f"note-{i}", classes="note-item"))
+                stem = note.stem
+                display = f"  {stem}" + (f" — {first}" if first else "")
+                widgets.append(
+                    Horizontal(
+                        Button(display, id=f"note-{i}",     classes="note-item"),
+                        Button("✕",     id=f"note-del-{i}", classes="note-del-btn"),
+                        classes="note-row",
+                    )
+                )
         else:
             widgets.append(Label(f"Notes directory not found: {notes_dir}", classes="status-err"))
             widgets.append(Label("Create the directory and add .md files to get started.", classes="hint"))
@@ -140,6 +165,13 @@ class ResearchProjectScreen(BaseProjectScreen):
             )
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
+        elif bid and bid.startswith("note-del-"):
+            try:
+                idx = int(bid[len("note-del-"):])
+            except ValueError:
+                return
+            if 0 <= idx < len(self._notes):
+                self._delete_note(self._notes[idx])
         elif bid and bid.startswith("note-"):
             try:
                 idx = int(bid.split("-", 1)[1])
@@ -170,6 +202,16 @@ class ResearchProjectScreen(BaseProjectScreen):
             TextEditorScreen(content, language=lang, title=note_path.name),
             lambda saved, p=note_path: self._save_note(p, saved),
         )
+
+    def _delete_note(self, note_path: Path) -> None:
+        try:
+            note_path.unlink()
+            self.app.notify(f"Deleted: {note_path.name}", severity="information")
+        except Exception:
+            log.exception("Failed to delete note: %s", note_path)
+            self.app.notify("Could not delete note — see log.", severity="error")
+            return
+        self.run_worker(self._populate_content())
 
     def _save_note(self, note_path: Path, content: str | None) -> None:
         if content is None:

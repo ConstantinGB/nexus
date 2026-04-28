@@ -228,6 +228,7 @@ class BaseProjectScreen(Screen):
         height: 1fr;
         border-left: solid #3A2260;
         background: #130822;
+        display: none;
     }
     #terminal-panel {
         width: 1fr;
@@ -368,18 +369,11 @@ class BaseProjectScreen(Screen):
         if self._is_configured():
             self.query_one("#setup-pane").display = False
             self.query_one("#action-bar").display = True
+            self._apply_panel_default()
             self.run_worker(self._safe_populate())
         else:
             self.query_one("#action-bar").display = False
             self.query_one("#body-row").display = False
-        self.call_after_refresh(self._hide_chat_initial)
-        self.call_after_refresh(self._apply_panel_default)
-
-    def _hide_chat_initial(self) -> None:
-        try:
-            self.query_one("#chat-panel", ChatPanel).display = False
-        except NoMatches:
-            pass
 
     # ── Button dispatcher ─────────────────────────────────────────────────────
 
@@ -473,21 +467,37 @@ class BaseProjectScreen(Screen):
         if default == "chat":
             self._set_panel_mode("chat")
         elif default == "claude_code":
-            self.run_worker(self._launch_claude())
+            self.call_after_refresh(lambda: self.run_worker(self._launch_claude()))
+        else:
+            self._set_panel_mode("none")
 
     def _set_panel_mode(self, mode: str) -> None:
         self._panel_mode = mode
-        # body-row must be visible for any panel to be visible
         if mode in ("chat", "claude_code"):
             try:
                 self.query_one("#body-row").display = True
             except NoMatches:
                 pass
-        elif not self._is_configured():
-            try:
-                self.query_one("#body-row").display = False
-            except NoMatches:
-                pass
+            if not self._is_configured():
+                # hide setup-pane + empty main-pane so chat fills the space
+                try:
+                    self.query_one("#setup-pane").display = False
+                except NoMatches:
+                    pass
+                try:
+                    self.query_one("#main-pane").display = False
+                except NoMatches:
+                    pass
+        else:  # "none"
+            if not self._is_configured():
+                try:
+                    self.query_one("#body-row").display = False
+                except NoMatches:
+                    pass
+                try:
+                    self.query_one("#setup-pane").display = True
+                except NoMatches:
+                    pass
         # hide output-log while a panel is open so body-row gets full height
         try:
             self.query_one("#output-log").display = (mode == "none")
@@ -565,6 +575,11 @@ class BaseProjectScreen(Screen):
         self.query_one("#setup-pane").display = False
         self.query_one("#action-bar").display = True
         self.query_one("#body-row").display = True
+        try:
+            self.query_one("#main-pane").display = True
+        except NoMatches:
+            pass
+        self._apply_panel_default()
         self.run_worker(self._safe_populate())
 
     # ── Command runner ────────────────────────────────────────────────────────

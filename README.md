@@ -21,6 +21,7 @@ The goal is that a complete novice can download, install, and run Nexus with no 
 - **Per-project AI instructions** — each project gets its own `CLAUDE.md` copied from the module's template; templates include domain knowledge, key software, and prompts for the AI
 - **Project deletion** — remove any project tile with a confirmation dialog
 - **Structured logging** — all activity written to `logs/nexus.log` with rotation
+- **Clipboard paste** — `Ctrl+V` pastes from the system clipboard in every input field (xclip on X11, wl-clipboard on Wayland, pbpaste on macOS)
 
 ## Requirements
 
@@ -78,7 +79,7 @@ Open a Git project, then click **Clone / Add**. Enter a repository URL — both 
 | **LocalAI** | Set up and run local AI models — Claude detects hardware, generates install script, live inference UI, Test Endpoint button |
 | **Custom** | AI-first open project — CLAUDE.md as system context, conversational AI chat, user-defined shell command buttons |
 | **Web** | Dev/Build/Test/Lint/Install via your package manager; Run Script… picker from `package.json`; Stop button for long-running processes; auto-detects framework |
-| **Research** | Note list with New Note (YAML frontmatter), ripgrep Search, URL export, Export All; configurable notes directory |
+| **Research** | Note list with YAML-frontmatter-aware titles, per-note delete button, New Note, ripgrep Search, URL export, Export All; configurable notes directory |
 | **Codex** | Zettelkasten knowledge base — new notes with frontmatter, search with 2-line context, tag filter, open vault |
 | **Journal** | LaTeX journal entries — word count in list, compile with pdflatex (error summary), Open PDF button |
 | **Game** | Godot project dashboard — game name, scene count, Launch Editor, Run Game, Lint (error/warning count), Export headless |
@@ -196,6 +197,8 @@ Python packages are managed by `uv` and installed automatically by `uv sync`.
 
 | Layer | Software | How to install | Required by |
 |-------|----------|----------------|-------------|
+| **System** | xclip | `apt install xclip` | Clipboard paste (X11) |
+| **System** | wl-clipboard | `apt install wl-clipboard` | Clipboard paste (Wayland) |
 | **Runtime** | Python 3.12+ | `apt install python3.12` / `dnf install python3.12` | Core |
 | **Runtime** | uv | `curl -Ls https://astral.sh/uv/install.sh \| sh` | Core |
 | **Python deps** | anthropic, mcp, pyyaml, textual | `uv sync` (automatic) | Core |
