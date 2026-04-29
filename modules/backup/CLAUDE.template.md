@@ -64,3 +64,22 @@ Fill in your specifics so the AI can give accurate advice:
 - Are there any paths to exclude?
   [ your answer here ]
 -->
+
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `backup_run_backup` | `project_slug` | Trigger a restic backup (auto-initialises repo if needed) |
+| `backup_list_snapshots` | `project_slug` | List all restic snapshots |
+| `backup_check` | `project_slug` | Run integrity check on backup repository |
+| `backup_restore` | `project_slug`, `target`, `snapshot?` | Restore snapshot to a directory (default: latest) |
+| `backup_forget` | `project_slug`, `keep_last?` | Prune old snapshots keeping the last N (default 10) |
+
+## Local Model Guidance
+
+All backup skills are mechanical subprocess calls — no content generation needed. Reliable with any model.
+
+- Specify `project_slug` exactly as shown in the Nexus UI.
+- `backup_restore` requires an absolute `target` path; always provide it explicitly.
+- `backup_forget` defaults to `keep_last=10`; override if you need a different retention policy.
+- If the model returns no tool call: re-prompt with "Call backup_run_backup with project_slug: X."

@@ -105,6 +105,25 @@ mindmap
 
 <!-- Planning horizon: daily / weekly / quarterly / project-based -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `org_list_plans` | `project_slug` | List plan/diagram/schedule files by modification date |
+| `org_new_plan` | `project_slug`, `name`, `tasks?` | Create a plan Markdown file with task checklist |
+| `org_new_diagram` | `project_slug`, `name`, `mermaid_content?` | Create a Mermaid diagram file |
+| `org_new_schedule` | `project_slug`, `name` | Create a weekly schedule table file |
+| `org_get_plan` | `project_slug`, `filename` | Read full content of a named plan file |
+
+## Local Model Guidance
+
+- `org_list_plans`, `org_get_plan` — mechanical file I/O; reliable with any model.
+- `org_new_plan` — provide tasks explicitly: "Create a plan called X with tasks: A, B, C."
+- `org_new_diagram` — provide the full Mermaid content in your prompt; local models often produce invalid syntax when generating it autonomously.
+- `org_new_schedule` — no content generation needed; purely structural.
+- Prompt style: one operation per call; specify the exact filename when using `org_get_plan`.
+- If the model returns no tool call: re-prompt with "Call the org_new_plan tool with project_slug: X and name: Y."
+
 ## Notes for the AI
 
 <!-- Ongoing projects, recurring commitments, known constraints

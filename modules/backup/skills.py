@@ -201,3 +201,53 @@ registry.register(
     },
     handler = _backup_restore,
 )
+
+
+# ---------------------------------------------------------------------------
+# backup_forget
+# ---------------------------------------------------------------------------
+
+async def _backup_forget(args: dict) -> str:
+    slug      = args["project_slug"]
+    keep_last = int(args.get("keep_last", 10))
+    cfg       = _backup_cfg(slug)
+    repo      = cfg.get("repo", "")
+    pw        = cfg.get("password", "")
+    if not repo:
+        return json.dumps({"error": "No repository configured."})
+
+    import os
+    env = os.environ.copy()
+    env["RESTIC_PASSWORD"] = pw
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "restic", "-r", repo, "forget", "--keep-last", str(keep_last), "--prune",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env=env,
+        )
+        out, _ = await proc.communicate()
+        output = out.decode(errors="replace").strip()
+        return json.dumps({"success": proc.returncode == 0, "output": output})
+    except FileNotFoundError:
+        return json.dumps({"error": "restic not found."})
+    except Exception as exc:
+        log.exception("backup_forget failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "backup",
+    name        = "backup_forget",
+    description = "Run restic forget --prune keeping the last N snapshots.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "keep_last":    {"type": "integer",
+                             "description": "Number of most recent snapshots to keep (default 10)"},
+        },
+        "required": ["project_slug"],
+    },
+    handler = _backup_forget,
+)

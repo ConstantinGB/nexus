@@ -30,6 +30,7 @@ _REGISTRY: list[ModuleInfo] = [
     ModuleInfo("vault",     "Vault",     "Encrypted file storage and secrets management — GPG, VeraCrypt, KeePassXC.",   ["security", "crypto"]),
     ModuleInfo("backup",    "Backup",    "Encrypted, deduplicated backups via restic — local, NAS (SFTP), or NFS.",      ["system", "backup"], system=True),
     ModuleInfo("security",  "Security",  "Firewall, VPN, DNS privacy and system hardening.",                              ["security", "privacy", "network"]),
+    ModuleInfo("promptopt", "Prompt Opt", "Optimize and rewrite prompts for AI clarity, instructions, or image generation.", ["ai", "tools"]),
 ]
 
 _REGISTRY_BY_ID: dict[str, ModuleInfo] = {m.id: m for m in _REGISTRY}
@@ -53,6 +54,7 @@ MODULE_PREFIX: dict[str, str] = {
     "backup":   "bak",
     "sdforge":  "sdf",
     "security": "sec",
+    "promptopt": "pro",
 }
 
 
@@ -159,4 +161,7 @@ def get_project_screen(project):
     if project.module == "security":
         from modules.security.project_screen import SecurityProjectScreen
         return SecurityProjectScreen(project)
+    if project.module == "promptopt":
+        from modules.promptopt.project_screen import PromptOptProjectScreen
+        return PromptOptProjectScreen(project)
     return None

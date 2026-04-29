@@ -58,6 +58,27 @@ docs: clarify setup instructions
 
 <!-- Any monorepo tooling: turborepo, nx, Lerna, Cargo workspaces, etc. -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `git_status` | `project_slug`, `repo` | Branch, ahead/behind counts, dirty flag, last 5 commits |
+| `git_pull` | `project_slug`, `repo` | Pull latest commits |
+| `git_push` | `project_slug`, `repo` | Push local commits to remote |
+| `git_commit` | `project_slug`, `repo`, `message` | Stage all, commit, and push |
+| `git_log` | `project_slug`, `repo`, `n?` | Recent commit history (default 10) |
+| `git_clone` | `project_slug`, `url`, `name?` | Clone a repo and register it |
+| `git_diff` | `project_slug`, `repo`, `staged?` | Output of git diff or git diff --staged |
+| `git_stash` | `project_slug`, `repo`, `action` | git stash push or git stash pop |
+
+## Local Model Guidance
+
+- `git_status`, `git_pull`, `git_push`, `git_log`, `git_diff`, `git_stash` — all mechanical subprocess calls; reliable with any model.
+- `git_commit` — requires a good commit message. Provide the message explicitly in your prompt: "Commit with message: fix: handle empty response."
+- `git_clone` — reliable; just needs a URL.
+- Prompt style: always specify `repo` by exact name (as shown in the Nexus UI). Use one operation per call.
+- If the model returns no tool call: re-prompt with "Call the git_status tool with project_slug: X and repo: Y."
+
 ## Notes for the AI
 
 <!-- Preferred merge strategy (merge commit / squash / rebase),

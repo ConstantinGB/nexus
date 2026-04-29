@@ -64,9 +64,10 @@ _FRAMEWORK_KEYS = {
 
 
 class WebProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "web"
-    MODULE_LABEL = "WEB"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "web"
+    MODULE_LABEL      = "WEB"
+    REQUIRED_BINARIES = [("node", "Node.js"), ("npm", "npm")]
+    SETUP_FIELDS      = [
         {"id": "project_path", "label": "Web project directory",
          "placeholder": "~/projects/my-site"},
         {"id": "package_manager", "label": "Package manager (npm / pnpm / yarn / bun)",

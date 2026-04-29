@@ -36,9 +36,10 @@ _LATEX_TEMPLATE = r"""\documentclass[12pt,a4paper]{{article}}
 
 
 class JournalProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "journal"
-    MODULE_LABEL = "JOURNAL"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "journal"
+    MODULE_LABEL      = "JOURNAL"
+    REQUIRED_BINARIES = [("pdflatex", "pdflatex (texlive-latex-base)")]
+    SETUP_FIELDS      = [
         {"id": "journal_dir", "label": "Journal directory",
          "placeholder": "~/journal", "type": "dir"},
         {"id": "author", "label": "Author name (for LaTeX)",

@@ -110,3 +110,21 @@ Fill in your specifics so the AI can give accurate advice:
 - Any ControlNet or LoRA setups:
   [ your answer here ]
 -->
+
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| *(none registered)* | — | SDForge module has no AI skills; use the Chat panel for prompting help |
+
+## Local Model Guidance
+
+The SDForge module has no registered skills — image generation is handled via the UI.
+
+Use the Chat panel to ask the AI for:
+- Prompt refinement: paste your current prompt and ask for improvements
+- Negative prompt suggestions for a given style
+- Sampler and step count recommendations
+- LoRA or ControlNet workflow advice
+
+Prompt style for local models: be explicit about the desired style, subject, and quality tags. Provide your current prompt as context. Most 7B+ models can suggest SD prompt improvements reliably.

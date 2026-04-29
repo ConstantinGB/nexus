@@ -94,6 +94,21 @@ In RetroArch: Quick Menu → Shaders → Load Shader Preset → `shaders_glsl/` 
      resolution upscaling (2x, 4x, native), shader preference,
      VRR / vsync / 60 Hz cap -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `emulator_list_systems` | `project_slug` | List ROM system directories with ROM counts |
+| `emulator_launch` | `project_slug`, `system`, `rom?` | Launch RetroArch with a given system/ROM |
+
+## Local Model Guidance
+
+Both skills are mechanical calls. Reliable with any model.
+
+- `emulator_launch` requires `system` (directory name) and optionally `rom` (filename). Use `emulator_list_systems` first to get exact names.
+- For per-core config questions, ask in chat — no skill needed; the model can advise based on the system name.
+- If the model returns no tool call: re-prompt with "Call emulator_list_systems with project_slug: X."
+
 ## Notes for the AI
 
 <!-- Per-game compatibility notes, RetroAchievements account in use,

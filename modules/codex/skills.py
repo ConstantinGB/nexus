@@ -157,3 +157,44 @@ registry.register(
     },
     handler = _codex_search,
 )
+
+
+# ---------------------------------------------------------------------------
+# codex_get_entry
+# ---------------------------------------------------------------------------
+
+async def _codex_get_entry(args: dict) -> str:
+    slug     = args["project_slug"]
+    filename = args["filename"]
+    d        = _vault_dir(slug)
+    if d is None:
+        return json.dumps({"error": "Vault directory not configured"})
+    if not filename.endswith(".md"):
+        filename += ".md"
+    path = d / filename
+    if not path.resolve().is_relative_to(d.resolve()):
+        return json.dumps({"error": "filename must not escape the vault directory"})
+    if not path.exists():
+        return json.dumps({"error": f"Entry not found: {filename}"})
+    try:
+        content = await asyncio.to_thread(path.read_text, errors="replace")
+        return json.dumps({"filename": filename, "content": content})
+    except Exception as exc:
+        log.exception("codex_get_entry skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "codex",
+    name        = "codex_get_entry",
+    description = "Read and return the full content of a named Codex vault entry.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "filename":     {"type": "string", "description": "Entry filename relative to vault root (with or without .md)"},
+        },
+        "required": ["project_slug", "filename"],
+    },
+    handler = _codex_get_entry,
+)

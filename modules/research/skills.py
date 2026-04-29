@@ -136,3 +136,85 @@ registry.register(
     },
     handler = _research_search,
 )
+
+
+# ---------------------------------------------------------------------------
+# research_get_note
+# ---------------------------------------------------------------------------
+
+async def _research_get_note(args: dict) -> str:
+    slug     = args["project_slug"]
+    filename = args["filename"]
+    d        = _notes_dir(slug)
+    if d is None:
+        return json.dumps({"error": "Notes directory not configured"})
+    if not filename.endswith(".md"):
+        filename += ".md"
+    path = d / filename
+    if not path.resolve().is_relative_to(d.resolve()):
+        return json.dumps({"error": "filename must not escape the notes directory"})
+    if not path.exists():
+        return json.dumps({"error": f"Note not found: {filename}"})
+    try:
+        content = await asyncio.to_thread(path.read_text, errors="replace")
+        return json.dumps({"filename": filename, "content": content})
+    except Exception as exc:
+        log.exception("research_get_note skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "research",
+    name        = "research_get_note",
+    description = "Read and return the full content of a named note.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "filename":     {"type": "string", "description": "Note filename (with or without .md)"},
+        },
+        "required": ["project_slug", "filename"],
+    },
+    handler = _research_get_note,
+)
+
+
+# ---------------------------------------------------------------------------
+# research_delete_note
+# ---------------------------------------------------------------------------
+
+async def _research_delete_note(args: dict) -> str:
+    slug     = args["project_slug"]
+    filename = args["filename"]
+    d        = _notes_dir(slug)
+    if d is None:
+        return json.dumps({"error": "Notes directory not configured"})
+    if not filename.endswith(".md"):
+        filename += ".md"
+    path = d / filename
+    if not path.resolve().is_relative_to(d.resolve()):
+        return json.dumps({"error": "filename must not escape the notes directory"})
+    if not path.exists():
+        return json.dumps({"error": f"Note not found: {filename}"})
+    try:
+        await asyncio.to_thread(path.unlink)
+        return json.dumps({"success": True, "deleted": filename})
+    except Exception as exc:
+        log.exception("research_delete_note skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "research",
+    name        = "research_delete_note",
+    description = "Delete a note file by name. Returns an error if the file does not exist.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "filename":     {"type": "string", "description": "Note filename (with or without .md)"},
+        },
+        "required": ["project_slug", "filename"],
+    },
+    handler = _research_delete_note,
+)

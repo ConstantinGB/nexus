@@ -86,6 +86,26 @@ git.example.com {
 <!-- Backup strategy:
      e.g. nightly restic to Backblaze B2, weekly rsync to external drive -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `server_list_services` | `project_slug` | List all registered services (name, port, type) |
+| `server_status` | `project_slug`, `service` | Get running status (docker state or systemd is-active) |
+| `server_start` | `project_slug`, `service` | Start a service |
+| `server_stop` | `project_slug`, `service` | Stop a service |
+| `server_restart` | `project_slug`, `service` | Restart a service |
+| `server_logs` | `project_slug`, `service`, `n?` | Return last N log lines (default 50) |
+
+## Local Model Guidance
+
+All server skills are mechanical subprocess calls. Reliable with any model.
+
+- Always use the exact service name as registered in Nexus (visible via `server_list_services`).
+- `server_logs` defaults to 50 lines; increase `n` for debugging longer issues.
+- For systemd services, `server_start`/`stop`/`restart` calls `systemctl` — may require sudo depending on system config.
+- If the model returns no tool call: re-prompt with "Call server_status with project_slug: X and service: Y."
+
 ## Notes for the AI
 
 <!-- Resource constraints (RAM/CPU), shared hosting restrictions,

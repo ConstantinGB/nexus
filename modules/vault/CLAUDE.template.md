@@ -87,6 +87,24 @@ version control, or shared folders. Keep encryption keys separate from encrypted
      e.g. laptop theft, cloud provider breach, accidental deletion,
      account compromise, physical access by untrusted parties -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `vault_list_gpg_keys` | `project_slug` | List all GPG public keys in the local keyring |
+| `vault_age_key_status` | `project_slug` | Check age key at ~/.age/key.txt and return public key |
+| `vault_encrypt_file` | `project_slug`, `path` | Encrypt a file with age; produces file.age |
+| `vault_decrypt_file` | `project_slug`, `path`, `engine?` | Decrypt with age (default) or gpg |
+
+## Local Model Guidance
+
+All vault skills are mechanical subprocess calls. Reliable with any model.
+
+- `vault_encrypt_file` / `vault_decrypt_file` — paths must be inside the configured vault directory; always use absolute or ~ paths.
+- `vault_decrypt_file` engine defaults to `age`; pass `"gpg"` explicitly for GPG-encrypted files.
+- For key generation or policy advice, ask in chat — the model can advise without calling a skill.
+- If the model returns no tool call: re-prompt with "Call vault_age_key_status with project_slug: X."
+
 ## Notes for the AI
 
 <!-- Key rotation schedule, passphrase policy, hardware token (YubiKey model),

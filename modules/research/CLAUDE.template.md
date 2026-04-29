@@ -55,6 +55,25 @@ sources. Flag: news articles, blogs, social media. Avoid: anonymous wikis, unver
 
 <!-- Notes directory path: -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `research_list_notes` | `project_slug` | List all Markdown notes with their first line |
+| `research_new_note` | `project_slug`, `filename`, `content` | Create a new note |
+| `research_search` | `project_slug`, `query` | Search notes via grep |
+| `research_get_note` | `project_slug`, `filename` | Read full content of a note |
+| `research_delete_note` | `project_slug`, `filename` | Delete a note (errors if not found) |
+
+## Local Model Guidance
+
+- `research_list_notes`, `research_get_note`, `research_delete_note` — purely mechanical file I/O; reliable with any model.
+- `research_new_note` — requires the model to generate Markdown content. Use explicit prompts: "Create a note about X. Return JSON with keys filename and content."
+- `research_search` — mechanical grep call; reliable.
+- Prompt style: one operation per call; include the exact filename when reading or deleting.
+- MCP tools (fetch, brave-search) require a larger model with reliable tool-calling (13B+). With smaller local models, paste content directly into the chat rather than expecting the model to call fetch.
+- If the model returns no tool call: re-prompt with "Call the research_get_note tool with project_slug: X and filename: Y."
+
 ## Notes for the AI
 
 <!-- Any constraints: language of sources, date range, institutional access,

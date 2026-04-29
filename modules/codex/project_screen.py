@@ -56,9 +56,10 @@ def _first_heading(path: Path) -> str:
 
 
 class CodexProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "codex"
-    MODULE_LABEL = "CODEX"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "codex"
+    MODULE_LABEL      = "CODEX"
+    REQUIRED_BINARIES = [("rg", "ripgrep")]
+    SETUP_FIELDS      = [
         {"id": "vault_dir", "label": "Notes / vault directory",
          "placeholder": "~/codex", "type": "dir"},
         {"id": "format",    "label": "Note format (markdown / latex)",

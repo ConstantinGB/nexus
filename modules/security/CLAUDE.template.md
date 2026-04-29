@@ -190,6 +190,24 @@ Result: if `wg0` goes down, all outbound traffic is blocked — no leak.
 
 ---
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| *(none registered)* | — | Security module has no AI skills; use the Chat panel for advice |
+
+## Local Model Guidance
+
+The security module has no registered skills — all actions are performed via the UI.
+
+Use the Chat panel to ask the AI for:
+- ufw rule recommendations (provide current `ufw status verbose` output)
+- WireGuard or OpenVPN config generation
+- fail2ban jail configuration
+- System hardening advice (provide `lynis audit system` output)
+
+Prompt style: paste the relevant config or command output directly, then ask a specific question. Local models (7B+) handle most firewall and VPN config questions well when given explicit context.
+
 ## Notes for the AI
 
 <!-- Add any additional context, constraints, or preferences here -->

@@ -55,6 +55,22 @@ the exact stack and available scripts before making suggestions.
 <!-- Deployment target:
      e.g. Vercel, Cloudflare Pages, VPS with nginx, Docker container -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `web_list_scripts` | `project_slug` | List all scripts from package.json |
+| `web_run_script` | `project_slug`, `script` | Run a named package.json script |
+
+## Local Model Guidance
+
+Both skills are mechanical calls. Reliable with any model.
+
+- Use `web_list_scripts` to give the AI context before asking which script to run.
+- For code generation (components, hooks, API routes), paste the relevant existing code and ask a specific question. Local 7B+ models handle React/Vue/Svelte component generation well with explicit context.
+- Prompt style: include the framework name and TypeScript/JavaScript distinction in every prompt.
+- If the model returns no tool call: re-prompt with "Call web_list_scripts with project_slug: X."
+
 ## Notes for the AI
 
 <!-- Any specific conventions: component naming, folder structure rules,

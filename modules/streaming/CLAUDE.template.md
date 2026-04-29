@@ -87,6 +87,22 @@ manager, never in plain text files in this directory.
 <!-- Plugins installed:
      e.g. obs-vkcapture, obs-move-transition, obs-browser, StreamFX -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `streaming_list_scenes` | `project_slug` | List OBS scene collections |
+| `streaming_launch_obs` | `project_slug` | Launch OBS with configured binary and config dir |
+| `streaming_check_logs` | `project_slug` | Parse OBS logs for crash/dropped-frames warnings |
+
+## Local Model Guidance
+
+All streaming skills are mechanical calls. Reliable with any model.
+
+- `streaming_check_logs` returns a summary — ask the model "What does this log output indicate?" after calling it.
+- Prompt style: one operation per call; no extra context needed beyond `project_slug`.
+- If the model returns no tool call: re-prompt with "Call streaming_list_scenes with project_slug: X."
+
 ## Notes for the AI
 
 <!-- Resolution and framerate targets, recurring issues (audio desync, frame drops),

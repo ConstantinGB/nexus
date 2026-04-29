@@ -252,3 +252,98 @@ registry.register(
     },
     handler = _git_clone,
 )
+
+
+# ---------------------------------------------------------------------------
+# git_diff
+# ---------------------------------------------------------------------------
+
+async def _git_diff(args: dict) -> str:
+    import asyncio as _aio
+    slug   = args["project_slug"]
+    repo   = args["repo"]
+    staged = bool(args.get("staged", False))
+    mod    = _load(slug)
+    path   = _repo_path(slug, mod, repo)
+    if path is None:
+        return json.dumps({"error": f"Repo '{repo}' not found in project '{slug}'"})
+    cmd = ["git", "diff"]
+    if staged:
+        cmd.append("--staged")
+    try:
+        proc = await _aio.create_subprocess_exec(
+            *cmd,
+            cwd=str(path),
+            stdout=_aio.subprocess.PIPE,
+            stderr=_aio.subprocess.STDOUT,
+        )
+        out, _ = await proc.communicate()
+        return json.dumps({"output": out.decode(errors="replace")})
+    except Exception as exc:
+        log.exception("git_diff skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "git",
+    name        = "git_diff",
+    description = "Return the output of git diff (or git diff --staged) for a repository.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "repo":         {"type": "string", "description": "Repository directory name"},
+            "staged":       {"type": "boolean", "description": "If true, diff staged changes only (default false)"},
+        },
+        "required": ["project_slug", "repo"],
+    },
+    handler = _git_diff,
+)
+
+
+# ---------------------------------------------------------------------------
+# git_stash
+# ---------------------------------------------------------------------------
+
+async def _git_stash(args: dict) -> str:
+    import asyncio as _aio
+    slug   = args["project_slug"]
+    repo   = args["repo"]
+    action = args.get("action", "push")
+    if action not in ("push", "pop"):
+        return json.dumps({"error": "action must be 'push' or 'pop'"})
+    mod  = _load(slug)
+    path = _repo_path(slug, mod, repo)
+    if path is None:
+        return json.dumps({"error": f"Repo '{repo}' not found in project '{slug}'"})
+    try:
+        proc = await _aio.create_subprocess_exec(
+            "git", "stash", action,
+            cwd=str(path),
+            stdout=_aio.subprocess.PIPE,
+            stderr=_aio.subprocess.STDOUT,
+        )
+        out, _ = await proc.communicate()
+        return json.dumps({"success": proc.returncode == 0,
+                           "output": out.decode(errors="replace").strip()})
+    except Exception as exc:
+        log.exception("git_stash skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "git",
+    name        = "git_stash",
+    description = "Run git stash push or git stash pop for a repository.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "repo":         {"type": "string", "description": "Repository directory name"},
+            "action":       {"type": "string", "enum": ["push", "pop"],
+                             "description": "push to stash changes, pop to restore"},
+        },
+        "required": ["project_slug", "repo", "action"],
+    },
+    handler = _git_stash,
+)

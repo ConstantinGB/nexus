@@ -47,6 +47,21 @@ localai:
 | Stable Diffusion (AUTOMATIC1111) | `python webui.py` then POST to API |
 | Whisper (transcription) | `whisper audio.wav --model medium` |
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `localai_run_inference` | `project_slug`, `prompt`, `negative_prompt?` | Run inference using the configured run command |
+
+## Local Model Guidance
+
+This module *is* a local model runner — "local model" here refers to the model Nexus is configured to talk to via `ai.provider: local`. Those are separate from the model this LocalAI project runs.
+
+- `localai_run_inference` — calls the shell command in `localai.run_command`. Reliable regardless of AI provider; the skill itself just runs a subprocess.
+- For text output prompts: be explicit and self-contained. Avoid pronouns that reference earlier conversation turns.
+- For image generation prompts: describe subject, style, lighting, composition, and quality in a single sentence or comma-separated tag list.
+- If the Nexus AI provider is also a small local model and doesn't produce a tool call: re-prompt with "Call localai_run_inference with project_slug: X and prompt: Y."
+
 ## Notes for the AI
 
 <!-- Any model-specific parameters, sampling settings, LoRA adapters in use,

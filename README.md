@@ -15,7 +15,8 @@ The goal is that a complete novice can download, install, and run Nexus with no 
 - **Git module** — manage multiple GitHub / self-hosted / local git repositories; pull, push, commit, view status; add repos by SSH or HTTPS URL
 - **LocalAI module** — AI-assisted setup for local language models and diffusion models; Claude detects your hardware, generates a one-time setup script; inference UI with live output streaming
 - **12 additional modules** — Web, Research, Codex, Journal, Game, Org, Home, Streaming, VTube, Emulator, Vault, and Server each have a functional dashboard with inline setup form, action buttons, and a live command-output log
-- **AI Skills** — 53 built-in tool functions the AI can call without any configuration: pull repos, create notes, start services, run custom commands, and more
+- **AI Skills** — 61 built-in tool functions the AI can call without any configuration: pull repos, create notes, start services, run custom commands, and more
+- **Missing-software popup** — opening a module that requires an uninstalled binary immediately shows a modal with an "Open Settings" shortcut to the Setup tab
 - **AI provider config** — Anthropic API key or any OpenAI-compatible local model (Ollama, LM Studio, llama.cpp); full tool-use and Mycelium flows work on both paths
 - **MCP integration** — connect to MCP servers (filesystem, GitHub, web search, SQLite, and more) and inject their tools into every Claude API call
 - **Per-project AI instructions** — each project gets its own `CLAUDE.md` copied from the module's template; templates include domain knowledge, key software, and prompts for the AI
@@ -91,6 +92,7 @@ Open a Git project, then click **Clone / Add**. Enter a repository URL — both 
 | **Vault** | Tool inventory (gpg/age/veracrypt/keepassxc-cli), GPG export/import, age encrypt/decrypt, KeePassXC list, VeraCrypt mount |
 | **Server** | Service dashboard (systemd + docker) — Start/Stop/Logs/Open URL per service, Import Compose, docker stats |
 | **Backup** | Encrypted, deduplicated backups via restic — snapshot picker, configurable retention/excludes, restore |
+| **Prompt Opt** | AI prompt optimizer — rewrite prompts for clarity (Text), AI instructions (Instruct), or Stable Diffusion tags (Image); Copy button |
 
 All modules open an inline setup form on first use. After saving, the main dashboard appears with action buttons and a live command-output log at the bottom. Each project also gets a `CLAUDE.md` pre-filled with domain knowledge and setup prompts.
 
@@ -145,22 +147,23 @@ The AI uses these to act, not just advise — pulling repos, creating notes, sta
 
 | Module | Skills |
 |--------|--------|
-| **Git** | `git_status`, `git_pull`, `git_push`, `git_commit`, `git_log`, `git_clone` |
+| **Git** | `git_status`, `git_pull`, `git_push`, `git_commit`, `git_log`, `git_clone`, `git_diff`, `git_stash` |
 | **LocalAI** | `localai_run_inference` |
 | **Web** | `web_run_script` (dev/build/test/lint), `web_list_scripts` |
-| **Research** | `research_list_notes`, `research_new_note`, `research_search` |
-| **Codex** | `codex_list`, `codex_new_entry`, `codex_search` |
+| **Research** | `research_list_notes`, `research_new_note`, `research_search`, `research_get_note`, `research_delete_note` |
+| **Codex** | `codex_list`, `codex_new_entry`, `codex_search`, `codex_get_entry` |
 | **Journal** | `journal_list_entries`, `journal_new_entry`, `journal_compile` |
 | **Game** | `game_launch_editor`, `game_run`, `game_scene_list` |
-| **Org** | `org_list_plans`, `org_new_plan`, `org_new_diagram`, `org_new_schedule` |
+| **Org** | `org_list_plans`, `org_new_plan`, `org_new_diagram`, `org_new_schedule`, `org_get_plan` |
 | **Home** | `home_ping`, `home_api_call` |
 | **Streaming** | `streaming_launch_obs`, `streaming_list_scenes`, `streaming_check_logs` |
 | **VTube** | `vtube_launch_runtime`, `vtube_start_tracker` |
 | **Emulator** | `emulator_list_systems`, `emulator_launch` |
-| **Vault** | `vault_list_gpg_keys`, `vault_age_key_status`, `vault_encrypt_file` |
-| **Backup** | `backup_run_backup`, `backup_list_snapshots`, `backup_check`, `backup_restore` |
-| **Server** | `server_list_services`, `server_status`, `server_start`, `server_stop`, `server_restart` |
+| **Vault** | `vault_list_gpg_keys`, `vault_age_key_status`, `vault_encrypt_file`, `vault_decrypt_file` |
+| **Backup** | `backup_run_backup`, `backup_list_snapshots`, `backup_check`, `backup_restore`, `backup_forget` |
+| **Server** | `server_list_services`, `server_status`, `server_start`, `server_stop`, `server_restart`, `server_logs` |
 | **Custom** | `custom_run_command`, `custom_ask` |
+| **Prompt Opt** | `promptopt_optimize` |
 
 All module skills take the project slug as their first argument so the AI always knows which project it is acting on. Skills are registered at app startup and require no configuration.
 

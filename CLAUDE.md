@@ -55,13 +55,16 @@ nexus/
                             Custom tile always last with distinct purple styling; grid auto-sizes
     settings_screen.py   — AI provider config (api_key / local / login) + general settings;
                            Test Connection button for local provider; Verify button for api_key;
-                           Setup tab: per-module dependency installer + system group (xclip, wl-clipboard)
+                           Setup tab: per-module dependency installer + system group (xclip, wl-clipboard);
+                           accepts optional initial_tab kwarg to pre-select a tab on push
     mcp_screen.py        — MCP server manager (Active / Add Servers tabs)
     base_project_screen.py — BaseProjectScreen: shared layout (top-bar with 💬 Chat + ⌨ Claude
                              panel buttons, action-bar, setup-pane, main-pane, output log),
                              _run_cmd async helper, InputModal; all skeleton modules subclass this;
                              panels work in both configured and unconfigured states; output-log
-                             auto-hides while a panel is active
+                             auto-hides while a panel is active; MissingDepsModal pushed on mount
+                             when REQUIRED_BINARIES are absent; REQUIRED_BINARIES class attr on each
+                             module screen lists (binary, display_name) pairs to check
 modules/
   git/                   — Git module (FULLY IMPLEMENTED)
     setup_screen.py      — 6-step wizard: name → type → credentials (optional for public repos) → git config → software → repos → clone
@@ -70,7 +73,7 @@ modules/
                            AddRepoModal for cloning via SSH or HTTPS URL
     git_ops.py           — subprocess wrappers for git, all return (bool, str); get_remote_url + pr_url helpers
     github_api.py        — async GitHub REST API (list repos, verify token)
-    skills.py            — git_status, git_pull, git_push, git_commit, git_log, git_clone
+    skills.py            — git_status, git_pull, git_push, git_commit, git_log, git_clone, git_diff, git_stash
   localai/               — LocalAI module (FULLY IMPLEMENTED)
     setup_screen.py      — 5-step wizard: config → AI generates script → review → install → done
     project_screen.py    — inference UI: prompt input, output log, optional negative prompt + file open;
@@ -89,10 +92,10 @@ modules/
   research/              — project_screen: note list (.md files) with YAML-frontmatter-aware title display
                            and per-note ✕ delete button; New Note (YAML frontmatter: date/topic/tags) /
                            Search / Export URLs / Export All; inline setup for topic + notes_dir
-                           skills.py: research_list_notes, research_new_note, research_search
+                           skills.py: research_list_notes, research_new_note, research_search, research_get_note, research_delete_note
   codex/                 — project_screen: Zettelkasten note list, New Note with frontmatter skeleton,
                            Search (ripgrep -C 2 with context), Filter Tags, Open Vault; inline setup for vault_dir
-                           skills.py: codex_list, codex_new_entry, codex_search
+                           skills.py: codex_list, codex_new_entry, codex_search, codex_get_entry
   journal/               — project_screen: entry list (.tex newest-first, word count), New Entry (LaTeX template),
                            Compile Latest (pdflatex with `!` error summary), Open PDF; inline setup for journal_dir + author
                            skills.py: journal_list_entries, journal_new_entry, journal_compile
@@ -102,7 +105,7 @@ modules/
                            skills.py: game_scene_list, game_launch_editor, game_run
   org/                   — project_screen: .md file list by mtime with checkbox completion tracking (N/M done),
                            New Plan / New Diagram (Mermaid) / New Schedule (Markdown table); inline setup for output_dir
-                           skills.py: org_list_plans, org_new_plan, org_new_diagram, org_new_schedule
+                           skills.py: org_list_plans, org_new_plan, org_new_diagram, org_new_schedule, org_get_plan
   home/                  — project_screen: HA URL + ping status, YAML config file list, Ping HA /
                            Check API (httpx, token stays in-process) / Open in Browser;
                            inline setup for ha_url + config_dir + token; validates configuration.yaml at save
@@ -123,12 +126,25 @@ modules/
                            status, GPG List Keys / Gen Key / Export Key / Import Key / Encrypt File / Decrypt File /
                            KeePassXC List / VeraCrypt Mount+Dismount;
                            inline setup for vault_dir + age_key_path + keepassxc_db + veracrypt_volume
-                           skills.py: vault_list_gpg_keys, vault_age_key_status, vault_encrypt_file
+                           skills.py: vault_list_gpg_keys, vault_age_key_status, vault_encrypt_file, vault_decrypt_file
   server/                — project_screen: service rows (name|port|type|status|Start/Stop/Logs/Open URL),
                            concurrent status polling (systemd + docker), Add Service / Import Compose /
                            Refresh / Docker PS / Stats (docker stats --no-stream); duplicate name detection;
                            inline setup for docker_compose_dir
-                           skills.py: server_list_services, server_status, server_start, server_stop, server_restart
+                           skills.py: server_list_services, server_status, server_start, server_stop, server_restart, server_logs
+  backup/                — project_screen: restic snapshot list, Run Backup / Check / Restore / Browse Snapshots;
+                           inline setup for repo_path + source_path + password; auto-initialises repo on first backup
+                           backup_ops.py: restic wrappers (ensure_initialized, backup, list_snapshots, check, restore, forget)
+                           skills.py: backup_run_backup, backup_list_snapshots, backup_check, backup_restore, backup_forget
+  security/              — project_screen: ufw status + rules list, nmap quick-scan; inline setup for interface
+                           skills.py: (none — security module has no registered skills; use Chat for guidance)
+  sdforge/               — project_screen: SD Forge server controls (Start/Stop), model browser, txt2img UI;
+                           setup_screen: 5-step wizard (install_dir → endpoint → vram → model → launch_args);
+                           api_client.py: async httpx wrappers for A1111-compatible REST API
+                           skills.py: sdforge_txt2img
+  promptopt/             — project_screen: three-mode prompt optimizer (Text / Instruct / Image);
+                           no setup required; always AI-configured path; Copy button for output
+                           skills.py: promptopt_optimize
 projects/                — project instances (git-ignored except .gitkeep)
 config/
   settings.yaml          — global config: AI provider + MCP servers (git-ignored)
@@ -141,7 +157,7 @@ logs/
 
 Each directory under `modules/` is a project-type template. `project_manager.create_project()` instantiates it under `projects/<slug>/`, copying `CLAUDE.template.md` → `CLAUDE.md`.
 
-All 16 modules have comprehensive `CLAUDE.template.md` files containing:
+All 19 modules have comprehensive `CLAUDE.template.md` files containing:
 - **Static AI knowledge** — key software, commands, config patterns, and domain-specific reference tables
 - **User fill-in sections** — commented prompts for the user to describe their specific setup
 
@@ -343,15 +359,20 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 | | `git_commit` | `repo`, `message` |
 | | `git_log` | `repo`, `n=10` |
 | | `git_clone` | `url`, `name?` |
+| | `git_diff` | `repo`, `staged=False` |
+| | `git_stash` | `repo`, `action` (`push`/`pop`) |
 | **localai** | `localai_run_inference` | `prompt`, `negative_prompt?` |
 | **web** | `web_list_scripts` | — |
 | | `web_run_script` | `script` |
 | **research** | `research_list_notes` | — |
 | | `research_new_note` | `filename`, `content` |
 | | `research_search` | `query` |
+| | `research_get_note` | `filename` |
+| | `research_delete_note` | `filename` |
 | **codex** | `codex_list` | — |
 | | `codex_new_entry` | `title`, `content?` |
 | | `codex_search` | `query` |
+| | `codex_get_entry` | `filename` |
 | **journal** | `journal_list_entries` | — |
 | | `journal_new_entry` | `content?` |
 | | `journal_compile` | — |
@@ -362,6 +383,7 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 | | `org_new_plan` | `name`, `tasks?` |
 | | `org_new_diagram` | `name`, `mermaid_content?` |
 | | `org_new_schedule` | `name` |
+| | `org_get_plan` | `filename` |
 | **home** | `home_ping` | — |
 | | `home_api_call` | `endpoint`, `method?` |
 | **streaming** | `streaming_list_scenes` | — |
@@ -374,17 +396,21 @@ All module skills require `project_slug` (the Nexus project slug) plus the addit
 | **vault** | `vault_list_gpg_keys` | — |
 | | `vault_age_key_status` | — |
 | | `vault_encrypt_file` | `path` |
+| | `vault_decrypt_file` | `path`, `engine` (`age`/`gpg`) |
 | **backup** | `backup_run_backup` | — |
 | | `backup_list_snapshots` | — |
 | | `backup_check` | — |
 | | `backup_restore` | `snapshot?`, `target` |
+| | `backup_forget` | `keep_last=10` |
 | **server** | `server_list_services` | — |
 | | `server_status` | `service` |
 | | `server_start` | `service` |
 | | `server_stop` | `service` |
 | | `server_restart` | `service` |
+| | `server_logs` | `service`, `n=50` |
 | **custom** | `custom_run_command` | `label` |
 | | `custom_ask` | `question` |
+| **promptopt** | `promptopt_optimize` | `prompt`, `mode` (`text`/`instruct`/`image`) |
 
 ### Skills vs MCP servers
 

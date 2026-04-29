@@ -210,6 +210,42 @@ class ConfirmModal(ModalScreen[bool]):
         self.dismiss(event.button.id == "cm-yes")
 
 
+class MissingDepsModal(ModalScreen):
+    """Shown on module open when one or more required binaries are absent."""
+
+    DEFAULT_CSS = """
+    MissingDepsModal { align: center middle; }
+    #mdm-dialog {
+        background: #2D1B4E; border: solid #FF8800;
+        padding: 1 2; width: 60; height: auto;
+    }
+    #mdm-title  { color: #FF8800; text-style: bold; height: 2; }
+    #mdm-body   { color: #E0E0FF; height: auto; margin-bottom: 1; }
+    #mdm-btns   { height: 3; }
+    #mdm-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self, missing: list[str]) -> None:
+        super().__init__()
+        self._missing = missing
+
+    def compose(self) -> ComposeResult:
+        body = "\n".join(f"  • {name}" for name in self._missing)
+        with Vertical(id="mdm-dialog"):
+            yield Label("Missing Software", id="mdm-title")
+            yield Label(
+                f"The following tools are not installed:\n{body}",
+                id="mdm-body",
+            )
+            with Horizontal(id="mdm-btns"):
+                yield Button("Open Settings", id="mdm-settings", variant="primary")
+                yield Button("Dismiss",       id="mdm-dismiss")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss("settings" if event.button.id == "mdm-settings" else None)
+
+
 class BaseProjectScreen(Screen):
     """
     Shared base for all skeleton module project screens.
@@ -221,9 +257,10 @@ class BaseProjectScreen(Screen):
       _on_before_save(data) -> dict   (optional extra keys to store)
     """
 
-    MODULE_KEY:   str        = ""
-    MODULE_LABEL: str        = ""
-    SETUP_FIELDS: list[dict] = []   # {"id", "label", "placeholder", "optional"?, "password"?}
+    MODULE_KEY:       str                    = ""
+    MODULE_LABEL:     str                    = ""
+    SETUP_FIELDS:     list[dict]             = []   # {"id", "label", "placeholder", "optional"?, "password"?}
+    REQUIRED_BINARIES: list[tuple[str, str]] = []   # (binary, display_name)
 
     BINDINGS = [("escape", "dismiss", "Back")]
 
@@ -415,9 +452,23 @@ class BaseProjectScreen(Screen):
             self.query_one("#action-bar").display = True
             self._apply_panel_default()
             self.run_worker(self._safe_populate())
+            self.call_after_refresh(self._check_required_binaries)
         else:
             self.query_one("#action-bar").display = False
             self.query_one("#body-row").display = False
+
+    def _check_required_binaries(self) -> None:
+        import shutil
+        missing = [name for bin_, name in self.REQUIRED_BINARIES if not shutil.which(bin_)]
+        if not missing:
+            return
+
+        def _on_modal_dismiss(result: str | None) -> None:
+            if result == "settings":
+                from nexus.ui.settings_screen import SettingsScreen
+                self.app.push_screen(SettingsScreen(initial_tab="tab_setup"))
+
+        self.app.push_screen(MissingDepsModal(missing), _on_modal_dismiss)
 
     # ── Button dispatcher ─────────────────────────────────────────────────────
 

@@ -67,9 +67,10 @@ def _count_roms(system_dir: Path) -> int:
 
 
 class EmulatorProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "emulator"
-    MODULE_LABEL = "EMULATOR"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "emulator"
+    MODULE_LABEL      = "EMULATOR"
+    REQUIRED_BINARIES = [("retroarch", "RetroArch")]
+    SETUP_FIELDS      = [
         {"id": "rom_dir",       "label": "ROM directory",
          "placeholder": "~/Roms", "type": "dir"},
         {"id": "retroarch_bin", "label": "RetroArch binary",

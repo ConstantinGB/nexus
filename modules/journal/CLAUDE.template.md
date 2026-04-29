@@ -88,6 +88,22 @@ points, suggests reflection prompts, formats text to valid LaTeX, and diagnoses 
 
 <!-- Journal directory path: -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `journal_list_entries` | `project_slug` | List .tex entries newest-first with word counts |
+| `journal_new_entry` | `project_slug`, `content?` | Create a new LaTeX journal entry |
+| `journal_compile` | `project_slug` | Run pdflatex and return error/warning summary |
+
+## Local Model Guidance
+
+- `journal_list_entries`, `journal_compile` — mechanical calls; reliable with any model.
+- `journal_new_entry` — ask the model to draft the entry body in plain text, then pass it as `content`. Avoid asking it to generate raw LaTeX; local models often produce syntax errors.
+- If compile fails, paste the error output into chat and ask "What LaTeX fix resolves this error?" — straightforward for most models.
+- Prompt style: one entry at a time; provide the full content in a single call.
+- If the model returns no tool call: re-prompt with "Call journal_new_entry with project_slug: X and content: Y."
+
 ## Notes for the AI
 
 <!-- Recurring sections in every entry (e.g. gratitude, goals, mood rating).

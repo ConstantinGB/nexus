@@ -42,9 +42,10 @@ def _first_line(path: Path) -> str:
 
 
 class ResearchProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "research"
-    MODULE_LABEL = "RESEARCH"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "research"
+    MODULE_LABEL      = "RESEARCH"
+    REQUIRED_BINARIES = [("rg", "ripgrep")]
+    SETUP_FIELDS      = [
         {"id": "topic",     "label": "Research topic",
          "placeholder": "e.g. Machine learning interpretability"},
         {"id": "notes_dir", "label": "Notes directory",

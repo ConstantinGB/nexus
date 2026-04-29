@@ -147,3 +147,50 @@ for _action, _handler, _desc in [
         },
         handler = _handler,
     )
+
+
+# ---------------------------------------------------------------------------
+# server_logs
+# ---------------------------------------------------------------------------
+
+async def _server_logs(args: dict) -> str:
+    slug     = args["project_slug"]
+    svc_name = args["service"]
+    n        = int(args.get("n", 50))
+    cfg      = _server_cfg(slug)
+    svc      = _find_service(cfg, svc_name)
+    svc_type = svc.get("type", "docker") if svc else "docker"
+    if svc_type == "systemd":
+        cmd = ["journalctl", "-u", svc_name, "-n", str(n), "--no-pager"]
+    else:
+        cmd = ["docker", "logs", "--tail", str(n), svc_name]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        out, _ = await proc.communicate()
+        return json.dumps({"service": svc_name, "output": out.decode(errors="replace").strip()})
+    except FileNotFoundError as exc:
+        return json.dumps({"error": f"Command not found: {exc.filename}"})
+    except Exception as exc:
+        log.exception("server_logs skill failed for %s", svc_name)
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "server",
+    name        = "server_logs",
+    description = "Return the last N lines of a service's docker or systemd logs.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "service":      {"type": "string", "description": "Service name"},
+            "n":            {"type": "integer", "description": "Number of log lines to return (default 50)"},
+        },
+        "required": ["project_slug", "service"],
+    },
+    handler = _server_logs,
+)

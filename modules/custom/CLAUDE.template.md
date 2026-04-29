@@ -22,6 +22,22 @@ specific you are about goals, constraints, and existing work, the more useful th
 <!-- What languages, frameworks, libraries, or tools are involved?
      e.g. Python + FastAPI, Rust, Bash scripts, Blender, Excel, pen-and-paper -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `custom_run_command` | `project_slug`, `label` | Run a named shell command defined in this project's config |
+| `custom_ask` | `project_slug`, `question` | Ask the AI a question in the context of this project |
+
+## Local Model Guidance
+
+Both skills work with local models, but quality depends on the model size:
+
+- `custom_ask` is reliable with 7B+ models. Use explicit, self-contained questions: "What is X?" not "Tell me more."
+- `custom_run_command` is purely mechanical (runs a shell command) — local model quality is irrelevant for this skill.
+- Prompt style: one question per call, no implicit context references, state everything the model needs.
+- If the model returns no tool call: re-prompt with "Call the custom_ask tool with question: <your question>."
+
 ## Notes for the AI
 
 <!-- Anything specific to keep in mind: preferred coding style, things to avoid,

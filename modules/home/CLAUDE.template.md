@@ -97,6 +97,21 @@ mode: single
 <!-- Automation goals:
      e.g. presence-based lighting, morning wake-up routine, energy monitoring -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `home_ping` | `project_slug` | Ping the Home Assistant URL and return latency/status |
+| `home_api_call` | `project_slug`, `endpoint`, `method?` | Call a HA REST API endpoint (default GET) |
+
+## Local Model Guidance
+
+Both skills are mechanical HTTP calls. Reliable with any model.
+
+- `home_api_call` accepts any HA REST endpoint (e.g. `/api/states/light.living_room`). Always provide the exact entity ID.
+- For automation YAML generation, ask the model to draft it in chat first, then paste into HA directly — no skill needed.
+- If the model returns no tool call: re-prompt with "Call home_ping with project_slug: X."
+
 ## Notes for the AI
 
 <!-- Integration quirks, entity naming conventions, areas already defined in HA,

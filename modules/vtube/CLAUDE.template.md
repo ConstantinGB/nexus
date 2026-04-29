@@ -80,6 +80,22 @@ OBS  →  stream / recording
 <!-- Hotkeys / expressions already configured:
      e.g. F1 = smile, F2 = angry, F3 = toggle glasses -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `vtube_launch_runtime` | `project_slug` | Launch the configured VTube runtime (VTubeStudio, VSeeFace, etc.) |
+| `vtube_start_tracker` | `project_slug` | Start the face tracker process |
+
+## Local Model Guidance
+
+Both skills are mechanical subprocess calls. Reliable with any model.
+
+- Use the Chat panel for tracking calibration advice, model physics tuning, and hotkey scripting.
+- For VNyan node graph or VTubeStudio expression questions, describe the current setup and desired behaviour explicitly.
+- Prompt style: one operation per call; no extra context needed beyond `project_slug`.
+- If the model returns no tool call: re-prompt with "Call vtube_launch_runtime with project_slug: X."
+
 ## Notes for the AI
 
 <!-- Physics tuning goals, plugins installed in VNyan, known tracking quirks,

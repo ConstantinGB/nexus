@@ -144,3 +144,78 @@ registry.register(
     },
     handler = _vault_encrypt_file,
 )
+
+
+# ---------------------------------------------------------------------------
+# vault_decrypt_file
+# ---------------------------------------------------------------------------
+
+async def _vault_decrypt_file(args: dict) -> str:
+    slug      = args["project_slug"]
+    file_path = Path(args["path"]).expanduser()
+    engine    = args.get("engine", "age")
+    vault_raw = _vault_cfg(slug).get("vault_dir", "")
+    if vault_raw:
+        vault_dir = Path(vault_raw).expanduser().resolve()
+        if not file_path.resolve().is_relative_to(vault_dir):
+            return json.dumps({"error": "path must be inside the configured vault directory"})
+    if not file_path.exists():
+        return json.dumps({"error": f"File not found: {file_path}"})
+
+    if engine == "age":
+        if not _AGE_KEY.exists():
+            return json.dumps({"error": "age key not found at ~/.age/key.txt"})
+        suffix = file_path.suffix
+        out_path = file_path.with_suffix("") if suffix == ".age" else file_path.with_suffix(".dec")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "age", "--decrypt", "-i", str(_AGE_KEY), "-o", str(out_path), str(file_path),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await proc.communicate()
+            ok = proc.returncode == 0
+            return json.dumps({"success": ok, "output_path": str(out_path),
+                               "output": out.decode(errors="replace").strip()})
+        except FileNotFoundError:
+            return json.dumps({"error": "age not found on PATH"})
+        except Exception as exc:
+            log.exception("vault_decrypt_file (age) skill failed")
+            return json.dumps({"error": str(exc)})
+
+    elif engine == "gpg":
+        out_path = file_path.with_suffix("") if file_path.suffix == ".gpg" else \
+                   file_path.with_suffix(".dec")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "gpg", "--decrypt", "--output", str(out_path), str(file_path),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await proc.communicate()
+            ok = proc.returncode == 0
+            return json.dumps({"success": ok, "output_path": str(out_path),
+                               "output": out.decode(errors="replace").strip()})
+        except FileNotFoundError:
+            return json.dumps({"error": "gpg not found on PATH"})
+        except Exception as exc:
+            log.exception("vault_decrypt_file (gpg) skill failed")
+            return json.dumps({"error": str(exc)})
+
+    return json.dumps({"error": f"Unknown engine: {engine}. Use 'age' or 'gpg'."})
+
+
+registry.register(
+    scope       = "vault",
+    name        = "vault_decrypt_file",
+    description = "Decrypt a file using age or gpg. Returns the path to the decrypted output file.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "path":         {"type": "string", "description": "Absolute or ~ path to the encrypted file"},
+            "engine":       {"type": "string", "enum": ["age", "gpg"],
+                             "description": "Decryption engine: 'age' (default) or 'gpg'"},
+        },
+        "required": ["project_slug", "path"],
+    },
+    handler = _vault_decrypt_file,
+)

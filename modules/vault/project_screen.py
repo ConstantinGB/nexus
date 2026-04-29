@@ -22,9 +22,10 @@ _TOOLS = [
 
 
 class VaultProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "vault"
-    MODULE_LABEL = "VAULT"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "vault"
+    MODULE_LABEL      = "VAULT"
+    REQUIRED_BINARIES = [("gpg", "GnuPG"), ("age", "age"), ("keepassxc-cli", "KeePassXC CLI")]
+    SETUP_FIELDS      = [
         {"id": "vault_dir",       "label": "Vault / container directory",
          "placeholder": "~/vault", "type": "dir"},
         {"id": "age_key_path",    "label": "age key path (optional)",

@@ -61,9 +61,10 @@ class SnapshotPickerModal(ModalScreen):
 
 
 class BackupProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "backup"
-    MODULE_LABEL = "BACKUP"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "backup"
+    MODULE_LABEL      = "BACKUP"
+    REQUIRED_BINARIES = [("restic", "restic")]
+    SETUP_FIELDS      = [
         {"id": "repo",     "label": "Repository path / SFTP target",
          "placeholder": "/home/user/nexus-backup or sftp:user@host:/path"},
         {"id": "paths",    "label": "Paths to back up (comma-separated)",

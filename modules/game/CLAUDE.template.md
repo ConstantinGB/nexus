@@ -102,6 +102,24 @@ autoloads/               — singleton scripts (register in Project → Autoload
 <!-- Plugins / addons in use:
      e.g. Dialogic (dialogue), GodotSteam, Phantom Camera, Beehave (behaviour trees) -->
 
+## Skills
+
+| Skill | Inputs | Description |
+|-------|--------|-------------|
+| `game_scene_list` | `project_slug` | List all .tscn scene files in the Godot project |
+| `game_launch_editor` | `project_slug` | Launch the Godot editor |
+| `game_run` | `project_slug` | Run the game via the Godot binary |
+
+## Local Model Guidance
+
+All game skills are mechanical calls. Reliable with any model.
+
+- `game_scene_list` — use to give the AI context before asking architecture questions.
+- GDScript generation works well with 13B+ models; 7B models often produce syntax errors for complex scripts. Provide function signatures and expected behaviour explicitly.
+- For shader help, paste the existing shader code and describe the desired effect.
+- Prompt style: one task at a time; include the Godot version (3.x vs 4.x) in every prompt.
+- If the model returns no tool call: re-prompt with "Call game_scene_list with project_slug: X."
+
 ## Notes for the AI
 
 <!-- Art style (pixel art, vector, 3D low-poly), performance budget,

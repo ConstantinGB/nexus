@@ -26,9 +26,10 @@ _TOOLS = [
 
 
 class SecurityProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "security"
-    MODULE_LABEL = "SECURITY"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "security"
+    MODULE_LABEL      = "SECURITY"
+    REQUIRED_BINARIES = [("ufw", "ufw"), ("nmap", "nmap")]
+    SETUP_FIELDS      = [
         {"id": "vpn_provider",    "label": "VPN provider (wireguard / openvpn / mullvad / protonvpn / custom)",
          "placeholder": "wireguard"},
         {"id": "vpn_config_dir",  "label": "VPN config directory",

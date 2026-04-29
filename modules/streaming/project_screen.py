@@ -15,9 +15,10 @@ log = get("streaming.project_screen")
 
 
 class StreamingProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "streaming"
-    MODULE_LABEL = "STREAMING"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "streaming"
+    MODULE_LABEL      = "STREAMING"
+    REQUIRED_BINARIES = [("obs", "OBS Studio")]
+    SETUP_FIELDS      = [
         {"id": "obs_config_dir", "label": "OBS config directory",
          "placeholder": "~/.config/obs-studio", "type": "dir"},
         {"id": "platform", "label": "Streaming platform (twitch / youtube / local)",

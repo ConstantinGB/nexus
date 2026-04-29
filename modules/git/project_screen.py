@@ -748,6 +748,19 @@ class GitProjectScreen(Screen):
         self.run_worker(self._render_repos)
         self.call_after_refresh(self._hide_chat_initial)
         self.call_after_refresh(self._apply_panel_default)
+        self.call_after_refresh(self._check_required_binaries)
+
+    def _check_required_binaries(self) -> None:
+        import shutil
+        missing = [name for bin_, name in [("git", "Git")] if not shutil.which(bin_)]
+        if not missing:
+            return
+        from nexus.ui.base_project_screen import MissingDepsModal
+        def _on_dismiss(result):
+            if result == "settings":
+                from nexus.ui.settings_screen import SettingsScreen
+                self.app.push_screen(SettingsScreen(initial_tab="tab_setup"))
+        self.app.push_screen(MissingDepsModal(missing), _on_dismiss)
 
     def _hide_chat_initial(self) -> None:
         try:

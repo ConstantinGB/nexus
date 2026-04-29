@@ -87,9 +87,10 @@ class ServiceRow(Horizontal):
 
 
 class ServerProjectScreen(BaseProjectScreen):
-    MODULE_KEY   = "server"
-    MODULE_LABEL = "SERVER"
-    SETUP_FIELDS = [
+    MODULE_KEY        = "server"
+    MODULE_LABEL      = "SERVER"
+    REQUIRED_BINARIES = [("docker", "Docker")]
+    SETUP_FIELDS      = [
         {"id": "docker_compose_dir", "label": "Docker Compose directory (optional)",
          "placeholder": "~/server/compose", "optional": True},
     ]

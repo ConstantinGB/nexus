@@ -107,7 +107,7 @@ _INSTALL_CMDS: dict[str, str] = {
     "lynis":              "sudo apt install -y lynis",
     "nmap":               "sudo apt install -y nmap",
     "dnscrypt-proxy":     "sudo apt install -y dnscrypt-proxy",
-    "macchanger":         "sudo apt install -y macchanger",
+    "macchanger":         "DEBIAN_FRONTEND=noninteractive sudo apt install -y macchanger",
     "torsocks":           "sudo apt install -y torsocks",
 }
 
@@ -287,12 +287,13 @@ class SettingsScreen(Screen):
     }
     """
 
-    def __init__(self):
+    def __init__(self, initial_tab: str | None = None):
         super().__init__()
         self._cfg: dict = {}
         self._provider      = "api_key"
         self._model_mode    = "basic"
         self._install_mode  = "direct"
+        self._initial_tab   = initial_tab
 
     # ── Compose ───────────────────────────────────────────────────────────────
 
@@ -601,6 +602,14 @@ class SettingsScreen(Screen):
         # Defer visibility changes to after the first layout pass so that
         # display=False actually collapses the hidden containers.
         self.call_after_refresh(self._apply_initial_visibility)
+        if self._initial_tab:
+            self.call_after_refresh(self._switch_to_initial_tab)
+
+    def _switch_to_initial_tab(self) -> None:
+        try:
+            self.query_one(TabbedContent).active = self._initial_tab
+        except Exception:
+            pass
 
     def _apply_initial_visibility(self) -> None:
         self._update_sections(self._provider)
