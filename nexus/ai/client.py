@@ -133,8 +133,14 @@ class AIClient:
                         continue
                     raise
 
-                choice = r.json()["choices"][0]
-                msg    = choice["message"]
+                try:
+                    choices = r.json().get("choices", [])
+                except (ValueError, KeyError):
+                    choices = []
+                if not choices:
+                    return ""
+                choice = choices[0]
+                msg    = choice.get("message", {})
 
                 if choice.get("finish_reason") != "tool_calls" or not msg.get("tool_calls"):
                     return msg.get("content") or ""

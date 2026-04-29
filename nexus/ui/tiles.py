@@ -74,6 +74,7 @@ class ConfirmDeleteModal(ModalScreen):
                 yield Button("Cancel",      id="btn-cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
         self.dismiss(event.button.id == "btn-yes")
 
 

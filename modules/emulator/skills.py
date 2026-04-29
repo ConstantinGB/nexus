@@ -67,10 +67,16 @@ async def _emulator_launch(args: dict) -> str:
         return json.dumps({"error": "rom_dir not configured"})
     if not shutil.which(bin_):
         return json.dumps({"error": f"RetroArch binary '{bin_}' not found on PATH"})
-    content_dir = Path(raw).expanduser() / system
+    rom_dir_resolved = Path(raw).expanduser().resolve()
+    content_dir = (rom_dir_resolved / system).resolve()
+    if not content_dir.is_relative_to(rom_dir_resolved):
+        return json.dumps({"error": "system path escapes rom_dir"})
     cmd = [bin_]
     if rom:
-        cmd += [str(content_dir / rom)]
+        full_rom = (content_dir / rom).resolve()
+        if not full_rom.is_relative_to(content_dir):
+            return json.dumps({"error": "ROM path escapes the system directory"})
+        cmd += [str(full_rom)]
     else:
         cmd += ["--contentdir", str(content_dir)]
     try:

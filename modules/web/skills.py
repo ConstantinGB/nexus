@@ -28,7 +28,7 @@ async def _web_list_scripts(args: dict) -> str:
     if not pkg.exists():
         return json.dumps({"scripts": {}, "note": "package.json not found"})
     try:
-        data    = json.loads(pkg.read_text(encoding="utf-8"))
+        data    = json.loads(await asyncio.to_thread(pkg.read_text, encoding="utf-8"))
         scripts = data.get("scripts", {})
         return json.dumps({"scripts": scripts})
     except Exception as exc:

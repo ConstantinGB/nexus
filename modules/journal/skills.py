@@ -84,12 +84,12 @@ async def _journal_new_entry(args: dict) -> str:
         year = now.strftime("%Y")
         date = now.strftime("%Y-%m-%d")
         entry_dir = d / "entries" / year
-        entry_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(entry_dir.mkdir, parents=True, exist_ok=True)
         path = entry_dir / f"{date}.tex"
         author = _author(slug)
         text = _TEX_TEMPLATE.format(title=f"Journal — {date}", author=author,
                                      date=date, content=content)
-        path.write_text(text, encoding="utf-8")
+        await asyncio.to_thread(path.write_text, text, encoding="utf-8")
         return json.dumps({"success": True, "path": str(path)})
     except Exception as exc:
         log.exception("journal_new_entry skill failed")

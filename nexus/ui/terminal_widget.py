@@ -251,8 +251,11 @@ class TerminalEmulator:
             self.send_task.cancel()
         try:
             os.kill(self.pid, signal.SIGTERM)
-            os.waitpid(self.pid, 0)
         except (ProcessLookupError, ChildProcessError):
+            pass
+        try:
+            os.waitpid(self.pid, os.WNOHANG)
+        except (ProcessLookupError, ChildProcessError, ChildProcessError):
             pass
 
     def _open_terminal(self, command: str) -> int:

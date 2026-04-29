@@ -28,9 +28,13 @@ async def _get_age_pubkey(key_path: Path) -> str:
             return out.decode().strip()
     except FileNotFoundError:
         pass
-    for line in key_path.read_text(errors="replace").splitlines():
-        if line.startswith("# public key:"):
-            return line.split(":", 1)[1].strip()
+    try:
+        text = await asyncio.to_thread(key_path.read_text, errors="replace")
+        for line in text.splitlines():
+            if line.startswith("# public key:"):
+                return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
     return ""
 
 
@@ -97,6 +101,11 @@ registry.register(
 async def _vault_encrypt_file(args: dict) -> str:
     slug      = args["project_slug"]
     file_path = Path(args["path"]).expanduser()
+    vault_raw = _vault_cfg(slug).get("vault_dir", "")
+    if vault_raw:
+        vault_dir = Path(vault_raw).expanduser().resolve()
+        if not file_path.resolve().is_relative_to(vault_dir):
+            return json.dumps({"error": "path must be inside the configured vault directory"})
     if not _AGE_KEY.exists():
         return json.dumps({"error": "age key not found at ~/.age/key.txt. Generate one first."})
     if not file_path.exists():

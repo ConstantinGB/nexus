@@ -164,7 +164,10 @@ class ChatPanel(Vertical):
             )
         except Exception:
             log.exception("Chat send failed for %s", self._slug)
-            chat_log.write("[error] AI request failed — see log.")
+            try:
+                chat_log.write("[error] AI request failed — see log.")
+            except Exception:
+                pass
             self._messages.pop()
         finally:
             self._busy = False
@@ -174,7 +177,10 @@ class ChatPanel(Vertical):
                 pass
 
         if reply is not None:
-            chat_log.write(f"[AI] {reply}")
+            try:
+                chat_log.write(f"[AI] {reply}")
+            except Exception:
+                pass
             self._messages.append({"role": "assistant", "content": reply})
             self._save_history()
 
@@ -197,7 +203,10 @@ class ChatPanel(Vertical):
         self.run_worker(self._do_init(description))
 
     async def _do_init(self, description: str) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
+        try:
+            chat_log = self.query_one("#chat-log", RichLog)
+        except NoMatches:
+            return
 
         from nexus.core.config_manager import is_ai_configured
         if not is_ai_configured():

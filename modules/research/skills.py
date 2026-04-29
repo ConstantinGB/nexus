@@ -31,7 +31,8 @@ async def _research_list_notes(args: dict) -> str:
         notes = []
         for p in sorted(d.glob("*.md")):
             try:
-                first = p.read_text(errors="replace").splitlines()[0]
+                text  = await asyncio.to_thread(p.read_text, errors="replace")
+                first = text.splitlines()[0] if text.splitlines() else ""
             except Exception:
                 first = ""
             notes.append({"filename": p.name, "first_line": first})
@@ -70,7 +71,9 @@ async def _research_new_note(args: dict) -> str:
         if not filename.endswith(".md"):
             filename += ".md"
         path = d / filename
-        path.write_text(content, encoding="utf-8")
+        if not path.resolve().is_relative_to(d.resolve()):
+            return json.dumps({"error": "filename must not escape the notes directory"})
+        await asyncio.to_thread(path.write_text, content, encoding="utf-8")
         return json.dumps({"success": True, "path": str(path)})
     except Exception as exc:
         log.exception("research_new_note skill failed")

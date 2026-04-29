@@ -148,6 +148,7 @@ class AddProjectScreen(Screen):
             self._create()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
         if event.button.id == "btn-back":
             self._go_to_step(1)
         elif event.button.id == "btn-create":

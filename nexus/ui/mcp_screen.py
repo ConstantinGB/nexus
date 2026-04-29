@@ -81,6 +81,7 @@ class ServerConfigForm(Vertical):
             yield Button("Cancel", id="btn_cancel", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
         if event.button.id == "btn_cancel":
             self.remove()
             return

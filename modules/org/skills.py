@@ -78,13 +78,13 @@ async def _org_new_plan(args: dict) -> str:
     if d is None:
         return json.dumps({"error": "Output directory not configured"})
     try:
-        d.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(d.mkdir, parents=True, exist_ok=True)
         date     = datetime.now().strftime("%Y-%m-%d")
         filename = name.lower().replace(" ", "-").replace("/", "-")[:50] + ".md"
         items    = "\n".join(f"- [ ] {t}" for t in tasks) if tasks else "- [ ] "
         text     = f"# {name}\n\n_Created: {date}_\n\n## Tasks\n\n{items}\n"
         path     = d / filename
-        path.write_text(text, encoding="utf-8")
+        await asyncio.to_thread(path.write_text, text, encoding="utf-8")
         return json.dumps({"success": True, "path": str(path)})
     except Exception as exc:
         log.exception("org_new_plan skill failed")
@@ -121,11 +121,11 @@ async def _org_new_diagram(args: dict) -> str:
     if d is None:
         return json.dumps({"error": "Output directory not configured"})
     try:
-        d.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(d.mkdir, parents=True, exist_ok=True)
         filename = name.lower().replace(" ", "-").replace("/", "-")[:50] + ".md"
         text     = f"# {name}\n\n```mermaid\n{mermaid_content}\n```\n"
         path     = d / filename
-        path.write_text(text, encoding="utf-8")
+        await asyncio.to_thread(path.write_text, text, encoding="utf-8")
         return json.dumps({"success": True, "path": str(path)})
     except Exception as exc:
         log.exception("org_new_diagram skill failed")
@@ -161,12 +161,12 @@ async def _org_new_schedule(args: dict) -> str:
     if d is None:
         return json.dumps({"error": "Output directory not configured"})
     try:
-        d.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(d.mkdir, parents=True, exist_ok=True)
         date     = datetime.now().strftime("%Y-%m-%d")
         filename = name.lower().replace(" ", "-").replace("/", "-")[:50] + ".md"
         text     = f"# {name}\n\n_Created: {date}_\n\n{_WEEKLY_TABLE}"
         path     = d / filename
-        path.write_text(text, encoding="utf-8")
+        await asyncio.to_thread(path.write_text, text, encoding="utf-8")
         return json.dumps({"success": True, "path": str(path)})
     except Exception as exc:
         log.exception("org_new_schedule skill failed")

@@ -69,7 +69,7 @@ async def _custom_ask(args: dict) -> str:
 
     md_path = _PROJECTS_DIR / slug / "CLAUDE.md"
     try:
-        claude_md = md_path.read_text(errors="replace")
+        claude_md = await asyncio.to_thread(md_path.read_text, errors="replace")
     except FileNotFoundError:
         return json.dumps({"error": f"CLAUDE.md not found for project '{slug}'."})
 

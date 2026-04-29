@@ -324,6 +324,7 @@ class BaseProjectScreen(Screen):
             yield Button("⚙", id="btn-edit-project", tooltip="Edit name & description")
             yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
             yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
+            yield Button("$ Shell",  id="btn-panel-bash",   classes="panel-btn")
         with Horizontal(id="action-bar"):
             yield from self._compose_action_buttons()
 
@@ -390,6 +391,11 @@ class BaseProjectScreen(Screen):
                     self._set_panel_mode("none")
                 else:
                     self.run_worker(self._launch_claude())
+            elif bid == "btn-panel-bash":
+                if self._panel_mode == "bash":
+                    self._set_panel_mode("none")
+                else:
+                    self.run_worker(self._launch_bash())
             elif bid == "btn-open-folder":
                 self._open_primary_folder()
             elif bid == "btn-edit-project":
@@ -468,18 +474,20 @@ class BaseProjectScreen(Screen):
             self._set_panel_mode("chat")
         elif default == "claude_code":
             self.call_after_refresh(lambda: self.run_worker(self._launch_claude()))
+        elif default == "bash":
+            self.call_after_refresh(lambda: self.run_worker(self._launch_bash()))
         else:
             self._set_panel_mode("none")
 
     def _set_panel_mode(self, mode: str) -> None:
         self._panel_mode = mode
-        if mode in ("chat", "claude_code"):
+        if mode in ("chat", "claude_code", "bash"):
             try:
                 self.query_one("#body-row").display = True
             except NoMatches:
                 pass
             if not self._is_configured():
-                # hide setup-pane + empty main-pane so chat fills the space
+                # hide setup-pane + empty main-pane so panel fills the space
                 try:
                     self.query_one("#setup-pane").display = False
                 except NoMatches:
@@ -508,10 +516,19 @@ class BaseProjectScreen(Screen):
         except NoMatches:
             pass
         try:
-            self.query_one("#terminal-panel").display = (mode == "claude_code")
+            self.query_one("#terminal-panel").display = (mode in ("claude_code", "bash"))
         except NoMatches:
             pass
-        for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+        for wid, active_mode in [("#claude-terminal", "claude_code"), ("#bash-terminal", "bash")]:
+            try:
+                self.query_one(wid).display = (mode == active_mode)
+            except NoMatches:
+                pass
+        for bid, active_mode in [
+            ("btn-panel-chat",   "chat"),
+            ("btn-panel-claude", "claude_code"),
+            ("btn-panel-bash",   "bash"),
+        ]:
             try:
                 btn = self.query_one(f"#{bid}", Button)
                 if mode == active_mode:
@@ -531,6 +548,16 @@ class BaseProjectScreen(Screen):
                 severity="error",
             )
             return
+
+        # Kill any running bash terminal before taking the shared panel
+        try:
+            self.query_one("#bash-terminal", Terminal).stop()
+        except NoMatches:
+            pass
+        try:
+            self.query_one("#bash-terminal").remove()
+        except NoMatches:
+            pass
 
         self._set_panel_mode("claude_code")
 
@@ -554,20 +581,56 @@ class BaseProjectScreen(Screen):
         terminal.start()
         terminal.focus()
 
-    def on_terminal_process_stopped(self, _event) -> None:
+    async def _launch_bash(self) -> None:
+        import os, shutil
+        from nexus.ui.terminal_widget import Terminal
+
+        shell = os.environ.get("SHELL", "") or shutil.which("bash") or "bash"
+
+        # Kill any running claude terminal before taking the shared panel
+        try:
+            self.query_one("#claude-terminal", Terminal).stop()
+        except NoMatches:
+            pass
         try:
             self.query_one("#claude-terminal").remove()
         except NoMatches:
             pass
-        if self._panel_mode == "claude_code":
+
+        self._set_panel_mode("bash")
+
+        # Session already alive — just show it
+        try:
+            self.query_one("#bash-terminal").focus()
+            return
+        except NoMatches:
+            pass
+
+        terminal = Terminal(command=shell, cwd=str(self.project.path), id="bash-terminal")
+        try:
+            panel = self.query_one("#terminal-panel")
+        except NoMatches:
+            return
+        await panel.mount(terminal)
+        terminal.start()
+        terminal.focus()
+
+    def on_terminal_process_stopped(self, _event) -> None:
+        for wid in ("#claude-terminal", "#bash-terminal"):
+            try:
+                self.query_one(wid).remove()
+            except NoMatches:
+                pass
+        if self._panel_mode in ("claude_code", "bash"):
             self._set_panel_mode("none")
 
     def action_dismiss(self, result=None) -> None:
-        try:
-            from nexus.ui.terminal_widget import Terminal
-            self.query_one("#claude-terminal", Terminal).stop()
-        except NoMatches:
-            pass
+        from nexus.ui.terminal_widget import Terminal
+        for wid in ("#claude-terminal", "#bash-terminal"):
+            try:
+                self.query_one(wid, Terminal).stop()
+            except NoMatches:
+                pass
         self.dismiss(result)
 
     def _reload_screen(self) -> None:

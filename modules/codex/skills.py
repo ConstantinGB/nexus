@@ -31,11 +31,15 @@ async def _codex_list(args: dict) -> str:
     try:
         entries = []
         for p in sorted(d.rglob("*.md")):
-            heading = ""
-            for line in p.read_text(errors="replace").splitlines():
-                if line.startswith("#"):
-                    heading = line.lstrip("#").strip()
-                    break
+            try:
+                text    = await asyncio.to_thread(p.read_text, errors="replace")
+                heading = ""
+                for line in text.splitlines():
+                    if line.startswith("#"):
+                        heading = line.lstrip("#").strip()
+                        break
+            except Exception:
+                heading = ""
             entries.append({"filename": str(p.relative_to(d)), "heading": heading})
         return json.dumps({"entries": entries, "count": len(entries)})
     except Exception as exc:
@@ -90,7 +94,7 @@ async def _codex_new_entry(args: dict) -> str:
         filename  = f"{date_id}-{slug_name}.md"
         text = _FRONTMATTER.format(date_id=date_id, title=title, date=date, content=content)
         path = d / filename
-        path.write_text(text, encoding="utf-8")
+        await asyncio.to_thread(path.write_text, text, encoding="utf-8")
         return json.dumps({"success": True, "path": str(path)})
     except Exception as exc:
         log.exception("codex_new_entry skill failed")
