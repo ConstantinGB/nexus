@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from pathlib import Path
 
 import platform as _platform
@@ -138,32 +139,7 @@ class StreamingProjectScreen(BaseProjectScreen):
             self.run_worker(self._run_cmd([obs_bin]))
 
         elif bid == "btn-check-logs":
-            logs_dir = obs_config_dir / "logs"
-            if not logs_dir.exists():
-                self.app.notify("OBS logs directory not found.", severity="warning")
-                return
-            log_files = sorted(logs_dir.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
-            if not log_files:
-                self.app.notify("No OBS log files found.", severity="warning")
-                return
-            latest_log = log_files[0]
-            try:
-                lines = latest_log.read_text(errors="replace").splitlines()[-50:]
-                ui_log = self.query_one("#output-log")
-                ui_log.clear()
-                ui_log.write_line(f"--- {latest_log.name} (last 50 lines) ---")
-                for line in lines:
-                    ui_log.write_line(line)
-                _WARN_KEYS = ("crash", "dropped frames", "output error", "recording error",
-                              "encoding error", "connection failed")
-                flagged = [l for l in lines if any(k in l.lower() for k in _WARN_KEYS)]
-                if flagged:
-                    ui_log.write_line(f"\n⚠ {len(flagged)} warning/issue line(s):")
-                    for l in flagged[:5]:
-                        ui_log.write_line(f"  {l.strip()}")
-            except Exception:
-                log.exception("Failed to read OBS log")
-                self.app.notify("Could not read OBS log.", severity="error")
+            self.run_worker(self._check_obs_logs(obs_config_dir))
 
         elif bid == "btn-list-scenes":
             scenes_dir = obs_config_dir / "basic" / "scenes"
@@ -175,3 +151,35 @@ class StreamingProjectScreen(BaseProjectScreen):
 
         elif bid == "btn-open-config":
             self.run_worker(self._run_cmd(open_path(obs_config_dir)))
+
+    async def _check_obs_logs(self, obs_config_dir: Path) -> None:
+        logs_dir = obs_config_dir / "logs"
+        log_files = await asyncio.to_thread(
+            lambda: sorted(logs_dir.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if logs_dir.exists() else []
+        )
+        if not log_files:
+            self.app.notify("No OBS log files found.", severity="warning")
+            return
+        latest_log = log_files[0]
+        try:
+            text  = await asyncio.to_thread(latest_log.read_text, errors="replace")
+            lines = text.splitlines()[-50:]
+            try:
+                ui_log = self.query_one("#output-log")
+            except Exception:
+                return
+            ui_log.clear()
+            ui_log.write_line(f"--- {latest_log.name} (last 50 lines) ---")
+            for line in lines:
+                ui_log.write_line(line)
+            _WARN_KEYS = ("crash", "dropped frames", "output error", "recording error",
+                          "encoding error", "connection failed")
+            flagged = [l for l in lines if any(k in l.lower() for k in _WARN_KEYS)]
+            if flagged:
+                ui_log.write_line(f"\n⚠ {len(flagged)} warning/issue line(s):")
+                for l in flagged[:5]:
+                    ui_log.write_line(f"  {l.strip()}")
+        except Exception:
+            log.exception("Failed to read OBS log")
+            self.app.notify("Could not read OBS log.", severity="error")

@@ -127,27 +127,27 @@ class JournalProjectScreen(BaseProjectScreen):
         author      = self._mod.get("author", "Author")
 
         if bid == "btn-new-entry":
-            self._create_entry(journal_dir, author)
+            self.run_worker(self._create_entry(journal_dir, author))
         elif bid == "btn-compile-latest":
-            self._compile_latest(journal_dir)
+            self.run_worker(self._compile_latest(journal_dir))
         elif bid == "btn-open-pdf":
-            pdfs = sorted(journal_dir.rglob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
-            if pdfs:
-                self.run_worker(self._run_cmd(open_path(pdfs[0])))
-            else:
-                self.app.notify("No PDF found — compile first.", severity="warning")
+            self.run_worker(self._open_latest_pdf(journal_dir))
         elif bid == "btn-open-dir":
             self.run_worker(self._run_cmd(open_path(journal_dir)))
 
-    def _create_entry(self, journal_dir: Path, author: str) -> None:
+    async def _create_entry(self, journal_dir: Path, author: str) -> None:
         today      = date.today()
         year_dir   = journal_dir / "entries" / str(today.year)
         entry_path = year_dir / f"{today}.tex"
         try:
-            year_dir.mkdir(parents=True, exist_ok=True)
-            if not entry_path.exists():
-                entry_path.write_text(_LATEX_TEMPLATE.format(entry_date=today, author=author))
-            content = entry_path.read_text(errors="replace")
+            await asyncio.to_thread(year_dir.mkdir, parents=True, exist_ok=True)
+            exists = await asyncio.to_thread(entry_path.exists)
+            if not exists:
+                await asyncio.to_thread(
+                    entry_path.write_text,
+                    _LATEX_TEMPLATE.format(entry_date=today, author=author),
+                )
+            content = await asyncio.to_thread(entry_path.read_text, errors="replace")
         except Exception:
             log.exception("Failed to create journal entry: %s", entry_path)
             self.app.notify("Could not create entry — see log.", severity="error")
@@ -172,16 +172,28 @@ class JournalProjectScreen(BaseProjectScreen):
             self.app.notify("Could not save entry — see log.", severity="error")
         self.run_worker(self._populate_content())
 
-    def _compile_latest(self, journal_dir: Path) -> None:
+    async def _open_latest_pdf(self, journal_dir: Path) -> None:
+        pdfs = await asyncio.to_thread(
+            lambda: sorted(journal_dir.rglob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+        )
+        if pdfs:
+            await self._run_cmd(open_path(pdfs[0]))
+        else:
+            self.app.notify("No PDF found — compile first.", severity="warning")
+
+    async def _compile_latest(self, journal_dir: Path) -> None:
         entries_dir = journal_dir / "entries"
-        if not entries_dir.exists():
+        exists = await asyncio.to_thread(entries_dir.exists)
+        if not exists:
             self.app.notify("No entries directory found.", severity="warning")
             return
-        entries = sorted(entries_dir.rglob("*.tex"), key=lambda p: p.stat().st_mtime, reverse=True)
+        entries = await asyncio.to_thread(
+            lambda: sorted(entries_dir.rglob("*.tex"), key=lambda p: p.stat().st_mtime, reverse=True)
+        )
         if not entries:
             self.app.notify("No .tex entries found.", severity="warning")
             return
-        self.run_worker(self._do_compile(entries[0], journal_dir))
+        await self._do_compile(entries[0], journal_dir)
 
     async def _do_compile(self, latest: Path, journal_dir: Path) -> None:
         ui_log = self.query_one("#output-log", Log)

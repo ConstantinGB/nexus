@@ -93,7 +93,10 @@ class ServerConfigForm(Vertical):
             add_global_mcp_server(self.spec.id, cfg)
             self.app.notify(f"{self.spec.name} added!", severity="information")
             self.remove()
-            self.app.query_one(MCPScreen).refresh_active()
+            try:
+                self.app.query_one(MCPScreen).refresh_active()
+            except Exception:
+                pass
 
 
 class MCPScreen(Screen):

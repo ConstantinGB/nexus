@@ -63,7 +63,10 @@ class CommitModal(ModalScreen):
         status = await asyncio.get_event_loop().run_in_executor(
             None, get_short_status, self.repo_path
         )
-        ui_log = self.query_one("#cm-diff-log", Log)
+        try:
+            ui_log = self.query_one("#cm-diff-log", Log)
+        except Exception:
+            return
         if status:
             for line in status.splitlines():
                 ui_log.write_line(line)
@@ -145,7 +148,10 @@ class BranchModal(ModalScreen):
         local   = [b for b in branches if not b.startswith("remotes/")]
         remote  = [b for b in branches if b.startswith("remotes/")]
         self._local_branches = local
-        br_list = self.query_one("#br-list", ScrollableContainer)
+        try:
+            br_list = self.query_one("#br-list", ScrollableContainer)
+        except Exception:
+            return
         await br_list.remove_children()
         for i, b in enumerate(local):
             is_cur = (b == self._current)
@@ -279,12 +285,18 @@ class StashModal(ModalScreen):
         self._stashes = await asyncio.get_event_loop().run_in_executor(
             None, list_stashes, self.repo_path
         )
-        st_list = self.query_one("#st-list", ScrollableContainer)
+        try:
+            st_list = self.query_one("#st-list", ScrollableContainer)
+        except Exception:
+            return
         await st_list.remove_children()
         if self._stashes:
             for s in self._stashes:
                 await st_list.mount(Label(s, classes="st-item"))
-            self.query_one("#btn-st-pop", Button).disabled = False
+            try:
+                self.query_one("#btn-st-pop", Button).disabled = False
+            except Exception:
+                pass
         else:
             await st_list.mount(Label("No stashes.", classes="st-empty"))
 

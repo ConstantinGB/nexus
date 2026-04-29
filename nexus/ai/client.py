@@ -131,7 +131,13 @@ class AIClient:
                     if exc.response.status_code == 400 and oai_tools:
                         oai_tools = []
                         continue
-                    raise
+                    return f"[Error {exc.response.status_code}] {exc.response.text[:300]}"
+                except httpx.ConnectError:
+                    return "[Error] Could not connect to local endpoint — is the server running?"
+                except httpx.ReadTimeout:
+                    return "[Error] Local endpoint timed out."
+                except Exception as exc:
+                    return f"[Error] {exc}"
 
                 try:
                     choices = r.json().get("choices", [])

@@ -144,22 +144,22 @@ class OrgProjectScreen(BaseProjectScreen):
         if bid == "btn-new-plan":
             self.app.push_screen(
                 InputModal("New Plan", "Plan name:", "my-plan"),
-                lambda name: self._create_file(name, output_dir, _PLAN_TEMPLATE, "plan"),
+                lambda name: self.run_worker(self._create_file(name, output_dir, _PLAN_TEMPLATE, "plan")),
             )
         elif bid == "btn-new-diagram":
             self.app.push_screen(
                 InputModal("New Diagram", "Diagram name:", "my-diagram"),
-                lambda name: self._create_file(name, output_dir, _DIAGRAM_TEMPLATE, "diagram"),
+                lambda name: self.run_worker(self._create_file(name, output_dir, _DIAGRAM_TEMPLATE, "diagram")),
             )
         elif bid == "btn-new-schedule":
             today = date.today().isoformat()
-            self._create_file(f"schedule-{today}", output_dir, _SCHEDULE_TEMPLATE, "schedule")
+            self.run_worker(self._create_file(f"schedule-{today}", output_dir, _SCHEDULE_TEMPLATE, "schedule"))
         elif bid == "btn-open-dir":
             self.run_worker(self._run_cmd(open_path(output_dir)))
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
 
-    def _create_file(
+    async def _create_file(
         self,
         name: str | None,
         output_dir: Path,
@@ -171,11 +171,12 @@ class OrgProjectScreen(BaseProjectScreen):
         slug = _slugify(name)
         dest = output_dir / f"{slug}.md"
         try:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            if not dest.exists():
-                dest.write_text(template.format(title=name))
+            await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
+            exists = await asyncio.to_thread(dest.exists)
+            if not exists:
+                await asyncio.to_thread(dest.write_text, template.format(title=name))
             self.app.notify(f"{kind.capitalize()} created: {dest.name}")
-            self.run_worker(self._populate_content())
+            await self._populate_content()
         except Exception:
             log.exception("Failed to create %s: %s", kind, dest)
             self.app.notify(f"Could not create {kind} — see log.", severity="error")

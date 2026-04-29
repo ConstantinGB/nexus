@@ -50,6 +50,8 @@ class BackupScheduler:
         while True:
             try:
                 await self._check_all()
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 log.exception("Scheduler check error")
             await asyncio.sleep(_POLL_SECONDS)
