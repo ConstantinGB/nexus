@@ -7,7 +7,7 @@
 #   ./nexus-install.sh --local         (install from ./offline-packages/)
 #   ./nexus-install.sh --download-only (download to ./offline-packages/ only)
 #
-# Supports: apt (Debian/Ubuntu), dnf (Fedora/RHEL), pacman (Arch)
+# Supports: apt (Debian/Ubuntu), dnf (Fedora/RHEL), yum (CentOS/older RHEL), pacman (Arch)
 
 set -e
 
@@ -31,6 +31,8 @@ detect_pm() {
         echo "apt"
     elif command -v dnf >/dev/null 2>&1; then
         echo "dnf"
+    elif command -v yum >/dev/null 2>&1; then
+        echo "yum"
     elif command -v pacman >/dev/null 2>&1; then
         echo "pacman"
     else
@@ -47,6 +49,7 @@ pkg_install() {
     case "$PM" in
         apt)     _sudo apt-get update -qq && _sudo apt-get install -y "$@" ;;
         dnf)     _sudo dnf install -y "$@" ;;
+        yum)     _sudo yum install -y "$@" ;;
         pacman)  _sudo pacman -Sy --noconfirm "$@" ;;
         *)       _red "Unknown package manager. Install manually: $*"; return 1 ;;
     esac
@@ -58,6 +61,7 @@ pkg_download() {
     case "$PM" in
         apt)     _sudo apt-get install -y --download-only -o Dir::Cache="$OFFLINE_DIR" "$@" ;;
         dnf)     _sudo dnf download --destdir="$OFFLINE_DIR" "$@" ;;
+        yum)     _sudo yum install -y --downloadonly --downloaddir="$OFFLINE_DIR" "$@" ;;
         pacman)  _sudo pacman -Sw --noconfirm --cachedir "$OFFLINE_DIR" "$@" ;;
         *)       _red "Unknown package manager."; return 1 ;;
     esac
@@ -74,16 +78,19 @@ pkg_install_local() {
             ;;
         dnf)
             _sudo dnf install -y "$OFFLINE_DIR"/*.rpm 2>/dev/null || true ;;
+        yum)
+            _sudo yum install -y "$OFFLINE_DIR"/*.rpm 2>/dev/null || true ;;
         pacman)
             _sudo pacman -U --noconfirm "$OFFLINE_DIR"/*.pkg.tar.* 2>/dev/null || true ;;
         *)  _red "Unknown package manager."; return 1 ;;
     esac
 }
 
-# ── Core Python packages required by apt/dnf/pacman ───────────────────────────
+# ── Core Python packages required by apt/dnf/yum/pacman ───────────────────────
 
 _PYTHON_PKG_apt="python3 python3-venv"
 _PYTHON_PKG_dnf="python3"
+_PYTHON_PKG_yum="python3"
 _PYTHON_PKG_pacman="python"
 
 python_pkg() {
@@ -156,8 +163,6 @@ setup_dirs() {
 # ── uv sync ───────────────────────────────────────────────────────────────────
 
 run_uv_sync() {
-    # Use uv from PATH if available, otherwise fall back to the default install location.
-    # (PATH export inside this script doesn't propagate to the parent shell session.)
     UV_BIN="$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")"
     if [ "$MODE" = "download" ]; then
         _yellow "Downloading Python dependencies…"
@@ -172,6 +177,166 @@ run_uv_sync() {
     "$UV_BIN" sync
 }
 
+# ── Scope selection ───────────────────────────────────────────────────────────
+
+SCOPE="minimum"
+FAILED_PKGS=""
+
+choose_scope() {
+    echo ""
+    _bold "Installation scope:"
+    echo ""
+    echo "  1) Minimum  — Python, uv, and Nexus Python libraries only"
+    echo "              (module tools can be installed later via Settings)"
+    echo "  2) Full     — All module dependencies installed now"
+    echo "              (git, docker, obs, restic, vault tools, and more)"
+    echo ""
+    printf "Choose [1/2] (default: 1): "
+    read -r scope_choice
+    case "$scope_choice" in
+        2) SCOPE="full" ;;
+        *) SCOPE="minimum" ;;
+    esac
+}
+
+# ── Full package list ─────────────────────────────────────────────────────────
+# Format: label|apt_pkg|dnf_pkg|pacman_pkg
+# Use MANUAL as pkg name when there is no standard package for that PM.
+
+full_packages() {
+    cat <<'EOF'
+xclip (X11 clipboard)|xclip|xclip|xclip
+wl-clipboard (Wayland clipboard)|wl-clipboard|wl-clipboard|wl-clipboard
+Git|git|git|git
+Node.js|nodejs|nodejs|nodejs
+npm|npm|npm|npm
+ripgrep (codex/research search)|ripgrep|ripgrep|ripgrep
+pdflatex (journal PDF export)|texlive-latex-base|texlive-latex|texlive-core
+OBS Studio (streaming module)|obs-studio|obs-studio|obs-studio
+RetroArch (emulator module)|retroarch|retroarch|retroarch
+GnuPG (vault module)|gnupg|gnupg2|gnupg
+age (vault encryption)|age|age|age
+KeePassXC (vault passwords)|keepassxc|keepassxc|keepassxc
+cryptsetup (LUKS vault)|cryptsetup|cryptsetup|cryptsetup
+Docker (server module)|docker.io|docker|docker
+restic (backup module)|restic|restic|restic
+ufw (security firewall)|ufw|ufw|ufw
+WireGuard (security VPN)|wireguard-tools|wireguard-tools|wireguard-tools
+OpenVPN (security VPN)|openvpn|openvpn|openvpn
+fail2ban (security)|fail2ban|fail2ban|fail2ban
+lynis (security auditing)|lynis|lynis|lynis
+nmap (security scanning)|nmap|nmap|nmap
+dnscrypt-proxy (security DNS)|dnscrypt-proxy|dnscrypt-proxy|dnscrypt-proxy
+macchanger (security)|macchanger|macchanger|macchanger
+torsocks (security)|torsocks|torsocks|torsocks
+EOF
+}
+
+# ── Install one package with progress output ──────────────────────────────────
+
+_install_one() {
+    # _install_one <label> <pkg...>
+    label="$1"; shift
+    printf '  %-45s' "${label}…"
+    if pkg_install "$@" >/dev/null 2>&1; then
+        _green "OK"
+    else
+        _yellow "FAILED — install manually later"
+        FAILED_PKGS="${FAILED_PKGS}  • ${label}\n"
+    fi
+}
+
+# ── Full install ──────────────────────────────────────────────────────────────
+
+install_full_packages() {
+    echo ""
+    _bold "Installing module dependencies…"
+    echo ""
+
+    while IFS='|' read -r label apt_p dnf_p pac_p; do
+        [ -z "$label" ] && continue
+        case "$PM" in
+            apt)     _pkg="$apt_p" ;;
+            dnf|yum) _pkg="$dnf_p" ;;
+            pacman)  _pkg="$pac_p" ;;
+            *)       _pkg="MANUAL" ;;
+        esac
+        if [ "$_pkg" = "MANUAL" ]; then
+            printf '  %-45s' "${label}…"
+            _yellow "manual install required"
+        else
+            _install_one "$label" $_pkg
+        fi
+    done <<PKGEOF
+$(full_packages)
+PKGEOF
+
+    # Ollama: uses a curl installer script regardless of PM
+    printf '  %-45s' "Ollama (localai LLM runtime)…"
+    if command -v ollama >/dev/null 2>&1; then
+        _green "already installed"
+    elif curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1; then
+        _green "OK"
+    else
+        _yellow "FAILED — install manually later"
+        FAILED_PKGS="${FAILED_PKGS}  • Ollama\n"
+    fi
+
+    # Godot, VeraCrypt, Mullvad, ProtonVPN — no standard package; flag as manual
+    for _manual_label in \
+        "Godot Engine (game module)         → https://godotengine.org/download" \
+        "VeraCrypt (vault module)            → https://veracrypt.fr/en/Downloads.html" \
+        "Mullvad VPN (security module)       → https://mullvad.net/download" \
+        "ProtonVPN CLI (security module)     → https://protonvpn.com/support/linux-vpn-setup"
+    do
+        printf '  %-45s' "$(echo "$_manual_label" | cut -d'→' -f1)…"
+        _yellow "manual install — see $(echo "$_manual_label" | cut -d'→' -f2)"
+    done
+
+    # Summary
+    echo ""
+    if [ -n "$FAILED_PKGS" ]; then
+        _yellow "The following packages failed and need manual installation:"
+        printf '%b' "$FAILED_PKGS"
+        echo ""
+    else
+        _green "All packages installed successfully."
+    fi
+}
+
+# ── Download full package set (for offline/download-only mode) ────────────────
+
+download_full_packages() {
+    echo ""
+    _bold "Downloading full package set…"
+    echo ""
+    while IFS='|' read -r label apt_p dnf_p pac_p; do
+        [ -z "$label" ] && continue
+        case "$PM" in
+            apt)     _pkg="$apt_p" ;;
+            dnf|yum) _pkg="$dnf_p" ;;
+            pacman)  _pkg="$pac_p" ;;
+            *)       _pkg="MANUAL" ;;
+        esac
+        if [ "$_pkg" != "MANUAL" ]; then
+            printf '  Downloading %-40s' "${label}…"
+            if pkg_download $_pkg >/dev/null 2>&1; then
+                _green "OK"
+            else
+                _yellow "FAILED"
+            fi
+        fi
+    done <<PKGEOF
+$(full_packages)
+PKGEOF
+    printf '  Downloading %-40s' "Ollama installer…"
+    if curl -Ls https://ollama.com/install.sh -o "$OFFLINE_DIR/ollama-installer.sh" 2>/dev/null; then
+        _green "OK"
+    else
+        _yellow "FAILED"
+    fi
+}
+
 # ── Mode: download-only ───────────────────────────────────────────────────────
 
 do_download_only() {
@@ -182,6 +347,9 @@ do_download_only() {
     pkg_download $PKG
     curl -Ls https://astral.sh/uv/install.sh -o "$OFFLINE_DIR/uv-installer.sh"
     run_uv_sync
+    if [ "$SCOPE" = "full" ]; then
+        download_full_packages
+    fi
     _green "Done. Transfer nexus/ (including offline-packages/) to the target machine."
     _green "Then run: ./nexus-install.sh --local"
 }
@@ -198,6 +366,9 @@ do_local() {
     install_uv
     run_uv_sync
     setup_dirs
+    if [ "$SCOPE" = "full" ]; then
+        install_full_packages
+    fi
     _green ""
     _green "Nexus installed from local packages."
     _green "Run: export PATH=\"\$HOME/.local/bin:\$PATH\" && uv run nexus"
@@ -211,6 +382,9 @@ do_direct() {
     install_uv
     run_uv_sync
     setup_dirs
+    if [ "$SCOPE" = "full" ]; then
+        install_full_packages
+    fi
     _green ""
     _green "Nexus installed."
     _green ""
@@ -234,6 +408,7 @@ interactive_menu() {
     echo ""
     printf "Choose [1/2/3]: "
     read -r choice
+    choose_scope
     case "$choice" in
         1) MODE="direct";   do_direct ;;
         2) MODE="local";    pkg_download "$(python_pkg)" 2>/dev/null; MODE="local"; do_local ;;
@@ -245,9 +420,21 @@ interactive_menu() {
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 case "${1:-}" in
-    --direct)        MODE="direct";   do_direct ;;
-    --local)         MODE="local";    do_local ;;
-    --download-only) MODE="download"; do_download_only ;;
+    --direct)
+        choose_scope
+        MODE="direct"
+        do_direct
+        ;;
+    --local)
+        choose_scope
+        MODE="local"
+        do_local
+        ;;
+    --download-only)
+        choose_scope
+        MODE="download"
+        do_download_only
+        ;;
     --help|-h)
         echo "Usage: $0 [--direct | --local | --download-only | --help]"
         echo ""

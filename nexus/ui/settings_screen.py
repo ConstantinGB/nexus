@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+from dataclasses import dataclass
 
 import httpx
 from textual.app import ComposeResult
@@ -47,69 +48,76 @@ _PROVIDER_BTN = {
     "local":   "btn-provider-local",
 }
 
-# (module_id, binary_to_check, display_name, apt_pkg_or_None)
-_MODULE_DEPS: list[tuple[str, str, str, str | None]] = [
-    # ── System-wide ───────────────────────────────────────────────────────────
-    ("system",  "xclip",           "xclip (clipboard paste, X11)",  "xclip"),
-    ("system",  "wl-paste",        "wl-clipboard (clipboard, Wayland)", "wl-clipboard"),
-    # ── Module deps ───────────────────────────────────────────────────────────
-    ("git",       "git",             "Git",               "git"),
-    ("web",       "node",            "Node.js",           "nodejs"),
-    ("web",       "npm",             "npm",               "npm"),
-    ("research",  "rg",              "ripgrep (search)",  "ripgrep"),
-    ("codex",     "rg",              "ripgrep (search)",  "ripgrep"),
-    ("journal",   "pdflatex",        "pdflatex",          "texlive-latex-base"),
-    ("game",      "godot",           "Godot Engine",      None),
-    ("streaming", "obs",             "OBS Studio",        "obs-studio"),
-    ("emulator",  "retroarch",       "RetroArch",         "retroarch"),
-    ("vault",     "gpg",             "GnuPG",             "gnupg"),
-    ("vault",     "age",             "age",               "age"),
-    ("vault",     "keepassxc-cli",   "KeePassXC CLI",     "keepassxc"),
-    ("vault",     "veracrypt",       "VeraCrypt",         None),
-    ("vault",     "cryptsetup",      "cryptsetup (LUKS)", "cryptsetup"),
-    ("server",    "docker",          "Docker",            "docker.io"),
-    ("localai",   "ollama",          "Ollama",            "ollama"),
-    ("backup",    "restic",          "restic",            "restic"),
-    ("security",  "ufw",             "ufw (firewall)",    "ufw"),
-    ("security",  "wg",              "WireGuard",         "wireguard-tools"),
-    ("security",  "openvpn",         "OpenVPN",           "openvpn"),
-    ("security",  "mullvad",         "Mullvad VPN",       None),
-    ("security",  "protonvpn-cli",   "ProtonVPN CLI",     None),
-    ("security",  "fail2ban-client", "fail2ban",          "fail2ban"),
-    ("security",  "lynis",           "lynis (auditing)",  "lynis"),
-    ("security",  "nmap",            "nmap",              "nmap"),
-    ("security",  "dnscrypt-proxy",  "dnscrypt-proxy",    "dnscrypt-proxy"),
-    ("security",  "macchanger",      "macchanger",        "macchanger"),
-    ("security",  "torsocks",        "torsocks",          "torsocks"),
-]
+def _detect_pm() -> str:
+    for pm in ("apt-get", "dnf", "yum", "pacman"):
+        if shutil.which(pm):
+            return pm.replace("apt-get", "apt")
+    return "unknown"
 
-_INSTALL_CMDS: dict[str, str] = {
-    "xclip":              "sudo apt install -y xclip",
-    "wl-clipboard":       "sudo apt install -y wl-clipboard",
-    "git":                "sudo apt install -y git",
-    "nodejs":             "sudo apt install -y nodejs npm",
-    "npm":                "sudo apt install -y nodejs npm",
-    "ripgrep":            "sudo apt install -y ripgrep",
-    "texlive-latex-base": "sudo apt install -y texlive-latex-base",
-    "obs-studio":         "sudo apt install -y obs-studio",
-    "retroarch":          "sudo apt install -y retroarch",
-    "gnupg":              "sudo apt install -y gnupg",
-    "age":                "sudo apt install -y age",
-    "keepassxc":          "sudo apt install -y keepassxc",
-    "cryptsetup":         "sudo apt install -y cryptsetup",
-    "docker.io":          "sudo apt install -y docker.io",
-    "ollama":             "curl -fsSL https://ollama.com/install.sh | sh",
-    "restic":             "sudo apt install -y restic",
-    "ufw":                "sudo apt install -y ufw",
-    "wireguard-tools":    "sudo apt install -y wireguard-tools",
-    "openvpn":            "sudo apt install -y openvpn",
-    "fail2ban":           "sudo apt install -y fail2ban",
-    "lynis":              "sudo apt install -y lynis",
-    "nmap":               "sudo apt install -y nmap",
-    "dnscrypt-proxy":     "sudo apt install -y dnscrypt-proxy",
-    "macchanger":         "DEBIAN_FRONTEND=noninteractive sudo apt install -y macchanger",
-    "torsocks":           "sudo apt install -y torsocks",
-}
+_PM = _detect_pm()
+
+
+@dataclass(frozen=True)
+class _DepSpec:
+    module:  str
+    binary:  str
+    label:   str
+    apt:     str | None = None
+    dnf:     str | None = None
+    pacman:  str | None = None
+    special: str | None = None  # overrides all PMs (e.g. ollama curl script)
+
+    def install_cmd(self) -> str | None:
+        if self.special:
+            return self.special
+        pkg = {"apt": self.apt, "dnf": self.dnf, "yum": self.dnf,
+               "pacman": self.pacman}.get(_PM)
+        if not pkg:
+            return None
+        if _PM == "apt":
+            prefix = "DEBIAN_FRONTEND=noninteractive " if self.binary == "macchanger" else ""
+            return f"{prefix}sudo apt-get install -y {pkg}"
+        if _PM in ("dnf", "yum"):
+            return f"sudo {_PM} install -y {pkg}"
+        if _PM == "pacman":
+            return f"sudo pacman -S --noconfirm {pkg}"
+        return None
+
+
+_MODULE_DEPS: list[_DepSpec] = [
+    # ── System-wide ───────────────────────────────────────────────────────────
+    _DepSpec("system",   "xclip",           "xclip (X11 clipboard)",    apt="xclip",              dnf="xclip",              pacman="xclip"),
+    _DepSpec("system",   "wl-paste",        "wl-clipboard (Wayland)",   apt="wl-clipboard",       dnf="wl-clipboard",       pacman="wl-clipboard"),
+    # ── Module deps ───────────────────────────────────────────────────────────
+    _DepSpec("git",      "git",             "Git",                      apt="git",                dnf="git",                pacman="git"),
+    _DepSpec("web",      "node",            "Node.js",                  apt="nodejs",             dnf="nodejs",             pacman="nodejs"),
+    _DepSpec("web",      "npm",             "npm",                      apt="npm",                dnf="npm",                pacman="npm"),
+    _DepSpec("research", "rg",              "ripgrep (search)",         apt="ripgrep",            dnf="ripgrep",            pacman="ripgrep"),
+    _DepSpec("codex",    "rg",              "ripgrep (search)",         apt="ripgrep",            dnf="ripgrep",            pacman="ripgrep"),
+    _DepSpec("journal",  "pdflatex",        "pdflatex",                 apt="texlive-latex-base", dnf="texlive-latex",      pacman="texlive-core"),
+    _DepSpec("game",     "godot",           "Godot Engine",             apt=None,                 dnf=None,                 pacman=None),
+    _DepSpec("streaming","obs",             "OBS Studio",               apt="obs-studio",         dnf="obs-studio",         pacman="obs-studio"),
+    _DepSpec("emulator", "retroarch",       "RetroArch",                apt="retroarch",          dnf="retroarch",          pacman="retroarch"),
+    _DepSpec("vault",    "gpg",             "GnuPG",                    apt="gnupg",              dnf="gnupg2",             pacman="gnupg"),
+    _DepSpec("vault",    "age",             "age (encryption)",         apt="age",                dnf="age",                pacman="age"),
+    _DepSpec("vault",    "keepassxc-cli",   "KeePassXC CLI",            apt="keepassxc",          dnf="keepassxc",          pacman="keepassxc"),
+    _DepSpec("vault",    "veracrypt",       "VeraCrypt",                apt=None,                 dnf=None,                 pacman=None),
+    _DepSpec("vault",    "cryptsetup",      "cryptsetup (LUKS)",        apt="cryptsetup",         dnf="cryptsetup",         pacman="cryptsetup"),
+    _DepSpec("server",   "docker",          "Docker",                   apt="docker.io",          dnf="docker",             pacman="docker"),
+    _DepSpec("localai",  "ollama",          "Ollama",                   special="curl -fsSL https://ollama.com/install.sh | sh"),
+    _DepSpec("backup",   "restic",          "restic",                   apt="restic",             dnf="restic",             pacman="restic"),
+    _DepSpec("security", "ufw",             "ufw (firewall)",           apt="ufw",                dnf="ufw",                pacman="ufw"),
+    _DepSpec("security", "wg",              "WireGuard",                apt="wireguard-tools",    dnf="wireguard-tools",    pacman="wireguard-tools"),
+    _DepSpec("security", "openvpn",         "OpenVPN",                  apt="openvpn",            dnf="openvpn",            pacman="openvpn"),
+    _DepSpec("security", "mullvad",         "Mullvad VPN",              apt=None,                 dnf=None,                 pacman=None),
+    _DepSpec("security", "protonvpn-cli",   "ProtonVPN CLI",            apt=None,                 dnf=None,                 pacman=None),
+    _DepSpec("security", "fail2ban-client", "fail2ban",                 apt="fail2ban",           dnf="fail2ban",           pacman="fail2ban"),
+    _DepSpec("security", "lynis",           "lynis (auditing)",         apt="lynis",              dnf="lynis",              pacman="lynis"),
+    _DepSpec("security", "nmap",            "nmap",                     apt="nmap",               dnf="nmap",               pacman="nmap"),
+    _DepSpec("security", "dnscrypt-proxy",  "dnscrypt-proxy",           apt="dnscrypt-proxy",     dnf="dnscrypt-proxy",     pacman="dnscrypt-proxy"),
+    _DepSpec("security", "macchanger",      "macchanger",               apt="macchanger",         dnf="macchanger",         pacman="macchanger"),
+    _DepSpec("security", "torsocks",        "torsocks",                 apt="torsocks",           dnf="torsocks",           pacman="torsocks"),
+]
 
 
 class _ResticRequiredModal(ModalScreen[bool]):
@@ -545,19 +553,19 @@ class SettingsScreen(Screen):
 
                     # Group deps by module
                     seen_modules: set[str] = set()
-                    for mod_id, binary, display, apt_pkg in _MODULE_DEPS:
-                        if mod_id not in seen_modules:
-                            seen_modules.add(mod_id)
-                            yield Label(mod_id.upper(), classes="mod-group-label")
-                        present = shutil.which(binary) is not None
+                    for dep in _MODULE_DEPS:
+                        if dep.module not in seen_modules:
+                            seen_modules.add(dep.module)
+                            yield Label(dep.module.upper(), classes="mod-group-label")
+                        present = shutil.which(dep.binary) is not None
                         status_cls  = "dep-status-ok"   if present else "dep-status-miss"
                         status_text = "✓ installed"     if present else "✗ missing"
-                        btn_id = f"btn-install-{(apt_pkg or 'manual').replace('.', '-')}"
+                        btn_id = f"btn-install-{dep.binary.replace('-', '_')}"
                         with Horizontal(classes="dep-row"):
-                            yield Label(display, classes="dep-name")
+                            yield Label(dep.label, classes="dep-name")
                             yield Label(status_text, classes=status_cls,
-                                        id=f"dep-status-{binary.replace('-','_')}")
-                            if apt_pkg is None:
+                                        id=f"dep-status-{dep.binary.replace('-', '_')}")
+                            if dep.install_cmd() is None:
                                 yield Label("manual install",
                                             classes="dep-status-miss dep-install-btn")
                             else:
@@ -746,14 +754,16 @@ class SettingsScreen(Screen):
                         severity="warning",
                     )
             elif bid and bid.startswith("btn-install-"):
-                suffix  = bid[len("btn-install-"):]
-                apt_pkg = next(
-                    (k for k in _INSTALL_CMDS if k.replace(".", "-") == suffix), None
+                suffix = bid[len("btn-install-"):]
+                dep = next(
+                    (d for d in _MODULE_DEPS if d.binary.replace("-", "_") == suffix), None
                 )
-                if apt_pkg is None:
+                if dep is None:
                     self.app.notify("No install command found.", severity="warning")
                 elif self._install_mode == "direct":
-                    self._maybe_run_install(apt_pkg, _INSTALL_CMDS[apt_pkg])
+                    cmd = dep.install_cmd()
+                    if cmd:
+                        self._maybe_run_install(dep.binary, cmd)
         except Exception:
             log.exception("Error in settings button handler (button=%s)", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
@@ -981,23 +991,23 @@ class SettingsScreen(Screen):
             except Exception:
                 pass
 
-    def _maybe_run_install(self, apt_pkg: str, cmd: str) -> None:
+    def _maybe_run_install(self, pkg_id: str, cmd: str) -> None:
         if cmd.startswith("sudo ") and not _sudo.has():
             self.app.push_screen(
                 SudoModal(),
-                lambda pw: self._on_sudo_password(pw, apt_pkg, cmd),
+                lambda pw: self._on_sudo_password(pw, pkg_id, cmd),
             )
         else:
-            self.run_worker(self._run_install(apt_pkg, cmd))
+            self.run_worker(self._run_install(pkg_id, cmd))
 
-    def _on_sudo_password(self, password: str | None, apt_pkg: str, cmd: str) -> None:
+    def _on_sudo_password(self, password: str | None, pkg_id: str, cmd: str) -> None:
         if password is None:
             self.app.notify("Install cancelled — no password provided.", severity="warning")
             return
         _sudo.set_password(password)
-        self.run_worker(self._run_install(apt_pkg, cmd))
+        self.run_worker(self._run_install(pkg_id, cmd))
 
-    async def _run_install(self, apt_pkg: str, cmd: str) -> None:
+    async def _run_install(self, pkg_id: str, cmd: str) -> None:
         log_label = self.query_one("#setup-log", Label)
         cmd_to_run, stdin_data = _sudo.inject_shell(cmd)
         log_label.update(f"Running: {cmd_to_run}\n…")
@@ -1012,18 +1022,15 @@ class SettingsScreen(Screen):
             stdout, _ = await proc.communicate(input=stdin_data)
             output = stdout.decode(errors="replace").strip()
             if proc.returncode == 0:
-                log_label.update(f"✓ {apt_pkg} installed.\n{output[-300:]}")
-                self.app.notify(f"{apt_pkg} installed.", severity="information")
-                for _, binary, _, pkg in _MODULE_DEPS:
-                    if pkg != apt_pkg:
-                        continue
-                    label_id = f"#dep-status-{binary.replace('-', '_')}"
-                    try:
-                        lbl = self.query_one(label_id, Label)
-                        lbl.update("✓ installed")
-                        lbl.set_classes("dep-status-ok")
-                    except Exception:
-                        pass
+                log_label.update(f"✓ {pkg_id} installed.\n{output[-300:]}")
+                self.app.notify(f"{pkg_id} installed.", severity="information")
+                label_id = f"#dep-status-{pkg_id.replace('-', '_')}"
+                try:
+                    lbl = self.query_one(label_id, Label)
+                    lbl.update("✓ installed")
+                    lbl.set_classes("dep-status-ok")
+                except Exception:
+                    pass
             else:
                 log.warning("Install failed (exit %d): %s", proc.returncode, output[-300:])
                 if "incorrect password" in output.lower() or "sorry, try again" in output.lower():
