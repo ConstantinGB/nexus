@@ -167,6 +167,49 @@ class EditProjectModal(ModalScreen):
                 self.app.notify("Name cannot be empty.", severity="error")
 
 
+class ConfirmModal(ModalScreen[bool]):
+    """Generic yes/no confirmation modal for destructive actions."""
+
+    DEFAULT_CSS = """
+    ConfirmModal { align: center middle; }
+    #cm-box {
+        background: #2D1B4E; border: solid #FF4444;
+        padding: 1 2; width: 56; height: auto;
+    }
+    #cm-title   { color: #FF4444; text-style: bold; height: 2; }
+    #cm-detail  { color: #E0E0FF; height: auto; margin-bottom: 1; }
+    #cm-hint    { color: #8080AA; height: 1; margin-bottom: 1; }
+    #cm-btns    { height: 3; margin-top: 1; }
+    #cm-btns Button { margin-right: 1; }
+    """
+
+    def __init__(
+        self,
+        title: str,
+        detail: str,
+        hint: str = "This action cannot be undone.",
+        confirm_label: str = "Delete",
+    ) -> None:
+        super().__init__()
+        self._title         = title
+        self._detail        = detail
+        self._hint          = hint
+        self._confirm_label = confirm_label
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cm-box"):
+            yield Label(self._title,         id="cm-title")
+            yield Label(self._detail,        id="cm-detail")
+            yield Label(self._hint,          id="cm-hint")
+            with Horizontal(id="cm-btns"):
+                yield Button(self._confirm_label, id="cm-yes",    variant="error")
+                yield Button("Cancel",            id="cm-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(event.button.id == "cm-yes")
+
+
 class BaseProjectScreen(Screen):
     """
     Shared base for all skeleton module project screens.

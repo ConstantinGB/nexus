@@ -10,7 +10,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
-from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.base_project_screen import BaseProjectScreen, ConfirmModal, InputModal, _screen_css
 from nexus.ui.text_editor_screen import TextEditorScreen
 
 log = get("research.project_screen")
@@ -171,7 +171,11 @@ class ResearchProjectScreen(BaseProjectScreen):
             except ValueError:
                 return
             if 0 <= idx < len(self._notes):
-                self._delete_note(self._notes[idx])
+                note = self._notes[idx]
+                self.app.push_screen(
+                    ConfirmModal("Delete note?", note.name),
+                    lambda confirmed, p=note: self._delete_note(p) if confirmed else None,
+                )
         elif bid and bid.startswith("note-"):
             try:
                 idx = int(bid.split("-", 1)[1])
