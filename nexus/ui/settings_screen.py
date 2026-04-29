@@ -737,12 +737,14 @@ class SettingsScreen(Screen):
                         severity="warning",
                     )
             elif bid and bid.startswith("btn-install-"):
-                apt_pkg = bid[len("btn-install-"):].replace("-", ".", 1)
-                cmd = _INSTALL_CMDS.get(apt_pkg) or _INSTALL_CMDS.get(
-                    apt_pkg.replace("-", ".")
+                suffix  = bid[len("btn-install-"):]
+                apt_pkg = next(
+                    (k for k in _INSTALL_CMDS if k.replace(".", "-") == suffix), None
                 )
-                if cmd and self._install_mode == "direct":
-                    self._maybe_run_install(apt_pkg, cmd)
+                if apt_pkg is None:
+                    self.app.notify("No install command found.", severity="warning")
+                elif self._install_mode == "direct":
+                    self._maybe_run_install(apt_pkg, _INSTALL_CMDS[apt_pkg])
         except Exception:
             log.exception("Error in settings button handler (button=%s)", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
@@ -1003,6 +1005,16 @@ class SettingsScreen(Screen):
             if proc.returncode == 0:
                 log_label.update(f"✓ {apt_pkg} installed.\n{output[-300:]}")
                 self.app.notify(f"{apt_pkg} installed.", severity="information")
+                for _, binary, _, pkg in _MODULE_DEPS:
+                    if pkg != apt_pkg:
+                        continue
+                    label_id = f"#dep-status-{binary.replace('-', '_')}"
+                    try:
+                        lbl = self.query_one(label_id, Label)
+                        lbl.update("✓ installed")
+                        lbl.set_classes("dep-status-ok")
+                    except Exception:
+                        pass
             else:
                 log.warning("Install failed (exit %d): %s", proc.returncode, output[-300:])
                 if "incorrect password" in output.lower() or "sorry, try again" in output.lower():
