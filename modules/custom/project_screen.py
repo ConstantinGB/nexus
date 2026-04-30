@@ -80,8 +80,10 @@ class CustomProjectScreen(Screen):
     # ── Compose ───────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
+        from nexus.ui.project_tabs import ProjectTabBar
         self._load()
         yield Header()
+        yield ProjectTabBar()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Button("📄 Context", id="btn-toggle-context", classes="panel-btn")
@@ -210,6 +212,8 @@ class CustomProjectScreen(Screen):
                 self.query_one(tid, Terminal).stop()
             except NoMatches:
                 pass
+        if hasattr(self.app, "close_project_tab"):
+            self.app.close_project_tab(self.project.slug)
         self.dismiss(result)
 
     # ── Context pane ──────────────────────────────────────────────────────────

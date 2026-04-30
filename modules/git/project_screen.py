@@ -726,7 +726,9 @@ class GitProjectScreen(Screen):
             display_user = username
         meta = git_type.upper() + (f" · {display_user}" if display_user else "")
 
+        from nexus.ui.project_tabs import ProjectTabBar
         yield Header()
+        yield ProjectTabBar()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta,              id="project-meta")
@@ -838,6 +840,8 @@ class GitProjectScreen(Screen):
             self.query_one("#claude-terminal", Terminal).stop()
         except NoMatches:
             pass
+        if hasattr(self.app, "close_project_tab"):
+            self.app.close_project_tab(self.project.slug)
         self.dismiss(result)
 
     # ── Render ────────────────────────────────────────────────────────────────

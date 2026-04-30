@@ -214,7 +214,9 @@ class SDForgeProjectScreen(Screen):
         model    = self._sdf.get("model", "")
         meta     = endpoint + (f" · {model}" if model else "")
 
+        from nexus.ui.project_tabs import ProjectTabBar
         yield Header()
+        yield ProjectTabBar()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta,              id="project-meta")
@@ -291,14 +293,6 @@ class SDForgeProjectScreen(Screen):
             self._set_panel_mode("chat")
         elif default == "claude_code":
             self.run_worker(self._launch_claude())
-
-    def action_dismiss(self, result=None) -> None:
-        try:
-            from nexus.ui.terminal_widget import Terminal
-            self.query_one("#claude-terminal", Terminal).stop()
-        except NoMatches:
-            pass
-        self.dismiss(result)
 
     # ── Panel control ─────────────────────────────────────────────────────────
 
@@ -647,6 +641,8 @@ class SDForgeProjectScreen(Screen):
     # ── Dismiss with server cleanup ───────────────────────────────────────────
 
     def action_dismiss(self, result=None) -> None:
+        if hasattr(self.app, "close_project_tab"):
+            self.app.close_project_tab(self.project.slug)
         if self._proc and self._proc.returncode is None:
             self.run_worker(self._stop_and_dismiss(result))
         else:

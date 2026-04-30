@@ -147,17 +147,15 @@ class NexusApp(App):
             idx = len(self._tabs) - 1
         self._active_tab_idx = idx
 
-        # Stop terminals on current screen before popping
+        # Stop terminals on current screen before popping (any screen type)
         try:
-            from nexus.ui.base_project_screen import BaseProjectScreen
             from nexus.ui.terminal_widget import Terminal
             current = self.screen
-            if isinstance(current, BaseProjectScreen):
-                for tid in ("#claude-terminal", "#bash-terminal"):
-                    try:
-                        current.query_one(tid, Terminal).stop()
-                    except Exception:
-                        pass
+            for tid in ("#claude-terminal", "#bash-terminal"):
+                try:
+                    current.query_one(tid, Terminal).stop()
+                except Exception:
+                    pass
         except Exception:
             pass
 

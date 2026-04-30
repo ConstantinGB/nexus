@@ -18,31 +18,41 @@ class ProjectTabBar(Widget):
 
     DEFAULT_CSS = """
     ProjectTabBar {
-        height: 2;
+        height: 3;
         background: #0E0620;
         border-bottom: solid #3A2260;
         layout: horizontal;
         overflow-x: auto;
         padding: 0 1;
+        align: left middle;
     }
     .project-tab {
-        height: 2;
-        min-width: 10;
-        border: none;
+        height: 3;
+        min-width: 14;
+        border: solid #3A2260;
         background: #1A0A2E;
-        color: #8080AA;
+        color: #C0C0DD;
         margin-right: 1;
+    }
+    .project-tab:hover {
+        background: #2D1B4E;
+        color: #E0E0FF;
     }
     .project-tab.active-tab {
         background: #2D1B4E;
         color: #00B4FF;
+        border: solid #00B4FF;
     }
     .tab-add-btn {
-        width: 4;
-        height: 2;
-        border: none;
-        background: transparent;
+        width: 5;
+        height: 3;
+        border: solid #3A2260;
+        background: #1A0A2E;
         color: #00FF88;
+    }
+    .tab-add-btn:hover {
+        background: #1A2E1A;
+        border: solid #00FF88;
     }
     """
 

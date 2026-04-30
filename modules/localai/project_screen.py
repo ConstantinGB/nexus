@@ -119,7 +119,9 @@ class LocalAIProjectScreen(Screen):
         meta    = f"{model}" + (f" · {purpose}" if purpose else "")
         hw      = load_hardware_json(self.project.slug)
 
+        from nexus.ui.project_tabs import ProjectTabBar
         yield Header()
+        yield ProjectTabBar()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta,              id="project-meta")
@@ -197,6 +199,8 @@ class LocalAIProjectScreen(Screen):
             self.query_one("#claude-terminal", Terminal).stop()
         except NoMatches:
             pass
+        if hasattr(self.app, "close_project_tab"):
+            self.app.close_project_tab(self.project.slug)
         self.dismiss(result)
 
     # ── Panel control ─────────────────────────────────────────────────────────
