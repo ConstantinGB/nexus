@@ -34,6 +34,23 @@ _LATEX_TEMPLATE = r"""\documentclass[12pt,a4paper]{{article}}
 \end{{document}}
 """
 
+_LATEX_SPECIAL = str.maketrans({
+    "\\": r"\textbackslash{}",
+    "{":  r"\{",
+    "}":  r"\}",
+    "$":  r"\$",
+    "&":  r"\&",
+    "%":  r"\%",
+    "#":  r"\#",
+    "_":  r"\_",
+    "^":  r"\^{}",
+    "~":  r"\textasciitilde{}",
+})
+
+
+def _latex_escape(text: str) -> str:
+    return text.translate(_LATEX_SPECIAL)
+
 
 class JournalProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "journal"
@@ -140,15 +157,18 @@ class JournalProjectScreen(BaseProjectScreen):
         today      = date.today()
         year_dir   = journal_dir / "entries" / str(today.year)
         entry_path = year_dir / f"{today}.tex"
+        def _create_or_open(path, template):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(path, "x", encoding="utf-8") as fh:
+                    fh.write(template)
+            except FileExistsError:
+                pass  # entry already exists — open it as-is
+            return path.read_text(errors="replace")
+
         try:
-            await asyncio.to_thread(year_dir.mkdir, parents=True, exist_ok=True)
-            exists = await asyncio.to_thread(entry_path.exists)
-            if not exists:
-                await asyncio.to_thread(
-                    entry_path.write_text,
-                    _LATEX_TEMPLATE.format(entry_date=today, author=author),
-                )
-            content = await asyncio.to_thread(entry_path.read_text, errors="replace")
+            template = _LATEX_TEMPLATE.format(entry_date=today, author=_latex_escape(author))
+            content  = await asyncio.to_thread(_create_or_open, entry_path, template)
         except Exception:
             log.exception("Failed to create journal entry: %s", entry_path)
             self.app.notify("Could not create entry — see log.", severity="error")

@@ -73,7 +73,8 @@ class ServerConfigForm(Vertical):
         if self.spec.required_env:
             for env_key in self.spec.required_env:
                 yield Label(env_key, classes="env-label")
-                yield Input(placeholder=f"Enter {env_key}", id=f"env_{env_key}", password="KEY" in env_key or "TOKEN" in env_key or "SECRET" in env_key)
+                yield Input(placeholder=f"Enter {env_key}", id=f"env_{env_key}",
+                            password=any(s in env_key for s in ("KEY", "TOKEN", "SECRET")))
         else:
             yield Label("No credentials required.", classes="form-desc")
         with Horizontal(classes="form-buttons"):

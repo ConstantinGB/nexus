@@ -55,7 +55,12 @@ class SkillRegistry:
         entry = self._tools.get(name)
         if entry is None:
             return json.dumps({"error": f"Unknown skill: {name!r}"})
-        return await entry["handler"](args)
+        try:
+            return await entry["handler"](args)
+        except Exception as exc:
+            import logging
+            logging.getLogger("nexus.skills").exception("Skill %r raised an exception", name)
+            return json.dumps({"error": str(exc)})
 
     def has(self, name: str) -> bool:
         return name in self._tools

@@ -17,7 +17,7 @@ async def list_repos(token: str) -> list[dict]:
     repos: list[dict] = []
     page = 1
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
             while True:
                 r = await client.get(
                     "https://api.github.com/user/repos",
@@ -61,7 +61,7 @@ async def verify_token(token: str) -> tuple[bool, str]:
     """Returns (ok, username_or_error)."""
     log.debug("Verifying GitHub token")
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
             r = await client.get(
                 "https://api.github.com/user",
                 headers={

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import re
 import shutil
 import subprocess
@@ -49,14 +50,23 @@ def _git(repo_path: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def clone_repo(url: str, dest: Path, token: str = "") -> tuple[bool, str]:
-    display_url = url  # keep original for logging (token injected separately)
+    display_url = url  # keep original for logging — token never goes in URL
     try:
+        env = None
         if token and url.startswith("https://"):
-            url = url.replace("https://", f"https://oauth2:{token}@", 1)
+            # Pass via git config env vars (requires git ≥ 2.31) so the token
+            # does not appear in /proc/<pid>/cmdline or error messages.
+            env = {
+                **os.environ,
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "http.extraHeader",
+                "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {token}",
+            }
         log.info("Cloning %s -> %s", display_url, dest)
         result = subprocess.run(
             ["git", "clone", url, str(dest)],
             capture_output=True, text=True,
+            env=env,
         )
         msg = (result.stderr or result.stdout).strip()
         if result.returncode == 0:

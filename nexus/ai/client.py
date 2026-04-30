@@ -21,6 +21,9 @@ def _to_oai_tool(tool: dict) -> dict:
     }
 
 
+_MAX_TOOL_ITERATIONS = 10
+
+
 class AIClient:
     """Claude API client with MCP tool-use and native Skills support."""
 
@@ -64,7 +67,7 @@ class AIClient:
         if tools:
             kwargs["tools"] = tools
 
-        while True:
+        for _iteration in range(_MAX_TOOL_ITERATIONS):
             response = await self._anthropic.messages.create(**kwargs)
 
             if response.stop_reason == "end_turn" or not tools:
@@ -76,14 +79,20 @@ class AIClient:
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
-                        if registry.has(block.name):
-                            result = await registry.call(block.name, block.input)
-                        else:
-                            result = await self._mcp.call_tool(block.name, block.input)
+                        try:
+                            if registry.has(block.name):
+                                result = await registry.call(block.name, block.input)
+                            else:
+                                result = await self._mcp.call_tool(block.name, block.input)
+                            is_error = False
+                        except Exception as exc:
+                            result = json.dumps({"error": str(exc)})
+                            is_error = True
                         tool_results.append({
-                            "type": "tool_result",
+                            "type":        "tool_result",
                             "tool_use_id": block.id,
-                            "content": str(result),
+                            "content":     str(result),
+                            **({"is_error": True} if is_error else {}),
                         })
 
                 kwargs["messages"] = [
@@ -95,6 +104,7 @@ class AIClient:
                 return "".join(
                     block.text for block in response.content if hasattr(block, "text")
                 )
+        return "[Error] Tool-use loop exceeded maximum iterations."
 
     async def _chat_local(
         self,
@@ -113,7 +123,7 @@ class AIClient:
         oai_msgs.extend(messages)
 
         async with httpx.AsyncClient(timeout=120.0) as http:
-            while True:
+            for _iteration in range(_MAX_TOOL_ITERATIONS):
                 body: dict[str, Any] = {
                     "model":    self._local_model,
                     "messages": oai_msgs,
@@ -129,6 +139,11 @@ class AIClient:
                     r.raise_for_status()
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 400 and oai_tools:
+                        import logging
+                        logging.getLogger("nexus.ai.client").warning(
+                            "Local endpoint 400 with tools; retrying without tools: %s",
+                            exc.response.text[:200],
+                        )
                         oai_tools = []
                         continue
                     return f"[Error {exc.response.status_code}] {exc.response.text[:300]}"
@@ -153,16 +168,23 @@ class AIClient:
 
                 oai_msgs.append(msg)
                 for tc in msg["tool_calls"]:
-                    name   = tc["function"]["name"]
-                    args   = json.loads(tc["function"]["arguments"])
-                    if registry.has(name):
-                        result = await registry.call(name, args)
-                    elif self._mcp:
-                        result = await self._mcp.call_tool(name, args)
-                    else:
-                        result = json.dumps({"error": f"Unknown tool: {name}"})
+                    name = tc["function"]["name"]
+                    try:
+                        args = json.loads(tc["function"]["arguments"])
+                    except json.JSONDecodeError:
+                        args = {}
+                    try:
+                        if registry.has(name):
+                            result = await registry.call(name, args)
+                        elif self._mcp:
+                            result = await self._mcp.call_tool(name, args)
+                        else:
+                            result = json.dumps({"error": f"Unknown tool: {name}"})
+                    except Exception as exc:
+                        result = json.dumps({"error": str(exc)})
                     oai_msgs.append({
                         "role":         "tool",
                         "tool_call_id": tc["id"],
                         "content":      str(result),
                     })
+            return "[Error] Tool-use loop exceeded maximum iterations."

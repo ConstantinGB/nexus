@@ -224,7 +224,11 @@ class VaultProjectScreen(BaseProjectScreen):
             return True  # no vault dir configured — skip containment check
         vault_dir = Path(raw_vault).expanduser().resolve()
         resolved  = file_path.resolve()
-        inside = str(resolved).startswith(str(vault_dir) + "/") or resolved == vault_dir
+        try:
+            resolved.relative_to(vault_dir)
+            inside = True
+        except ValueError:
+            inside = resolved == vault_dir
         if not inside:
             self.app.notify(
                 "File must be inside the vault directory.", severity="error"
@@ -278,8 +282,12 @@ class VaultProjectScreen(BaseProjectScreen):
     def _gpg_export(self, key_id: str | None) -> None:
         if not key_id:
             return
+        import re as _re
         vault_dir = Path(self._mod.get("vault_dir", "")).expanduser()
-        out_file  = vault_dir / f"{key_id.replace('@', '_').replace(' ', '_')}.asc"
+        safe_name = _re.sub(r"[^a-zA-Z0-9._-]", "_", key_id)[:64]
+        out_file  = (vault_dir / f"{safe_name}.asc").resolve()
+        if not self._validate_file_in_vault(out_file):
+            return
         self.run_worker(
             self._run_cmd(["gpg", "--export", "--armor", "--output", str(out_file), key_id])
         )

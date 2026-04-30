@@ -75,8 +75,8 @@ class NexusApp(App):
                     ["docker", "stop", "--time=5", name],
                     timeout=8, capture_output=True,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("Failed to stop Docker container %s on exit: %s", name, exc)
 
     @property
     def clipboard(self) -> str:
@@ -101,7 +101,8 @@ class NexusApp(App):
     def action_next_tab(self) -> None:
         if len(self._tabs) < 2:
             return
-        next_idx = (self._active_tab_idx + 1) % len(self._tabs)
+        current = max(0, min(self._active_tab_idx, len(self._tabs) - 1))
+        next_idx = (current + 1) % len(self._tabs)
         self.switch_to_tab(self._tabs[next_idx])
 
     # ── Tab management ────────────────────────────────────────────────────────
@@ -147,15 +148,21 @@ class NexusApp(App):
             idx = len(self._tabs) - 1
         self._active_tab_idx = idx
 
-        # Stop terminals on current screen before popping (any screen type)
+        # Stop terminals and any running server processes on the current screen
+        current = self.screen
         try:
             from nexus.ui.terminal_widget import Terminal
-            current = self.screen
             for tid in ("#claude-terminal", "#bash-terminal"):
                 try:
                     current.query_one(tid, Terminal).stop()
                 except Exception:
                     pass
+        except Exception:
+            pass
+        try:
+            proc = getattr(current, "_proc", None)
+            if proc is not None and getattr(proc, "returncode", -1) is None:
+                proc.terminate()
         except Exception:
             pass
 

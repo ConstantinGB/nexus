@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import re
 from pathlib import Path
 
 import yaml
@@ -46,10 +47,18 @@ class _AddServiceModal(InputModal):
             name = self.query_one("#im-input").value.strip()
             port = self.query_one("#im-port").value.strip()
             svc_type = self.query_one("#im-type").value.strip() or "docker"
-            if name:
-                self.dismiss({"name": name, "port": port, "type": svc_type})
-            else:
+            if not name:
                 self.dismiss(None)
+            elif not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', name):
+                from textual.widgets import Label as _L
+                try:
+                    self.query_one("#im-prompt").update(
+                        "Name must be alphanumeric/hyphens/dots only:"
+                    )
+                except Exception:
+                    pass
+            else:
+                self.dismiss({"name": name, "port": port, "type": svc_type})
         else:
             self.dismiss(None)
 

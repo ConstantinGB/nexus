@@ -66,7 +66,7 @@ def _save_yaml(path: Path, data: dict) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w") as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
     except Exception:
         log.exception("Failed to save YAML: %s", path)
         raise

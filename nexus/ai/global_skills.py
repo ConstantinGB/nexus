@@ -43,9 +43,15 @@ registry.register(
 # ---------------------------------------------------------------------------
 
 async def _run_flow(args: dict) -> str:
-    action = args["action"]
+    action = args.get("action")
+    if not action:
+        return json.dumps({"error": "action is required"})
+    raw_payload = args.get("payload")
     try:
-        payload = json.loads(args.get("payload") or "{}")
+        if isinstance(raw_payload, dict):
+            payload = raw_payload
+        else:
+            payload = json.loads(raw_payload or "{}")
     except json.JSONDecodeError:
         return json.dumps({"error": "payload must be valid JSON"})
     from nexus.core.mycelium import bus

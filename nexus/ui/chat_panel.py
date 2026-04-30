@@ -78,6 +78,19 @@ class ChatPanel(Vertical):
     def on_mount(self) -> None:
         self._load_history()
 
+    def reset_for_project(self, slug: str, module_key: str, skill_scopes: list[str]) -> None:
+        """Switch this panel to a different project without recreating the widget."""
+        self._slug       = slug
+        self._module_key = module_key
+        self._scopes     = skill_scopes
+        self._messages   = []
+        self._busy       = False
+        try:
+            self.query_one("#chat-log", RichLog).clear()
+        except Exception:
+            pass
+        self._load_history()
+
     # ── Persistence ───────────────────────────────────────────────────────────
 
     def _history_path(self) -> Path:
@@ -176,7 +189,7 @@ class ChatPanel(Vertical):
             except NoMatches:
                 pass
 
-        if reply is not None:
+        if reply is not None and reply.strip():
             try:
                 chat_log.write(f"[AI] {reply}")
             except Exception:
@@ -275,7 +288,12 @@ class ChatPanel(Vertical):
     def _confirm_clear(self) -> None:
         from nexus.ui.tiles import ConfirmDeleteModal
         self.app.push_screen(
-            ConfirmDeleteModal("chat history"),
+            ConfirmDeleteModal(
+                "chat history",
+                title="Clear chat history?",
+                hint="This removes all messages for this project.",
+                confirm_label="Yes, clear",
+            ),
             self._do_clear,
         )
 

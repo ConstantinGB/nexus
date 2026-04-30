@@ -59,6 +59,7 @@ class InputModal(ModalScreen):
                 yield Button("Cancel", id="im-cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
         if event.button.id == "im-ok":
             val = self.query_one("#im-input", Input).value.strip()
             self.dismiss(val or None)

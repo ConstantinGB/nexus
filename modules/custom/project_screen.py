@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import shlex
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -359,8 +360,13 @@ class CustomProjectScreen(Screen):
             return
         chat_log.write(f"[cmd] $ {cmd}")
         try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
+            try:
+                args = shlex.split(cmd)
+            except ValueError as exc:
+                chat_log.write(f"[cmd] ✗ invalid command syntax: {exc}")
+                return
+            proc = await asyncio.create_subprocess_exec(
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(_PROJECTS_DIR / self.project.slug),

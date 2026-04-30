@@ -339,11 +339,13 @@ class LocalAIProjectScreen(Screen):
         slug           = self.project.slug
         image          = self._localai_cfg.get("docker_image", "ollama/ollama")
         restart_policy = self._localai_cfg.get("docker_restart_policy", "no")
-        ollama_path    = Path.home() / ".ollama"
+        ollama_path = Path.home() / ".ollama"
+        ollama_path.mkdir(parents=True, exist_ok=True)
+        # Re-check after creation: if it was replaced by a symlink between
+        # mkdir and here, refuse to mount (TOCTOU mitigation).
         if ollama_path.is_symlink():
             self.app.notify("~/.ollama is a symlink — refusing to mount.", severity="error")
             return
-        ollama_path.mkdir(parents=True, exist_ok=True)
         cfg = DockerContainerConfig(
             name           = f"nexus-localai-{slug}",
             image          = image,

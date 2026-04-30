@@ -59,19 +59,23 @@ class ConfirmDeleteModal(ModalScreen):
     #modal-btns Button { margin-right: 1; }
     """
 
-    def __init__(self, project_name: str):
+    def __init__(self, project_name: str, title: str = "Delete project?",
+                 hint: str = "This permanently removes the project and all its files.",
+                 confirm_label: str = "Yes, delete"):
         super().__init__()
-        self.project_name = project_name
+        self.project_name  = project_name
+        self._title        = title
+        self._hint         = hint
+        self._confirm_label = confirm_label
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box"):
-            yield Label("Delete project?", id="modal-title")
+            yield Label(self._title, id="modal-title")
             yield Label(self.project_name, id="modal-name")
-            yield Label("This permanently removes the project and all its files.",
-                        classes="modal-hint")
+            yield Label(self._hint, classes="modal-hint")
             with Horizontal(id="modal-btns"):
-                yield Button("Yes, delete", id="btn-yes", variant="error")
-                yield Button("Cancel",      id="btn-cancel")
+                yield Button(self._confirm_label, id="btn-yes", variant="error")
+                yield Button("Cancel",            id="btn-cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()

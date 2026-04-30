@@ -27,7 +27,8 @@ def _is_due(last_run_iso: str | None, schedule: str) -> bool:
     try:
         return datetime.now() - datetime.fromisoformat(last_run_iso) >= _INTERVALS[schedule]
     except ValueError:
-        return True
+        log.warning("Unparseable last_run timestamp %r — skipping scheduled backup", last_run_iso)
+        return False
 
 
 class BackupScheduler:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import logging.handlers
+import threading
 from pathlib import Path
 
 _LOGS_DIR = Path(__file__).parent.parent.parent / "logs"
@@ -8,17 +9,19 @@ _LOG_FILE = _LOGS_DIR / "nexus.log"
 
 _FMT      = "%(asctime)s | %(levelname)-8s | %(name)-36s | %(message)s"
 _DATE_FMT = "%Y-%m-%d %H:%M:%S"
+_SETUP_LOCK = threading.Lock()
 
 
 def setup(level: int = logging.DEBUG) -> None:
     """Initialise file logging. Call once at app startup."""
     _LOGS_DIR.mkdir(exist_ok=True)
 
-    root = logging.getLogger("nexus")
-    if root.handlers:
-        return  # already initialised
+    with _SETUP_LOCK:
+        root = logging.getLogger("nexus")
+        if root.handlers:
+            return  # already initialised
 
-    root.setLevel(level)
+        root.setLevel(level)
 
     fh = logging.handlers.RotatingFileHandler(
         _LOG_FILE,

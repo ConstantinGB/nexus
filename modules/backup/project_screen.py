@@ -154,6 +154,9 @@ class BackupProjectScreen(BaseProjectScreen):
 
     def _handle_action(self, bid: str) -> None:
         if bid == "btn-backup":
+            if getattr(self, "_backup_running", False):
+                self.app.notify("Backup already in progress.", severity="warning")
+                return
             self.run_worker(self._do_backup())
         elif bid == "btn-snapshots":
             self.run_worker(self._do_snapshots())
@@ -177,6 +180,13 @@ class BackupProjectScreen(BaseProjectScreen):
         return repo, pw
 
     async def _do_backup(self) -> None:
+        self._backup_running = True
+        try:
+            await self._do_backup_inner()
+        finally:
+            self._backup_running = False
+
+    async def _do_backup_inner(self) -> None:
         repo, pw = self._repo_and_password()
         paths    = self._mod.get("paths", [])
         excludes = self._mod.get("excludes", [])
@@ -240,6 +250,16 @@ class BackupProjectScreen(BaseProjectScreen):
             self.app.notify("Forget/prune failed — see log.", severity="error")
 
     async def _do_restore(self, snap_id: str, target: str) -> None:
+        from pathlib import Path as _Path
+        import os as _os
+        target_path = _Path(target).expanduser().resolve()
+        home = _Path(_os.path.expanduser("~")).resolve()
+        if not (str(target_path).startswith(str(home) + _os.sep) or target_path == home):
+            self._append_log(
+                f"Restore refused: target '{target}' is outside your home directory."
+            )
+            self.app.notify("Restore target must be inside your home directory.", severity="error")
+            return
         repo, pw = self._repo_and_password()
         self._append_log(f"Restoring snapshot {snap_id} → {target}…")
         ok, out = await asyncio.get_running_loop().run_in_executor(

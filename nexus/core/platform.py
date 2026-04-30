@@ -87,8 +87,11 @@ def write_clipboard(text: str) -> None:
             pass
     if sys.platform.startswith("win"):
         try:
+            # Pass text via env var — never interpolate user content into the command string
             subprocess.run(
-                ["powershell", "-NoProfile", "-Command", f"Set-Clipboard -Value '{text}'"],
+                ["powershell", "-NoProfile", "-Command",
+                 "Set-Clipboard -Value $env:_NEXUS_CB"],
+                env={**os.environ, "_NEXUS_CB": text},
                 timeout=2,
             )
             return

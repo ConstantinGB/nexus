@@ -703,6 +703,7 @@ class SettingsScreen(Screen):
     # ── Button handler ────────────────────────────────────────────────────────
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
         bid = event.button.id
         try:
             if bid == "btn-provider-login":

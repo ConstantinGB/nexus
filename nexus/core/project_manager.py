@@ -76,11 +76,12 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
         raise ValueError("Project name cannot be empty.")
 
     project_dir = _PROJECTS_DIR / slug
-    if project_dir.exists():
+    try:
+        project_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
         raise ValueError(f"A project named '{slug}' already exists.")
 
     try:
-        project_dir.mkdir(parents=True)
 
         cfg = {
             "name": name,
@@ -90,7 +91,7 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
             "mcp": {"servers": {}, "disabled": []},
         }
         with (project_dir / "config.yaml").open("w") as f:
-            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+            yaml.safe_dump(cfg, f, default_flow_style=False, allow_unicode=True)
 
         template = _MODULES_DIR / module / "CLAUDE.template.md"
         claude_md = project_dir / "CLAUDE.md"
@@ -122,13 +123,17 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
 
 def update_project_meta(slug: str, name: str, description: str) -> None:
     cfg_path = _PROJECTS_DIR / slug / "config.yaml"
-    with open(cfg_path) as f:
-        cfg = yaml.safe_load(f) or {}
-    cfg["name"] = name
-    cfg["description"] = description
-    with open(cfg_path, "w") as f:
-        yaml.safe_dump(cfg, f, allow_unicode=True)
-    log.info("Updated project meta: slug=%r name=%r", slug, name)
+    try:
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg["name"] = name
+        cfg["description"] = description
+        with open(cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True)
+        log.info("Updated project meta: slug=%r name=%r", slug, name)
+    except OSError:
+        log.exception("Failed to update project meta for slug=%r", slug)
+        raise
 
 
 def delete_project(slug: str) -> None:

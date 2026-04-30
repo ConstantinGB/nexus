@@ -8,6 +8,7 @@ projects/*
 !projects/.gitkeep
 PLAN.md
 NOTES.md
+REVIEW.md
 
 # Global config contains API keys, tokens, and MCP server credentials.
 config/settings.yaml
