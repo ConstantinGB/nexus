@@ -371,7 +371,7 @@ class ResearchProjectScreen(BaseProjectScreen):
         except Exception:
             return
         proc = await asyncio.create_subprocess_exec(
-            "pandoc", str(note_path), "-o", str(out),
+            "pandoc", str(note_path), "-o", str(out), "--pdf-engine=xelatex",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -434,7 +434,7 @@ class ResearchProjectScreen(BaseProjectScreen):
                     except Exception:
                         pass
                     proc = await asyncio.create_subprocess_exec(
-                        "pandoc", tmp_path, "-o", str(out),
+                        "pandoc", tmp_path, "-o", str(out), "--pdf-engine=xelatex",
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )

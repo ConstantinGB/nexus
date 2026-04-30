@@ -94,7 +94,7 @@ _MODULE_DEPS: list[_DepSpec] = [
     _DepSpec("web",      "npm",             "npm",                      apt="npm",                dnf="npm",                pacman="npm"),
     _DepSpec("research", "rg",              "ripgrep (search)",         apt="ripgrep",            dnf="ripgrep",            pacman="ripgrep"),
     _DepSpec("research", "pandoc",          "pandoc (PDF export)",      apt="pandoc",             dnf="pandoc",             pacman="pandoc"),
-    _DepSpec("research", "pdflatex",        "pdflatex (pandoc PDF engine)", apt="texlive-latex-recommended", dnf="texlive-xcolor",  pacman="texlive-latexrecommended"),
+    _DepSpec("research", "xelatex",          "xelatex (pandoc PDF engine)", apt="texlive-xetex",             dnf="texlive-xetex",   pacman="texlive-xetex"),
     _DepSpec("codex",    "rg",              "ripgrep (search)",         apt="ripgrep",            dnf="ripgrep",            pacman="ripgrep"),
     _DepSpec("journal",  "pdflatex",        "pdflatex",                 apt="texlive-latex-base", dnf="texlive-latex",      pacman="texlive-core"),
     _DepSpec("game",     "godot",           "Godot Engine",             apt=None,                 dnf=None,                 pacman=None),
