@@ -5,7 +5,7 @@ from pathlib import Path
 from textual.app import ComposeResult
 from textual.css.query import NoMatches
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Label, Button, Log, RichLog
+from textual.widgets import Header, Footer, Label, Button, Log, RichLog, DirectoryTree
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -34,10 +34,11 @@ class CustomProjectScreen(Screen):
 
     #pane-row      { height: 1fr; }
 
-    #context-pane  { width: 35; border-right: solid #3A2260; }
+    #context-pane  { width: 35; border-right: solid #3A2260; display: none; }
     .pane-title    { color: #00FF88; text-style: bold; height: 1;
                      background: #2D1B4E; padding: 0 1; }
-    #context-log   { height: 1fr; background: #130822; }
+    #context-log   { height: 10; background: #130822; }
+    #file-tree     { height: 1fr; background: #0E0620; }
 
     CustomProjectScreen ChatPanel { display: block; width: 1fr; border-left: none; }
 
@@ -53,9 +54,10 @@ class CustomProjectScreen(Screen):
 
     def __init__(self, project: ProjectInfo) -> None:
         super().__init__()
-        self.project    = project
+        self.project      = project
         self._commands: list[dict] = []
         self._panel_mode: str = "chat"
+        self._context_visible: bool = False
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
@@ -82,13 +84,20 @@ class CustomProjectScreen(Screen):
         yield Header()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
-            yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
-            yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
+            yield Button("📄 Context", id="btn-toggle-context", classes="panel-btn")
+            yield Button("💬 Chat",    id="btn-panel-chat",     classes="panel-btn")
+            yield Button("⌨ Claude",   id="btn-panel-claude",   classes="panel-btn")
+            yield Button("$ Shell",    id="btn-panel-bash",     classes="panel-btn")
 
         with Horizontal(id="pane-row"):
             with Vertical(id="context-pane"):
                 yield Label("CONTEXT  (CLAUDE.md)", classes="pane-title")
                 yield Log(id="context-log", highlight=False, auto_scroll=False)
+                yield Label("FILES", classes="pane-title")
+                yield DirectoryTree(
+                    str(_PROJECTS_DIR / self.project.slug),
+                    id="file-tree",
+                )
 
             yield ChatPanel(
                 self.project.slug,
@@ -101,8 +110,8 @@ class CustomProjectScreen(Screen):
         with Horizontal(id="cmd-bar"):
             for i, cmd in enumerate(self._commands):
                 yield Button(cmd["label"], id=f"btn-cmd-{i}")
-            yield Button("+ Add Command", id="btn-add-cmd",  classes="util-btn")
-            yield Button("⟳ Reload",      id="btn-reload",   classes="util-btn")
+            yield Button("📁 Open Folder", id="btn-open-folder", classes="util-btn")
+            yield Button("⟳ Reload",       id="btn-reload",      classes="util-btn")
 
         yield Footer()
 
@@ -121,7 +130,10 @@ class CustomProjectScreen(Screen):
             self.run_worker(self._launch_claude())
 
     def _init_context(self) -> None:
-        ctx = self.query_one("#context-log", Log)
+        try:
+            ctx = self.query_one("#context-log", Log)
+        except NoMatches:
+            return
         for line in self._read_claude_md().splitlines():
             ctx.write_line(line)
 
@@ -130,7 +142,9 @@ class CustomProjectScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
         try:
-            if bid == "btn-panel-chat":
+            if bid == "btn-toggle-context":
+                self._toggle_context()
+            elif bid == "btn-panel-chat":
                 new_mode = "none" if self._panel_mode == "chat" else "chat"
                 self._set_panel_mode(new_mode)
             elif bid == "btn-panel-claude":
@@ -138,16 +152,19 @@ class CustomProjectScreen(Screen):
                     self._set_panel_mode("none")
                 else:
                     self.run_worker(self._launch_claude())
-            elif bid == "btn-add-cmd":
-                self.app.push_screen(
-                    InputModal(
-                        "Add Command",
-                        "Enter label and shell command separated by a colon\n"
-                        "e.g.  Build: make build",
-                        placeholder="Build: make build",
-                    ),
-                    self._on_add_cmd_input,
-                )
+            elif bid == "btn-panel-bash":
+                if self._panel_mode == "bash":
+                    self._set_panel_mode("none")
+                else:
+                    self.run_worker(self._launch_bash())
+            elif bid == "btn-open-folder":
+                import subprocess
+                from nexus.core.platform import open_path
+                try:
+                    subprocess.Popen(open_path(str(_PROJECTS_DIR / self.project.slug)))
+                except Exception:
+                    log.exception("Failed to open folder")
+                    self.app.notify("Could not open folder.", severity="error")
             elif bid == "btn-reload":
                 self._reload()
             elif bid.startswith("btn-cmd-"):
@@ -158,15 +175,61 @@ class CustomProjectScreen(Screen):
             log.exception("Button handler error (bid=%s)", bid)
             self.app.notify("Unexpected error — see log.", severity="error")
 
-    def action_dismiss(self, result=None) -> None:
+    def on_directory_tree_file_selected(
+        self, event: DirectoryTree.FileSelected
+    ) -> None:
+        from nexus.ui.text_editor_screen import TextEditorScreen
+        path = event.path
         try:
-            from nexus.ui.terminal_widget import Terminal
-            self.query_one("#claude-terminal", Terminal).stop()
-        except NoMatches:
-            pass
+            content = path.read_text(errors="replace")
+        except Exception:
+            self.app.notify(f"Cannot read: {path.name}", severity="error")
+            return
+        suffix = path.suffix.lower()
+        lang = {".md": "markdown", ".py": "python", ".yaml": "yaml", ".yml": "yaml",
+                ".sh": "bash", ".json": "json", ".toml": "toml"}.get(suffix, "text")
+        self.app.push_screen(
+            TextEditorScreen(content, language=lang, title=path.name),
+            lambda saved, p=path: self._save_file(p, saved),
+        )
+
+    def _save_file(self, path: Path, content: str | None) -> None:
+        if content is None:
+            return
+        try:
+            path.write_text(content)
+            self.app.notify(f"Saved: {path.name}", severity="information")
+        except Exception:
+            log.exception("Failed to save file: %s", path)
+            self.app.notify("Could not save file — see log.", severity="error")
+
+    def action_dismiss(self, result=None) -> None:
+        for tid in ("#claude-terminal", "#bash-terminal"):
+            try:
+                from nexus.ui.terminal_widget import Terminal
+                self.query_one(tid, Terminal).stop()
+            except NoMatches:
+                pass
         self.dismiss(result)
 
-    # ── Terminal panel ────────────────────────────────────────────────────────
+    # ── Context pane ──────────────────────────────────────────────────────────
+
+    def _toggle_context(self) -> None:
+        self._context_visible = not self._context_visible
+        try:
+            self.query_one("#context-pane").display = self._context_visible
+        except NoMatches:
+            pass
+        try:
+            btn = self.query_one("#btn-toggle-context", Button)
+            if self._context_visible:
+                btn.add_class("panel-btn-active")
+            else:
+                btn.remove_class("panel-btn-active")
+        except NoMatches:
+            pass
+
+    # ── Panel mode ────────────────────────────────────────────────────────────
 
     def _set_panel_mode(self, mode: str) -> None:
         self._panel_mode = mode
@@ -175,10 +238,19 @@ class CustomProjectScreen(Screen):
         except NoMatches:
             pass
         try:
-            self.query_one("#terminal-panel").display = (mode == "claude_code")
+            self.query_one("#terminal-panel").display = (mode in ("claude_code", "bash"))
         except NoMatches:
             pass
-        for bid, active_mode in [("btn-panel-chat", "chat"), ("btn-panel-claude", "claude_code")]:
+        for tid, tmode in [("claude-terminal", "claude_code"), ("bash-terminal", "bash")]:
+            try:
+                self.query_one(f"#{tid}").display = (mode == tmode)
+            except NoMatches:
+                pass
+        for bid, active_mode in [
+            ("btn-panel-chat",   "chat"),
+            ("btn-panel-claude", "claude_code"),
+            ("btn-panel-bash",   "bash"),
+        ]:
             try:
                 btn = self.query_one(f"#{bid}", Button)
                 if mode == active_mode:
@@ -187,6 +259,8 @@ class CustomProjectScreen(Screen):
                     btn.remove_class("panel-btn-active")
             except NoMatches:
                 pass
+
+    # ── Terminal panels ───────────────────────────────────────────────────────
 
     async def _launch_claude(self) -> None:
         import shutil
@@ -220,19 +294,65 @@ class CustomProjectScreen(Screen):
         terminal.start()
         terminal.focus()
 
-    def on_terminal_process_stopped(self, _event) -> None:
+    async def _launch_bash(self) -> None:
+        import shutil
+        from nexus.ui.terminal_widget import Terminal
+
+        shell = shutil.which("bash") or shutil.which("sh")
+        if not shell:
+            self.app.notify("No shell found on PATH.", severity="error")
+            return
+
+        self._set_panel_mode("bash")
+
         try:
-            self.query_one("#claude-terminal").remove()
+            self.query_one("#bash-terminal")
+            return
         except NoMatches:
             pass
-        if self._panel_mode == "claude_code":
+
+        terminal = Terminal(
+            command=shell,
+            cwd=str(_PROJECTS_DIR / self.project.slug),
+            id="bash-terminal",
+        )
+        try:
+            panel = self.query_one("#terminal-panel")
+        except NoMatches:
+            return
+        await panel.mount(terminal)
+        terminal.start()
+        terminal.focus()
+
+    def on_terminal_process_stopped(self, event) -> None:
+        widget = getattr(event, "control", None) or getattr(event, "widget", None)
+        wid = getattr(widget, "id", None) if widget else None
+        try:
+            if widget is not None:
+                widget.remove()
+        except Exception:
+            pass
+        if wid == "claude-terminal" and self._panel_mode == "claude_code":
             self._set_panel_mode("none")
+        elif wid == "bash-terminal" and self._panel_mode == "bash":
+            self._set_panel_mode("none")
+        elif wid is None:
+            for tid, mode in [("claude-terminal", "claude_code"), ("bash-terminal", "bash")]:
+                try:
+                    self.query_one(f"#{tid}").remove()
+                    if self._panel_mode == mode:
+                        self._set_panel_mode("none")
+                except NoMatches:
+                    pass
 
     # ── Custom commands ───────────────────────────────────────────────────────
 
     async def _run_command(self, cmd: str) -> None:
         from nexus.ui.chat_panel import ChatPanel
-        chat_log = self.query_one(ChatPanel).query_one("#chat-log", RichLog)
+        try:
+            chat_log = self.query_one(ChatPanel).query_one("#chat-log", RichLog)
+        except NoMatches:
+            return
         chat_log.write(f"[cmd] $ {cmd}")
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -243,49 +363,34 @@ class CustomProjectScreen(Screen):
             )
             if proc.stdout:
                 async for raw in proc.stdout:
-                    chat_log.write(raw.decode(errors="replace").rstrip())
+                    try:
+                        chat_log.write(raw.decode(errors="replace").rstrip())
+                    except Exception:
+                        break
             await proc.wait()
-            chat_log.write(
-                f"[cmd] ✓ done (exit {proc.returncode})"
-                if proc.returncode == 0
-                else f"[cmd] ✗ exit {proc.returncode}"
-            )
+            try:
+                chat_log.write(
+                    f"[cmd] ✓ done (exit {proc.returncode})"
+                    if proc.returncode == 0
+                    else f"[cmd] ✗ exit {proc.returncode}"
+                )
+            except Exception:
+                pass
         except Exception:
             log.exception("Custom command failed: %s", cmd)
-            chat_log.write("[cmd] ✗ error — see log.")
-
-    def _on_add_cmd_input(self, value: str | None) -> None:
-        if not value or ":" not in value:
-            if value is not None:
-                self.app.notify("Format: Label: shell command", severity="warning")
-            return
-        label, _, cmd = value.partition(":")
-        label = label.strip()
-        cmd   = cmd.strip()
-        if not label or not cmd:
-            self.app.notify("Both label and command are required.", severity="warning")
-            return
-        self._commands.append({"label": label, "cmd": cmd})
-        self._save_commands()
-        self.run_worker(self._mount_new_cmd_button(label, len(self._commands) - 1))
-        self.app.notify(f"Command '{label}' added.", severity="information")
-
-    async def _mount_new_cmd_button(self, label: str, idx: int) -> None:
-        cmd_bar = self.query_one("#cmd-bar")
-        add_btn = self.query_one("#btn-add-cmd", Button)
-        await cmd_bar.mount(Button(label, id=f"btn-cmd-{idx}"), before=add_btn)
-
-    def _save_commands(self) -> None:
-        from nexus.core.config_manager import load_project_config, save_project_config
-        cfg = load_project_config(self.project.slug)
-        cfg.setdefault("custom", {})["commands"] = self._commands
-        save_project_config(self.project.slug, cfg)
+            try:
+                chat_log.write("[cmd] ✗ error — see log.")
+            except Exception:
+                pass
 
     # ── Reload ────────────────────────────────────────────────────────────────
 
     def _reload(self) -> None:
-        ctx = self.query_one("#context-log", Log)
-        ctx.clear()
-        for line in self._read_claude_md().splitlines():
-            ctx.write_line(line)
+        try:
+            ctx = self.query_one("#context-log", Log)
+            ctx.clear()
+            for line in self._read_claude_md().splitlines():
+                ctx.write_line(line)
+        except NoMatches:
+            pass
         self.app.notify("Context reloaded.", severity="information")

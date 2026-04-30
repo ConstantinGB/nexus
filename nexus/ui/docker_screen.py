@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
@@ -20,6 +21,7 @@ class DockerContainerConfig:
     volumes: dict[str, str] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     extra_args: list[str] = field(default_factory=list)
+    restart_policy: str = "no"
 
 
 class DockerManagerScreen(ModalScreen):
@@ -44,19 +46,32 @@ class DockerManagerScreen(ModalScreen):
     .status-stopped { color: #FF4444; }
     .status-unknown { color: #888888; }
 
-    #docker-btn-row { height: 3; margin-bottom: 1; }
+    #docker-btn-row  { height: 3; margin-bottom: 1; }
     #docker-btn-row Button { margin-right: 1; }
+    #docker-btn-row2 { height: 3; margin-bottom: 1; }
+    #docker-btn-row2 Button { margin-right: 1; }
+    #btn-boot-toggle.boot-on  { border: solid #00FF88; color: #00FF88; }
+    #btn-boot-toggle.boot-off { color: #555588; }
 
-    #docker-log { height: 22; background: #0A0518; border: solid #3A2260; }
+    #docker-log { height: 18; background: #0A0518; border: solid #3A2260; }
     """
 
-    def __init__(self, title: str, config: DockerContainerConfig) -> None:
+    def __init__(
+        self,
+        title: str,
+        config: DockerContainerConfig,
+        on_boot_changed: Callable[[bool], None] | None = None,
+    ) -> None:
         super().__init__()
-        self._title   = title
-        self._config  = config
-        self._pulling = False
+        self._title           = title
+        self._config          = config
+        self._pulling         = False
+        self._on_boot_changed = on_boot_changed
 
     def compose(self) -> ComposeResult:
+        boot_on = self._config.restart_policy not in ("no", "")
+        boot_label = "Start on Boot: ON" if boot_on else "Start on Boot: OFF"
+        boot_class = "boot-on" if boot_on else "boot-off"
         with Vertical(id="docker-dialog"):
             yield Label(f"Docker: {self._title}", id="docker-title")
             yield Label("Checking…", id="docker-status", classes="status-unknown")
@@ -71,10 +86,17 @@ class DockerManagerScreen(ModalScreen):
                 yield Button("Remove",       id="btn-docker-remove")
                 yield Button("Refresh Logs", id="btn-docker-logs")
                 yield Button("Close",        id="btn-docker-close")
+            with Horizontal(id="docker-btn-row2"):
+                yield Button(
+                    boot_label,
+                    id="btn-boot-toggle",
+                    classes=boot_class,
+                )
             yield Log(id="docker-log", auto_scroll=True)
 
     def on_mount(self) -> None:
         self.run_worker(self._refresh_status())
+        self.run_worker(self._sync_boot_state())
         self.app._docker_containers.add(self._config.name)
 
     def on_dismiss(self) -> None:
@@ -103,16 +125,38 @@ class DockerManagerScreen(ModalScreen):
             lbl.update(f"● {status.upper()}")
             lbl.add_class("status-unknown")
 
+    # ── Boot-state sync ───────────────────────────────────────────────────────
+
+    async def _sync_boot_state(self) -> None:
+        """Read the actual restart policy from Docker and update button + config."""
+        from nexus.core import docker_ops
+        status = await docker_ops.container_status(self._config.name)
+        if status == "not_found":
+            return  # container not created yet; trust stored config value
+        actual = await docker_ops.get_restart_policy(self._config.name)
+        self._config.restart_policy = actual
+        self._update_boot_button(actual not in ("no", ""))
+
+    def _update_boot_button(self, enabled: bool) -> None:
+        try:
+            btn = self.query_one("#btn-boot-toggle", Button)
+            btn.label = "Start on Boot: ON" if enabled else "Start on Boot: OFF"
+            btn.remove_class("boot-on", "boot-off")
+            btn.add_class("boot-on" if enabled else "boot-off")
+        except Exception:
+            pass
+
     # ── Buttons ───────────────────────────────────────────────────────────────
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
-        if   bid == "btn-docker-close":  self.dismiss()
-        elif bid == "btn-docker-pull":   self.run_worker(self._pull())
-        elif bid == "btn-docker-start":  self.run_worker(self._start())
-        elif bid == "btn-docker-stop":   self.run_worker(self._stop())
-        elif bid == "btn-docker-remove": self.run_worker(self._remove())
-        elif bid == "btn-docker-logs":   self.run_worker(self._fetch_logs())
+        if   bid == "btn-docker-close":   self.dismiss()
+        elif bid == "btn-docker-pull":    self.run_worker(self._pull())
+        elif bid == "btn-docker-start":   self.run_worker(self._start())
+        elif bid == "btn-docker-stop":    self.run_worker(self._stop())
+        elif bid == "btn-docker-remove":  self.run_worker(self._remove())
+        elif bid == "btn-docker-logs":    self.run_worker(self._fetch_logs())
+        elif bid == "btn-boot-toggle":    self.run_worker(self._toggle_boot())
 
     # ── Workers ───────────────────────────────────────────────────────────────
 
@@ -161,6 +205,7 @@ class DockerManagerScreen(ModalScreen):
         try:
             await docker_ops.run_container(
                 c.name, c.image, c.ports, c.volumes, c.env, c.extra_args,
+                restart_policy=c.restart_policy,
             )
             # Brief pause to let fast-exit containers fail visibly
             await _aio.sleep(1.5)
@@ -232,3 +277,44 @@ class DockerManagerScreen(ModalScreen):
             log.exception("docker logs failed")
             ui_log.write_line("✗ Could not fetch logs — see nexus log.")
         await self._refresh_status()
+
+    async def _toggle_boot(self) -> None:
+        from nexus.core import docker_ops
+        ui_log = self.query_one("#docker-log", Log)
+        current = self._config.restart_policy
+        new_policy = "no" if current not in ("no", "") else "unless-stopped"
+        enabled = new_policy != "no"
+
+        # If container exists, update it live; otherwise just record the preference.
+        status = await docker_ops.container_status(self._config.name)
+        if status != "not_found":
+            ui_log.write_line(
+                f"$ docker update --restart={new_policy} {self._config.name}"
+            )
+            try:
+                await docker_ops.set_restart_policy(self._config.name, new_policy)
+                ui_log.write_line("✓ Restart policy updated.")
+            except docker_ops.DockerError as exc:
+                ui_log.write_line(f"✗ {exc}")
+                self.app.notify("Could not update restart policy — see log.", severity="error")
+                return
+            except Exception:
+                log.exception("docker update restart policy failed")
+                ui_log.write_line("✗ Unexpected error — see nexus log.")
+                return
+
+        self._config.restart_policy = new_policy
+        self._update_boot_button(enabled)
+        label = "enabled" if enabled else "disabled"
+        msg = (
+            f"Start on boot {label}."
+            if status != "not_found"
+            else f"Start on boot {label} (will apply when container is next created)."
+        )
+        self.app.notify(msg, severity="information")
+
+        if self._on_boot_changed is not None:
+            try:
+                self._on_boot_changed(enabled)
+            except Exception:
+                log.exception("on_boot_changed callback failed")

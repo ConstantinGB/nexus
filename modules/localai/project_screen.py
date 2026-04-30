@@ -332,20 +332,36 @@ class LocalAIProjectScreen(Screen):
     def _open_docker(self) -> None:
         from pathlib import Path
         from nexus.ui.docker_screen import DockerManagerScreen, DockerContainerConfig
-        slug        = self.project.slug
-        image       = self._localai_cfg.get("docker_image", "ollama/ollama")
-        ollama_path = Path.home() / ".ollama"
+        slug           = self.project.slug
+        image          = self._localai_cfg.get("docker_image", "ollama/ollama")
+        restart_policy = self._localai_cfg.get("docker_restart_policy", "no")
+        ollama_path    = Path.home() / ".ollama"
         if ollama_path.is_symlink():
             self.app.notify("~/.ollama is a symlink — refusing to mount.", severity="error")
             return
         ollama_path.mkdir(parents=True, exist_ok=True)
         cfg = DockerContainerConfig(
-            name     = f"nexus-localai-{slug}",
-            image    = image,
-            ports    = {"11434": "11434"},
-            volumes  = {str(ollama_path): "/root/.ollama"},
+            name           = f"nexus-localai-{slug}",
+            image          = image,
+            ports          = {"11434": "11434"},
+            volumes        = {str(ollama_path): "/root/.ollama"},
+            restart_policy = restart_policy,
         )
-        self.app.push_screen(DockerManagerScreen("LocalAI (Ollama)", cfg))
+        self.app.push_screen(
+            DockerManagerScreen("LocalAI (Ollama)", cfg, on_boot_changed=self._on_docker_boot_changed),
+        )
+
+    def _on_docker_boot_changed(self, enabled: bool) -> None:
+        policy = "unless-stopped" if enabled else "no"
+        try:
+            from nexus.core.config_manager import load_project_config, save_project_config
+            cfg = load_project_config(self.project.slug)
+            cfg.setdefault("localai", {})["docker_restart_policy"] = policy
+            save_project_config(self.project.slug, cfg)
+            self._localai_cfg["docker_restart_policy"] = policy
+            log.info("Docker restart policy saved: %s", policy)
+        except Exception:
+            log.exception("Failed to persist docker_restart_policy")
 
     # ── Endpoint test ─────────────────────────────────────────────────────────
 

@@ -81,6 +81,8 @@ class ConfirmDeleteModal(ModalScreen):
 # ── Project tile ──────────────────────────────────────────────────────────────
 
 class ProjectTile(Widget):
+    can_focus = True
+
     DEFAULT_CSS = """
     ProjectTile {
         border: solid #00B4FF;
@@ -90,6 +92,10 @@ class ProjectTile(Widget):
         background: #2D1B4E;
     }
     ProjectTile:hover {
+        border: solid #00FF88;
+        background: #3A2260;
+    }
+    ProjectTile:focus {
         border: solid #00FF88;
         background: #3A2260;
     }
@@ -165,23 +171,23 @@ class ProjectTile(Widget):
             self.app.notify(f"Failed to delete '{self.project.name}' — see log.",
                             severity="error")
 
+    def _open(self) -> None:
+        self.app.open_project_tab(self.project)
+
     def on_click(self) -> None:
-        from nexus.core.module_manager import needs_setup, get_setup_screen, get_project_screen
-        if needs_setup(self.project):
-            screen = get_setup_screen(self.project)
-            if screen:
-                self.app.push_screen(screen)
-                return
-        screen = get_project_screen(self.project)
-        if screen:
-            self.app.push_screen(screen)
-        else:
-            self.app.notify(f"No view implemented for '{self.project.module}' yet.")
+        self._open()
+
+    def on_key(self, event) -> None:
+        if event.key == "enter":
+            event.stop()
+            self._open()
 
 
 # ── Add-project tile ──────────────────────────────────────────────────────────
 
 class AddProjectTile(Widget):
+    can_focus = True
+
     DEFAULT_CSS = """
     AddProjectTile {
         border: dashed #00FF88;
@@ -192,6 +198,10 @@ class AddProjectTile(Widget):
         align: center middle;
     }
     AddProjectTile:hover {
+        border: solid #00FF88;
+        background: #0A2A1A;
+    }
+    AddProjectTile:focus {
         border: solid #00FF88;
         background: #0A2A1A;
     }
@@ -206,7 +216,7 @@ class AddProjectTile(Widget):
     def compose(self) -> ComposeResult:
         yield Label("＋  Add Project", classes="add-label")
 
-    def on_click(self) -> None:
+    def _open(self) -> None:
         from nexus.ui.add_project_screen import AddProjectScreen
 
         def on_created(project: ProjectInfo | None) -> None:
@@ -216,10 +226,20 @@ class AddProjectTile(Widget):
 
         self.app.push_screen(AddProjectScreen(), on_created)
 
+    def on_click(self) -> None:
+        self._open()
+
+    def on_key(self, event) -> None:
+        if event.key == "enter":
+            event.stop()
+            self._open()
+
 
 # ── Settings tile ─────────────────────────────────────────────────────────────
 
 class SettingsTile(Widget):
+    can_focus = True
+
     DEFAULT_CSS = """
     SettingsTile {
         border: dashed #8080AA;
@@ -230,6 +250,10 @@ class SettingsTile(Widget):
         align: center middle;
     }
     SettingsTile:hover {
+        border: solid #00B4FF;
+        background: #1A1A3A;
+    }
+    SettingsTile:focus {
         border: solid #00B4FF;
         background: #1A1A3A;
     }
@@ -247,14 +271,29 @@ class SettingsTile(Widget):
     def compose(self) -> ComposeResult:
         yield Label("⚙  Settings", classes="settings-label")
 
-    def on_click(self) -> None:
+    def _open(self) -> None:
         from nexus.ui.settings_screen import SettingsScreen
         self.app.push_screen(SettingsScreen())
+
+    def on_click(self) -> None:
+        self._open()
+
+    def on_key(self, event) -> None:
+        if event.key == "enter":
+            event.stop()
+            self._open()
 
 
 # ── Tile grid ─────────────────────────────────────────────────────────────────
 
 class TileGrid(ScrollableContainer):
+    BINDINGS = [
+        ("up",    "focus_previous", "Up"),
+        ("left",  "focus_previous", "Left"),
+        ("down",  "focus_next",     "Down"),
+        ("right", "focus_next",     "Right"),
+    ]
+
     DEFAULT_CSS = """
     TileGrid {
         layout: grid;

@@ -391,12 +391,14 @@ class BaseProjectScreen(Screen):
     # ── Compose ───────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
+        from nexus.ui.project_tabs import ProjectTabBar
         self._load_cfg()
         meta = self.MODULE_LABEL
         if self.project.description:
             meta = f"{self.MODULE_LABEL} · {self.project.description}"
 
         yield Header()
+        yield ProjectTabBar()
         with Horizontal(id="top-bar"):
             yield Label(self.project.name, id="project-title")
             yield Label(meta, id="project-meta")
@@ -725,6 +727,10 @@ class BaseProjectScreen(Screen):
                 self.query_one(wid, Terminal).stop()
             except NoMatches:
                 pass
+        if not getattr(self.app, "_going_home_for_new_tab", False):
+            if hasattr(self.app, "close_project_tab"):
+                self.app.close_project_tab(self.project.slug)
+        self.app._going_home_for_new_tab = False
         self.dismiss(result)
 
     def _reload_screen(self) -> None:

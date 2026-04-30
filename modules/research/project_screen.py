@@ -1,12 +1,15 @@
 from __future__ import annotations
 import asyncio
+import os
 import re
+import tempfile
 from datetime import date
 from pathlib import Path
 
 from textual.app import ComposeResult
-from textual.widgets import Label, Button, Log
-from textual.containers import Vertical, Horizontal
+from textual.screen import ModalScreen
+from textual.widgets import Label, Button, Log, Checkbox
+from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
@@ -41,6 +44,88 @@ def _first_line(path: Path) -> str:
         return ""
 
 
+class ExportAllModal(ModalScreen[str | None]):
+    """Ask user to choose Markdown or PDF before exporting all notes."""
+
+    DEFAULT_CSS = """
+    ExportAllModal { align: center middle; }
+    #eam-dialog {
+        background: #2D1B4E; border: solid #00B4FF;
+        padding: 1 2; width: 52; height: auto;
+    }
+    #eam-title  { color: #00B4FF; text-style: bold; height: 2; }
+    #eam-hint   { color: #8080AA; height: 2; margin-bottom: 1; }
+    #eam-btns   { height: 3; }
+    #eam-btns Button { margin-right: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="eam-dialog"):
+            yield Label("Export All Notes", id="eam-title")
+            yield Label("Choose export format:", id="eam-hint")
+            with Horizontal(id="eam-btns"):
+                yield Button("Markdown", id="eam-md",  variant="primary")
+                yield Button("PDF",      id="eam-pdf")
+                yield Button("Cancel",   id="eam-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        bid = event.button.id
+        if bid == "eam-md":
+            self.dismiss("md")
+        elif bid == "eam-pdf":
+            self.dismiss("pdf")
+        else:
+            self.dismiss(None)
+
+
+class ExportDocModal(ModalScreen[tuple[str, list[Path]] | None]):
+    """Checkbox list of notes; user selects which ones to combine and export."""
+
+    DEFAULT_CSS = """
+    ExportDocModal { align: center middle; }
+    #edm-dialog {
+        background: #2D1B4E; border: solid #00B4FF;
+        padding: 1 2; width: 70; height: 80%;
+    }
+    #edm-title    { color: #00B4FF; text-style: bold; height: 2; }
+    #edm-list     { height: 1fr; border: solid #3A2260; padding: 0 1; }
+    #edm-btns     { height: 3; margin-top: 1; }
+    #edm-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self, notes: list[Path]) -> None:
+        super().__init__()
+        self._notes = notes
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="edm-dialog"):
+            yield Label("Export Documents", id="edm-title")
+            with ScrollableContainer(id="edm-list"):
+                for i, note in enumerate(self._notes):
+                    yield Checkbox(note.stem, value=True, id=f"edm-chk-{i}")
+            with Horizontal(id="edm-btns"):
+                yield Button("Export MD",  id="edm-md",     variant="primary")
+                yield Button("Export PDF", id="edm-pdf")
+                yield Button("Cancel",     id="edm-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        bid = event.button.id
+        if bid == "edm-cancel":
+            self.dismiss(None)
+            return
+        fmt = "md" if bid == "edm-md" else "pdf"
+        checked: list[Path] = []
+        for i, note in enumerate(self._notes):
+            try:
+                if self.query_one(f"#edm-chk-{i}", Checkbox).value:
+                    checked.append(note)
+            except Exception:
+                pass
+        self.dismiss((fmt, checked) if checked else None)
+
+
 class ResearchProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "research"
     MODULE_LABEL      = "RESEARCH"
@@ -55,10 +140,13 @@ class ResearchProjectScreen(BaseProjectScreen):
     ]
 
     DEFAULT_CSS = _screen_css("ResearchProjectScreen") + """
-    .note-row  { height: 3; width: 1fr; }
-    .note-item { width: 1fr; height: 3; border: none; background: transparent;
-                 color: #8080AA; text-align: left; margin: 0; }
+    .note-row    { height: 3; width: 1fr; }
+    .note-item   { width: 1fr; height: 3; border: none; background: transparent;
+                   color: #8080AA; text-align: left; margin: 0; }
     .note-item:hover { background: #2D1B4E; color: #E0E0FF; }
+    .note-pdf-btn { width: 7; height: 3; background: transparent;
+                    border: none; color: #4080AA; margin: 0; }
+    .note-pdf-btn:hover { color: #00B4FF; background: #1A2D4E; }
     .note-del-btn { width: 5; height: 3; background: transparent;
                     border: none; color: #553333; margin: 0; }
     .note-del-btn:hover { color: #FF4444; background: #2D1B1B; }
@@ -81,12 +169,12 @@ class ResearchProjectScreen(BaseProjectScreen):
 
     def _compose_action_buttons(self) -> list:
         return [
-            Button("New Note",    id="btn-new-note",    variant="primary"),
-            Button("Fetch URL",   id="btn-fetch-url"),
-            Button("Search",      id="btn-search"),
-            Button("Export URLs", id="btn-export-urls"),
-            Button("Export All",  id="btn-export-all"),
-            Button("Refresh",     id="btn-refresh"),
+            Button("New Note",   id="btn-new-note",   variant="primary"),
+            Button("Fetch URL",  id="btn-fetch-url"),
+            Button("Search",     id="btn-search"),
+            Button("Export Doc", id="btn-export-doc"),
+            Button("Export All", id="btn-export-all"),
+            Button("Refresh",    id="btn-refresh"),
         ]
 
     # ── Main content ──────────────────────────────────────────────────────────
@@ -107,17 +195,18 @@ class ResearchProjectScreen(BaseProjectScreen):
         ]
 
         if notes_dir.exists():
-            notes = await asyncio.to_thread(lambda: sorted(
-                notes_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+            all_notes = await asyncio.to_thread(lambda: sorted(
+                [n for n in notes_dir.glob("*.md") if n.name != "CLAUDE.md"],
+                key=lambda p: p.stat().st_mtime, reverse=True,
             ))
             widgets.append(
                 Horizontal(
                     Label("Notes:", classes="info-key"),
-                    Label(str(len(notes)), classes="info-val"),
+                    Label(str(len(all_notes)), classes="info-val"),
                     classes="info-row",
                 )
             )
-            self._notes = notes[:20]
+            self._notes = all_notes[:20]
             widgets.append(Label("Recent notes (click to edit):", classes="section-label"))
             for i, note in enumerate(self._notes):
                 first = await asyncio.to_thread(_first_line, note)
@@ -125,8 +214,9 @@ class ResearchProjectScreen(BaseProjectScreen):
                 display = f"  {stem}" + (f" — {first}" if first else "")
                 widgets.append(
                     Horizontal(
-                        Button(display, id=f"note-{i}",     classes="note-item"),
-                        Button("✕",     id=f"note-del-{i}", classes="note-del-btn"),
+                        Button(display,  id=f"note-{i}",     classes="note-item"),
+                        Button("PDF",    id=f"note-pdf-{i}", classes="note-pdf-btn"),
+                        Button("✕",      id=f"note-del-{i}", classes="note-del-btn"),
                         classes="note-row",
                     )
                 )
@@ -155,10 +245,21 @@ class ResearchProjectScreen(BaseProjectScreen):
                 InputModal("Search", "Search query:", "keyword"),
                 lambda q: self._do_search(q, notes_dir),
             )
-        elif bid == "btn-export-urls":
-            self.run_worker(self._run_cmd(["grep", "-rh", "http", str(notes_dir)]))
+        elif bid == "btn-export-doc":
+            if not self._notes:
+                self.app.notify("No notes to export.", severity="warning")
+                return
+            self.app.push_screen(
+                ExportDocModal(list(self._notes)),
+                lambda result: self.run_worker(
+                    self._export_notes(notes_dir, result[0], result[1])
+                ) if result else None,
+            )
         elif bid == "btn-export-all":
-            self.run_worker(self._export_all(notes_dir))
+            self.app.push_screen(
+                ExportAllModal(),
+                lambda fmt: self.run_worker(self._export_notes(notes_dir, fmt)) if fmt else None,
+            )
         elif bid == "btn-fetch-url":
             self.app.push_screen(
                 InputModal("Fetch URL", "Enter URL to fetch and save as a note:", "https://"),
@@ -166,6 +267,13 @@ class ResearchProjectScreen(BaseProjectScreen):
             )
         elif bid == "btn-refresh":
             self.run_worker(self._populate_content())
+        elif bid and bid.startswith("note-pdf-"):
+            try:
+                idx = int(bid[len("note-pdf-"):])
+            except ValueError:
+                return
+            if 0 <= idx < len(self._notes):
+                self.run_worker(self._export_note_pdf(self._notes[idx]))
         elif bid and bid.startswith("note-del-"):
             try:
                 idx = int(bid[len("note-del-"):])
@@ -248,6 +356,123 @@ class ResearchProjectScreen(BaseProjectScreen):
             return
         self._open_note(dest)
 
+    async def _export_note_pdf(self, note_path: Path) -> None:
+        import shutil
+        try:
+            ui_log = self.query_one("#output-log", Log)
+        except Exception:
+            return
+        if not shutil.which("pandoc"):
+            self.app.notify("pandoc not found — install pandoc for PDF export.", severity="error")
+            return
+        out = note_path.with_suffix(".pdf")
+        try:
+            ui_log.write_line(f"$ pandoc {note_path.name} -o {out.name}")
+        except Exception:
+            return
+        proc = await asyncio.create_subprocess_exec(
+            "pandoc", str(note_path), "-o", str(out),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace")
+            try:
+                ui_log.write_line(f"✗ pandoc: {err}")
+            except Exception:
+                pass
+            self.app.notify("PDF export failed — see log.", severity="error")
+            return
+        try:
+            ui_log.write_line(f"✓ {out.name}")
+        except Exception:
+            pass
+        self.app.notify(f"PDF saved: {out.name}", severity="information")
+
+    async def _export_notes(
+        self,
+        notes_dir: Path,
+        fmt: str | None,
+        notes: list[Path] | None = None,
+    ) -> None:
+        import shutil
+        try:
+            ui_log = self.query_one("#output-log", Log)
+        except Exception:
+            return
+
+        if fmt is None:
+            return
+
+        if notes is None:
+            notes = await asyncio.to_thread(lambda: sorted(
+                [n for n in notes_dir.glob("*.md") if n.name != "CLAUDE.md"],
+                key=lambda p: p.stat().st_mtime, reverse=True,
+            ))
+
+        if not notes:
+            self.app.notify("No notes to export.", severity="warning")
+            return
+
+        if fmt == "pdf":
+            if not shutil.which("pandoc"):
+                self.app.notify("pandoc not found — install pandoc for PDF export.", severity="error")
+                return
+            out = notes_dir / "export-all.pdf"
+            try:
+                parts = [await asyncio.to_thread(n.read_text, errors="replace") for n in notes]
+                combined = "\n\n---\n\n".join(parts)
+                fd, tmp_path = tempfile.mkstemp(suffix=".md")
+                try:
+                    with os.fdopen(fd, "w") as f:
+                        f.write(combined)
+                    try:
+                        ui_log.write_line(f"$ pandoc → {out.name}")
+                    except Exception:
+                        pass
+                    proc = await asyncio.create_subprocess_exec(
+                        "pandoc", tmp_path, "-o", str(out),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    _, stderr = await proc.communicate()
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                if proc.returncode != 0:
+                    err = stderr.decode(errors="replace")
+                    try:
+                        ui_log.write_line(f"✗ pandoc: {err}")
+                    except Exception:
+                        pass
+                    self.app.notify("PDF export failed — see log.", severity="error")
+                    return
+                try:
+                    ui_log.write_line(f"✓ Exported {len(notes)} notes → {out.name}")
+                except Exception:
+                    pass
+                self.app.notify(f"Exported {len(notes)} notes to {out.name}")
+            except Exception:
+                log.exception("Export all PDF failed")
+                self.app.notify("Export failed — see log.", severity="error")
+        else:
+            out = notes_dir / "export-all.md"
+            try:
+                parts = [await asyncio.to_thread(n.read_text, errors="replace") for n in notes]
+                combined = "\n\n---\n\n".join(parts)
+                await asyncio.to_thread(out.write_text, combined)
+                try:
+                    ui_log.write_line(f"✓ Exported {len(notes)} notes → {out.name}")
+                except Exception:
+                    pass
+                self.app.notify(f"Exported {len(notes)} notes to {out.name}")
+            except Exception:
+                log.exception("Export all failed")
+                self.app.notify("Export failed — see log.", severity="error")
+
     async def _fetch_url(self, url: str | None, notes_dir: Path) -> None:
         if not url:
             return
@@ -256,7 +481,10 @@ class ResearchProjectScreen(BaseProjectScreen):
             ui_log = self.query_one("#output-log", Log)
         except Exception:
             return
-        ui_log.write_line(f"$ GET {url}")
+        try:
+            ui_log.write_line(f"$ GET {url}")
+        except Exception:
+            return
         try:
             async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
                 resp = await client.get(url)
@@ -294,21 +522,3 @@ class ResearchProjectScreen(BaseProjectScreen):
             pass
         self.app.notify(f"Fetched and saved: {dest.name}", severity="information")
         self.run_worker(self._populate_content())
-
-    async def _export_all(self, notes_dir: Path) -> None:
-        from textual.widgets import Log as _Log
-        ui_log = self.query_one("#output-log", _Log)
-        notes = sorted(notes_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if not notes:
-            self.app.notify("No notes to export.", severity="warning")
-            return
-        out = notes_dir / "export-all.md"
-        try:
-            parts = [await asyncio.to_thread(n.read_text, errors="replace") for n in notes]
-            combined = "\n\n---\n\n".join(parts)
-            await asyncio.to_thread(out.write_text, combined)
-            ui_log.write_line(f"✓ Exported {len(notes)} notes → {out.name}")
-            self.app.notify(f"Exported {len(notes)} notes to {out.name}")
-        except Exception:
-            log.exception("Export all failed")
-            self.app.notify("Export failed — see log.", severity="error")

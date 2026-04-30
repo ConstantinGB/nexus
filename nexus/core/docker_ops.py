@@ -59,6 +59,35 @@ async def pull_image(image: str) -> AsyncIterator[str]:
         raise DockerError(f"docker pull exited with code {proc.returncode}")
 
 
+async def get_restart_policy(name: str) -> str:
+    """Return the current restart policy name for a container, or 'no' if unknown."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "inspect", "--format", "{{.HostConfig.RestartPolicy.Name}}", name,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return "no"
+        return stdout.decode().strip() or "no"
+    except Exception:
+        return "no"
+
+
+async def set_restart_policy(name: str, policy: str) -> None:
+    """Apply a restart policy to an existing container via docker update."""
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "update", f"--restart={policy}", name,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        msg = stderr.decode(errors="replace").strip()
+        raise DockerError(msg or f"docker update failed (code {proc.returncode})")
+
+
 async def run_container(
     name: str,
     image: str,
@@ -66,6 +95,7 @@ async def run_container(
     volumes: dict[str, str],
     env: dict[str, str],
     extra_args: list[str],
+    restart_policy: str = "no",
 ) -> None:
     """Start a detached container. Raises DockerError on failure."""
     status = await container_status(name)
@@ -74,7 +104,7 @@ async def run_container(
     if status != "not_found":
         await _remove(name)
 
-    args = ["docker", "run", "-d", "--name", name]
+    args = ["docker", "run", "-d", f"--restart={restart_policy}", "--name", name]
     for host_port, container_port in ports.items():
         args += ["-p", f"{host_port}:{container_port}"]
     for host_path, container_path in volumes.items():
