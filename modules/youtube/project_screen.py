@@ -16,16 +16,16 @@ from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
 log = get("youtube.project_screen")
 
 _VIDEO_QUALITY_OPTS = [
-    ("best", "Best"),
-    ("2160", "4K"),
-    ("1080", "1080p"),
-    ("720",  "720p"),
-    ("480",  "480p"),
-    ("360",  "360p"),
+    ("Best",  "best"),
+    ("4K",    "2160"),
+    ("1080p", "1080"),
+    ("720p",  "720"),
+    ("480p",  "480"),
+    ("360p",  "360"),
 ]
-_VIDEO_FORMAT_OPTS = [("mp4", "MP4"), ("mkv", "MKV"), ("webm", "WebM")]
-_AUDIO_FORMAT_OPTS = [("mp3", "MP3"), ("m4a", "M4A"), ("opus", "Opus"), ("flac", "FLAC")]
-_AUDIO_QUALITY_OPTS = [("320", "320k"), ("192", "192k"), ("128", "128k")]
+_VIDEO_FORMAT_OPTS  = [("MP4",  "mp4"),  ("MKV",  "mkv"),  ("WebM", "webm")]
+_AUDIO_FORMAT_OPTS  = [("MP3",  "mp3"),  ("M4A",  "m4a"),  ("Opus", "opus"),  ("FLAC", "flac")]
+_AUDIO_QUALITY_OPTS = [("320k", "320"),  ("192k", "192"),  ("128k", "128")]
 
 
 def _extract_video_id(url: str) -> str | None:

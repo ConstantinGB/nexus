@@ -65,7 +65,8 @@ class _DepSpec:
     apt:     str | None = None
     dnf:     str | None = None
     pacman:  str | None = None
-    special: str | None = None  # overrides all PMs (e.g. ollama curl script)
+    special: str | None = None   # overrides all PMs (e.g. ollama curl script)
+    pip_pkg: str | None = None   # if set, check via importlib instead of shutil.which
 
     def install_cmd(self) -> str | None:
         if self.special:
@@ -119,6 +120,9 @@ _MODULE_DEPS: list[_DepSpec] = [
     _DepSpec("security", "dnscrypt-proxy",  "dnscrypt-proxy",           apt="dnscrypt-proxy",     dnf="dnscrypt-proxy",     pacman="dnscrypt-proxy"),
     _DepSpec("security", "macchanger",      "macchanger",               apt="macchanger",         dnf="macchanger",         pacman="macchanger"),
     _DepSpec("security", "torsocks",        "torsocks",                 apt="torsocks",           dnf="torsocks",           pacman="torsocks"),
+    _DepSpec("youtube",  "ffmpeg",          "ffmpeg (video conversion)", apt="ffmpeg",             dnf="ffmpeg",             pacman="ffmpeg"),
+    _DepSpec("youtube",  "yt-dlp",          "yt-dlp (downloader)",      special="uv pip install yt-dlp",          pip_pkg="yt_dlp"),
+    _DepSpec("youtube",  "faster-whisper",  "faster-whisper (transcription)", special="uv pip install faster-whisper", pip_pkg="faster_whisper"),
 ]
 
 
@@ -559,7 +563,11 @@ class SettingsScreen(Screen):
                         if dep.module not in seen_modules:
                             seen_modules.add(dep.module)
                             yield Label(dep.module.upper(), classes="mod-group-label")
-                        present = shutil.which(dep.binary) is not None
+                        if dep.pip_pkg:
+                            import importlib.util
+                            present = importlib.util.find_spec(dep.pip_pkg) is not None
+                        else:
+                            present = shutil.which(dep.binary) is not None
                         status_cls  = "dep-status-ok"   if present else "dep-status-miss"
                         status_text = "✓ installed"     if present else "✗ missing"
                         btn_id = f"btn-install-{dep.binary.replace('-', '_')}"
