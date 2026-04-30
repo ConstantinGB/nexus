@@ -31,6 +31,7 @@ _REGISTRY: list[ModuleInfo] = [
     ModuleInfo("backup",    "Backup",    "Encrypted, deduplicated backups via restic — local, NAS (SFTP), or NFS.",      ["system", "backup"], system=True),
     ModuleInfo("security",  "Security",  "Firewall, VPN, DNS privacy and system hardening.",                              ["security", "privacy", "network"]),
     ModuleInfo("promptopt", "Prompt Opt", "Optimize and rewrite prompts for AI clarity, instructions, or image generation.", ["ai", "tools"]),
+    ModuleInfo("youtube",   "YouTube",    "Download videos, audio and transcripts from YouTube.",                            ["media", "download"]),
 ]
 
 _REGISTRY_BY_ID: dict[str, ModuleInfo] = {m.id: m for m in _REGISTRY}
@@ -55,6 +56,7 @@ MODULE_PREFIX: dict[str, str] = {
     "sdforge":  "sdf",
     "security": "sec",
     "promptopt": "pro",
+    "youtube":   "ytb",
 }
 
 
@@ -85,6 +87,9 @@ def needs_setup(project) -> bool:
     if project.module == "sdforge":
         cfg = load_project_config(project.slug)
         return not cfg.get("sdforge", {}).get("setup_done", False)
+    if project.module == "youtube":
+        cfg = load_project_config(project.slug)
+        return not cfg.get("youtube", {}).get("configured", False)
     return False
 
 
@@ -102,6 +107,9 @@ def get_setup_screen(project):
     if project.module == "sdforge":
         from modules.sdforge.setup_screen import SDForgeSetupScreen
         return SDForgeSetupScreen(project)
+    if project.module == "youtube":
+        from modules.youtube.project_screen import YouTubeProjectScreen
+        return YouTubeProjectScreen(project)
     return None
 
 
@@ -164,4 +172,7 @@ def get_project_screen(project):
     if project.module == "promptopt":
         from modules.promptopt.project_screen import PromptOptProjectScreen
         return PromptOptProjectScreen(project)
+    if project.module == "youtube":
+        from modules.youtube.project_screen import YouTubeProjectScreen
+        return YouTubeProjectScreen(project)
     return None
