@@ -377,12 +377,14 @@ class ResearchProjectScreen(BaseProjectScreen):
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
-            err = stderr.decode(errors="replace")
+            err = stderr.decode(errors="replace").strip()
+            log.error("pandoc PDF export failed for %s: %s", note_path, err)
             try:
                 ui_log.write_line(f"✗ pandoc: {err}")
             except Exception:
                 pass
-            self.app.notify("PDF export failed — see log.", severity="error")
+            hint = " (install texlive-latex-recommended)" if ".sty' not found" in err else ""
+            self.app.notify(f"PDF export failed{hint}: {err[:100]}", severity="error")
             return
         try:
             ui_log.write_line(f"✓ {out.name}")
@@ -443,12 +445,14 @@ class ResearchProjectScreen(BaseProjectScreen):
                     except OSError:
                         pass
                 if proc.returncode != 0:
-                    err = stderr.decode(errors="replace")
+                    err = stderr.decode(errors="replace").strip()
+                    log.error("pandoc export-all PDF failed: %s", err)
                     try:
                         ui_log.write_line(f"✗ pandoc: {err}")
                     except Exception:
                         pass
-                    self.app.notify("PDF export failed — see log.", severity="error")
+                    hint = " (install texlive-latex-recommended)" if ".sty' not found" in err else ""
+                    self.app.notify(f"PDF export failed{hint}: {err[:100]}", severity="error")
                     return
                 try:
                     ui_log.write_line(f"✓ Exported {len(notes)} notes → {out.name}")
