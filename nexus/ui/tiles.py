@@ -185,6 +185,17 @@ class ProjectTile(Widget):
         if event.key == "enter":
             event.stop()
             self._open()
+        elif event.key == "delete":
+            event.stop()
+            self.app.push_screen(
+                ConfirmDeleteModal(self.project.name),
+                self._on_delete_confirmed,
+            )
+        elif event.key in ("up", "down", "left", "right"):
+            grid = self.parent
+            if isinstance(grid, TileGrid):
+                event.stop()
+                grid._navigate(event.key)
 
 
 # ── Add-project tile ──────────────────────────────────────────────────────────
@@ -237,6 +248,11 @@ class AddProjectTile(Widget):
         if event.key == "enter":
             event.stop()
             self._open()
+        elif event.key in ("up", "down", "left", "right"):
+            grid = self.parent
+            if isinstance(grid, TileGrid):
+                event.stop()
+                grid._navigate(event.key)
 
 
 # ── Settings tile ─────────────────────────────────────────────────────────────
@@ -286,18 +302,19 @@ class SettingsTile(Widget):
         if event.key == "enter":
             event.stop()
             self._open()
+        elif event.key in ("up", "down", "left", "right"):
+            grid = self.parent
+            if isinstance(grid, TileGrid):
+                event.stop()
+                grid._navigate(event.key)
 
 
 # ── Tile grid ─────────────────────────────────────────────────────────────────
 
-class TileGrid(ScrollableContainer):
-    BINDINGS = [
-        ("up",    "focus_previous", "Up"),
-        ("left",  "focus_previous", "Left"),
-        ("down",  "focus_next",     "Down"),
-        ("right", "focus_next",     "Right"),
-    ]
+_GRID_COLS = 3
 
+
+class TileGrid(ScrollableContainer):
     DEFAULT_CSS = """
     TileGrid {
         layout: grid;
@@ -307,6 +324,31 @@ class TileGrid(ScrollableContainer):
         height: 1fr;
     }
     """
+
+    def _focusable_tiles(self) -> list:
+        return [c for c in self.children
+                if isinstance(c, (ProjectTile, AddProjectTile, SettingsTile))]
+
+    def _navigate(self, direction: str) -> None:
+        tiles = self._focusable_tiles()
+        if not tiles:
+            return
+        focused = self.app.focused
+        if focused not in tiles:
+            tiles[0].focus()
+            return
+        idx = tiles.index(focused)
+        if direction == "left":
+            target = max(0, idx - 1)
+        elif direction == "right":
+            target = min(len(tiles) - 1, idx + 1)
+        elif direction == "up":
+            target = max(0, idx - _GRID_COLS)
+        elif direction == "down":
+            target = min(len(tiles) - 1, idx + _GRID_COLS)
+        else:
+            return
+        tiles[target].focus()
 
     def compose(self) -> ComposeResult:
         for project in list_projects():

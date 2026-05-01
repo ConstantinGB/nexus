@@ -263,7 +263,11 @@ class BaseProjectScreen(Screen):
     SETUP_FIELDS:     list[dict]             = []   # {"id", "label", "placeholder", "optional"?, "password"?}
     REQUIRED_BINARIES: list[tuple[str, str]] = []   # (binary, display_name)
 
-    BINDINGS = [("escape", "dismiss", "Back")]
+    BINDINGS = [
+        ("escape",   "dismiss",     "Back"),
+        ("pageup",   "scroll_up",   "Scroll Up"),
+        ("pagedown", "scroll_down", "Scroll Down"),
+    ]
 
     DEFAULT_CSS = """
     #top-bar {
@@ -720,6 +724,18 @@ class BaseProjectScreen(Screen):
                 pass
         if self._panel_mode in ("claude_code", "bash"):
             self._set_panel_mode("none")
+
+    def action_scroll_up(self) -> None:
+        try:
+            self.query_one("#content-area").scroll_up(20)
+        except Exception:
+            pass
+
+    def action_scroll_down(self) -> None:
+        try:
+            self.query_one("#content-area").scroll_down(20)
+        except Exception:
+            pass
 
     def action_dismiss(self, result=None) -> None:
         from nexus.ui.terminal_widget import Terminal

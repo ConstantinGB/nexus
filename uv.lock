@@ -691,6 +691,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "textual" },
     { name = "textual-terminal" },
+    { name = "wikipedia-api" },
     { name = "youtube-transcript-api" },
     { name = "yt-dlp" },
 ]
@@ -703,6 +704,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "textual", specifier = ">=8.2.4" },
     { name = "textual-terminal", specifier = ">=0.3.0" },
+    { name = "wikipedia-api", specifier = ">=0.6.0" },
     { name = "youtube-transcript-api", specifier = ">=0.6.0" },
     { name = "yt-dlp", specifier = ">=2024.1.1" },
 ]
@@ -1241,6 +1243,15 @@ wheels = [
 ]
 
 [[package]]
+name = "tenacity"
+version = "9.1.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413, upload-time = "2026-02-07T10:45:33.841Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926, upload-time = "2026-02-07T10:45:32.24Z" },
+]
+
+[[package]]
 name = "textual"
 version = "8.2.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1383,6 +1394,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/35/a2/8e3becb46433538a38726c948d3399905a4c7cabd0df578ede5dc51f0ec2/wcwidth-0.6.0.tar.gz", hash = "sha256:cdc4e4262d6ef9a1a57e018384cbeb1208d8abbc64176027e2c2455c81313159", size = 159684, upload-time = "2026-02-06T19:19:40.919Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/68/5a/199c59e0a824a3db2b89c5d2dade7ab5f9624dbf6448dc291b46d5ec94d3/wcwidth-0.6.0-py3-none-any.whl", hash = "sha256:1a3a1e510b553315f8e146c54764f4fb6264ffad731b3d78088cdb1478ffbdad", size = 94189, upload-time = "2026-02-06T19:19:39.646Z" },
+]
+
+[[package]]
+name = "wikipedia-api"
+version = "0.14.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "httpx" },
+    { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/a5/166011c4d24d80a88e466a9ce1beb4d39884569f329dad82aa7d15c001f7/wikipedia_api-0.14.1.tar.gz", hash = "sha256:1a4ac428711f673a983be5676eb6c5fa39130fc5869893923435884e0e2c3c31", size = 141350, upload-time = "2026-04-10T22:38:34.313Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/de/0c66576815650bc74d6fbbdc92d17df906db34043bfc59323a004391c0ed/wikipedia_api-0.14.1-py3-none-any.whl", hash = "sha256:cacfdb953c3802b96605d7ac78ee42dd7fe049f28ed47e632cfe943187b83c2b", size = 129096, upload-time = "2026-04-10T22:38:32.22Z" },
 ]
 
 [[package]]

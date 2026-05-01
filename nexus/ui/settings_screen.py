@@ -196,10 +196,18 @@ class SettingsScreen(Screen):
     .mode-toggle-btn {
         width: 14;
         background: #2D1B4E;
-        color: #00FF88;
         border: solid #3A2260;
         margin-left: 1;
     }
+    .mode-toggle-red {
+        color: #FF4444;
+        border: solid #FF4444;
+    }
+    .mode-toggle-blue {
+        color: #00B4FF;
+        border: solid #00B4FF;
+    }
+    #mode-toggle-spacer { width: 1fr; }
 
     /* Provider detail sections */
     #api-key-section  { height: auto; }
@@ -329,110 +337,81 @@ class SettingsScreen(Screen):
 
         yield Header()
         with TabbedContent():
-            # ── AI tab ────────────────────────────────────────────────────
-            with TabPane("AI Provider", id="tab_ai"):
+            # ── General tab ───────────────────────────────────────────────
+            with TabPane("General", id="tab_general"):
                 with ScrollableContainer():
-
-                    # Provider selector + mode toggle
-                    with Horizontal(id="provider-bar"):
-                        yield Button("Login",   id="btn-provider-login",
-                                     classes="provider-btn")
-                        yield Button("API Key", id="btn-provider-api-key",
-                                     classes="provider-btn")
-                        yield Button("Local",   id="btn-provider-local",
-                                     classes="provider-btn")
-                        toggle_label = "Advanced" if self._model_mode == "basic" else "Basic"
-                        yield Button(toggle_label, id="btn-mode-toggle",
-                                     classes="mode-toggle-btn")
-
-                    # ── Login section ─────────────────────────────────────
-                    with Vertical(id="login-section", classes="setting-section"):
-                        yield Label("Claude.ai Login", classes="section-title")
-                        yield Label(
-                            "Sign in at claude.ai to use your subscription.\n"
-                            "Browser-based OAuth login is not yet supported in the terminal UI.\n"
-                            "Use an API key in the meantime.",
-                            classes="section-desc",
+                    yield Label(
+                        "General settings — more options coming soon.",
+                        classes="hint",
+                    )
+                    with Horizontal(classes="general-row"):
+                        yield Label("Log level", classes="general-label")
+                        yield Label("DEBUG (always)", classes="general-value")
+                    with Horizontal(classes="general-row"):
+                        yield Label("Log location", classes="general-label")
+                        yield Label("logs/nexus.log", classes="general-value")
+                    with Horizontal(classes="general-row"):
+                        yield Label("MCP servers", classes="general-label")
+                        yield Label("Managed via MCP screen (press m)", classes="general-value")
+                    with Horizontal(classes="general-row"):
+                        yield Label("Default AI panel", classes="general-label")
+                        yield Select(
+                            [("Chat (built-in)", "chat"),
+                             ("Claude Code CLI", "claude_code"),
+                             ("None", "none")],
+                            value=self._cfg.get("ai", {}).get("default_panel", "chat"),
+                            id="select-default-panel",
+                            allow_blank=False,
                         )
+                    with Horizontal(id="general-save-bar"):
+                        yield Button("Save", id="btn-general-save", variant="primary")
 
-                    # ── API key section ───────────────────────────────────
-                    with Vertical(id="api-key-section", classes="setting-section"):
-                        yield Label("Anthropic API Key", classes="section-title")
-                        yield Label("API key from console.anthropic.com", classes="hint")
-                        yield Input(
-                            value=api_key,
-                            placeholder="sk-ant-…",
-                            password=True,
-                            id="input-api-key",
-                        )
-                        with Horizontal(id="verify-bar"):
-                            yield Button("Verify", id="btn-verify", variant="default")
-                            yield Label("", id="verify-status", classes="status-pending")
-                        yield Label(
-                            "The key is stored in config/settings.yaml (git-ignored).",
-                            classes="hint",
-                        )
+            # ── Setup tab ─────────────────────────────────────────────────
+            with TabPane("Setup", id="tab_setup"):
+                with ScrollableContainer():
+                    yield Label(
+                        "Install software required by each module. "
+                        "Only 'Install Direct' mode is active; "
+                        "Local and Download modes are coming soon.",
+                        classes="hint",
+                    )
+                    with Horizontal(id="setup-mode-bar"):
+                        yield Button("Install Direct",
+                                     id="btn-setup-direct",
+                                     classes="setup-mode-btn mode-selected")
+                        yield Button("Download + Install",
+                                     id="btn-setup-local",
+                                     classes="setup-mode-btn")
+                        yield Button("Download Only",
+                                     id="btn-setup-download",
+                                     classes="setup-mode-btn")
 
-                    # ── Local section ─────────────────────────────────────
-                    with Vertical(id="local-section", classes="setting-section"):
-                        yield Label("Local Model", classes="section-title")
-                        yield Label("Endpoint URL:", classes="field-label")
-                        yield Input(
-                            value=local_endpoint,
-                            placeholder="http://localhost:11434",
-                            id="input-local-endpoint",
-                        )
-                        yield Label("Server model name (used in /v1/models):",
-                                    classes="field-label")
-                        yield Input(
-                            value=local_model,
-                            placeholder="llama3.2",
-                            id="input-local-model",
-                        )
-                        with Horizontal(id="local-test-bar"):
-                            yield Button("Test Connection", id="btn-local-test")
-                            yield Label("", id="local-test-status", classes="status-pending")
-                        yield Label(
-                            "Compatible with any OpenAI-compatible endpoint (Ollama, LM Studio, …).",
-                            classes="hint",
-                        )
+                    # Group deps by module
+                    seen_modules: set[str] = set()
+                    for dep in _MODULE_DEPS:
+                        if dep.module not in seen_modules:
+                            seen_modules.add(dep.module)
+                            yield Label(dep.module.upper(), classes="mod-group-label")
+                        if dep.pip_pkg:
+                            import importlib.util
+                            present = importlib.util.find_spec(dep.pip_pkg) is not None
+                        else:
+                            present = shutil.which(dep.binary) is not None
+                        status_cls  = "dep-status-ok"   if present else "dep-status-miss"
+                        status_text = "✓ installed"     if present else "✗ missing"
+                        btn_id = f"btn-install-{dep.binary.replace('-', '_')}"
+                        with Horizontal(classes="dep-row"):
+                            yield Label(dep.label, classes="dep-name")
+                            yield Label(status_text, classes=status_cls,
+                                        id=f"dep-status-{dep.binary.replace('-', '_')}")
+                            if dep.install_cmd() is None:
+                                yield Label("manual install",
+                                            classes="dep-status-miss dep-install-btn")
+                            else:
+                                yield Button("Install", id=btn_id,
+                                             classes="dep-install-btn")
 
-                    # ── Model section (Basic / Advanced) ──────────────────
-                    with Vertical(id="model-section", classes="setting-section"):
-                        yield Label("Model", classes="section-title")
-
-                        # Basic: single model input
-                        with Vertical(id="model-basic"):
-                            yield Label("Model name:", classes="field-label")
-                            yield Input(
-                                value=basic_model,
-                                placeholder="claude-sonnet-4-6",
-                                id="input-model",
-                            )
-
-                        # Advanced: per-capability rows
-                        with Vertical(id="model-advanced"):
-                            for cap in _CAPABILITIES:
-                                cap_cfg = models.get(cap, {})
-                                with Horizontal(classes="model-row"):
-                                    yield Checkbox(
-                                        "",
-                                        id=f"cb-{cap}",
-                                        value=cap_cfg.get("enabled", True),
-                                    )
-                                    yield Label(
-                                        _CAP_LABELS[cap],
-                                        classes="model-cap-label",
-                                    )
-                                    yield Input(
-                                        value=cap_cfg.get("model", ""),
-                                        placeholder="model name…",
-                                        id=f"model-{cap}",
-                                    )
-
-                    with Horizontal(id="save-bar"):
-                        yield Button("Save",  id="btn-save",  variant="primary")
-                        yield Button("Close", id="btn-close")
+                    yield Label("", id="setup-log")
 
             # ── System Modules tab ────────────────────────────────────────
             with TabPane("System Modules", id="tab_system"):
@@ -537,81 +516,112 @@ class SettingsScreen(Screen):
                         yield Label("", id="sysmod-save-status",
                                     classes="status-pending")
 
-            # ── Setup tab ─────────────────────────────────────────────────
-            with TabPane("Setup", id="tab_setup"):
+            # ── AI Config tab ──────────────────────────────────────────────
+            with TabPane("AI Config", id="tab_ai"):
                 with ScrollableContainer():
-                    yield Label(
-                        "Install software required by each module. "
-                        "Only 'Install Direct' mode is active; "
-                        "Local and Download modes are coming soon.",
-                        classes="hint",
-                    )
-                    with Horizontal(id="setup-mode-bar"):
-                        yield Button("Install Direct",
-                                     id="btn-setup-direct",
-                                     classes="setup-mode-btn mode-selected")
-                        yield Button("Download + Install",
-                                     id="btn-setup-local",
-                                     classes="setup-mode-btn")
-                        yield Button("Download Only",
-                                     id="btn-setup-download",
-                                     classes="setup-mode-btn")
 
-                    # Group deps by module
-                    seen_modules: set[str] = set()
-                    for dep in _MODULE_DEPS:
-                        if dep.module not in seen_modules:
-                            seen_modules.add(dep.module)
-                            yield Label(dep.module.upper(), classes="mod-group-label")
-                        if dep.pip_pkg:
-                            import importlib.util
-                            present = importlib.util.find_spec(dep.pip_pkg) is not None
-                        else:
-                            present = shutil.which(dep.binary) is not None
-                        status_cls  = "dep-status-ok"   if present else "dep-status-miss"
-                        status_text = "✓ installed"     if present else "✗ missing"
-                        btn_id = f"btn-install-{dep.binary.replace('-', '_')}"
-                        with Horizontal(classes="dep-row"):
-                            yield Label(dep.label, classes="dep-name")
-                            yield Label(status_text, classes=status_cls,
-                                        id=f"dep-status-{dep.binary.replace('-', '_')}")
-                            if dep.install_cmd() is None:
-                                yield Label("manual install",
-                                            classes="dep-status-miss dep-install-btn")
-                            else:
-                                yield Button("Install", id=btn_id,
-                                             classes="dep-install-btn")
+                    # Provider selector + mode toggle
+                    with Horizontal(id="provider-bar"):
+                        yield Button("API Key", id="btn-provider-api-key",
+                                     classes="provider-btn")
+                        yield Button("Local",   id="btn-provider-local",
+                                     classes="provider-btn")
+                        yield Button("Login",   id="btn-provider-login",
+                                     classes="provider-btn")
+                        yield Label("", id="mode-toggle-spacer")
+                        toggle_label = "Advanced" if self._model_mode == "basic" else "Basic"
+                        toggle_cls = "mode-toggle-btn mode-toggle-red" if self._model_mode == "basic" else "mode-toggle-btn mode-toggle-blue"
+                        yield Button(toggle_label, id="btn-mode-toggle",
+                                     classes=toggle_cls)
 
-                    yield Label("", id="setup-log")
-
-            # ── General tab ───────────────────────────────────────────────
-            with TabPane("General", id="tab_general"):
-                with ScrollableContainer():
-                    yield Label(
-                        "General settings — more options coming soon.",
-                        classes="hint",
-                    )
-                    with Horizontal(classes="general-row"):
-                        yield Label("Log level", classes="general-label")
-                        yield Label("DEBUG (always)", classes="general-value")
-                    with Horizontal(classes="general-row"):
-                        yield Label("Log location", classes="general-label")
-                        yield Label("logs/nexus.log", classes="general-value")
-                    with Horizontal(classes="general-row"):
-                        yield Label("MCP servers", classes="general-label")
-                        yield Label("Managed via MCP screen (press m)", classes="general-value")
-                    with Horizontal(classes="general-row"):
-                        yield Label("Default AI panel", classes="general-label")
-                        yield Select(
-                            [("Chat (built-in)", "chat"),
-                             ("Claude Code CLI", "claude_code"),
-                             ("None", "none")],
-                            value=self._cfg.get("ai", {}).get("default_panel", "chat"),
-                            id="select-default-panel",
-                            allow_blank=False,
+                    # ── Login section ─────────────────────────────────────
+                    with Vertical(id="login-section", classes="setting-section"):
+                        yield Label("Claude.ai Login", classes="section-title")
+                        yield Label(
+                            "Sign in at claude.ai to use your subscription.\n"
+                            "Browser-based OAuth login is not yet supported in the terminal UI.\n"
+                            "Use an API key in the meantime.",
+                            classes="section-desc",
                         )
-                    with Horizontal(id="general-save-bar"):
-                        yield Button("Save", id="btn-general-save", variant="primary")
+
+                    # ── API key section ───────────────────────────────────
+                    with Vertical(id="api-key-section", classes="setting-section"):
+                        yield Label("Anthropic API Key", classes="section-title")
+                        yield Label("API key from console.anthropic.com", classes="hint")
+                        yield Input(
+                            value=api_key,
+                            placeholder="sk-ant-…",
+                            password=True,
+                            id="input-api-key",
+                        )
+                        with Horizontal(id="verify-bar"):
+                            yield Button("Verify", id="btn-verify", variant="default")
+                            yield Label("", id="verify-status", classes="status-pending")
+                        yield Label(
+                            "The key is stored in config/settings.yaml (git-ignored).",
+                            classes="hint",
+                        )
+
+                    # ── Local section ─────────────────────────────────────
+                    with Vertical(id="local-section", classes="setting-section"):
+                        yield Label("Local Model", classes="section-title")
+                        yield Label("Endpoint URL:", classes="field-label")
+                        yield Input(
+                            value=local_endpoint,
+                            placeholder="http://localhost:11434",
+                            id="input-local-endpoint",
+                        )
+                        yield Label("Server model name (used in /v1/models):",
+                                    classes="field-label")
+                        yield Input(
+                            value=local_model,
+                            placeholder="llama3.2",
+                            id="input-local-model",
+                        )
+                        with Horizontal(id="local-test-bar"):
+                            yield Button("Test Connection", id="btn-local-test")
+                            yield Label("", id="local-test-status", classes="status-pending")
+                        yield Label(
+                            "Compatible with any OpenAI-compatible endpoint (Ollama, LM Studio, …).",
+                            classes="hint",
+                        )
+
+                    # ── Model section (Basic / Advanced) ──────────────────
+                    with Vertical(id="model-section", classes="setting-section"):
+                        yield Label("Model", classes="section-title")
+
+                        # Basic: single model input
+                        with Vertical(id="model-basic"):
+                            yield Label("Model name:", classes="field-label")
+                            yield Input(
+                                value=basic_model,
+                                placeholder="claude-sonnet-4-6",
+                                id="input-model",
+                            )
+
+                        # Advanced: per-capability rows
+                        with Vertical(id="model-advanced"):
+                            for cap in _CAPABILITIES:
+                                cap_cfg = models.get(cap, {})
+                                with Horizontal(classes="model-row"):
+                                    yield Checkbox(
+                                        "",
+                                        id=f"cb-{cap}",
+                                        value=cap_cfg.get("enabled", True),
+                                    )
+                                    yield Label(
+                                        _CAP_LABELS[cap],
+                                        classes="model-cap-label",
+                                    )
+                                    yield Input(
+                                        value=cap_cfg.get("model", ""),
+                                        placeholder="model name…",
+                                        id=f"model-{cap}",
+                                    )
+
+                    with Horizontal(id="save-bar"):
+                        yield Button("Save",  id="btn-save",  variant="primary")
+                        yield Button("Close", id="btn-close")
 
         yield Footer()
 
@@ -707,6 +717,21 @@ class SettingsScreen(Screen):
             self.query_one("#model-advanced").display = not show_basic
         except Exception:
             pass
+        self._refresh_mode_toggle()
+
+    def _refresh_mode_toggle(self) -> None:
+        try:
+            btn = self.query_one("#btn-mode-toggle", Button)
+            if self._model_mode == "basic":
+                btn.label = "Advanced"
+                btn.remove_class("mode-toggle-blue")
+                btn.add_class("mode-toggle-red")
+            else:
+                btn.label = "Basic"
+                btn.remove_class("mode-toggle-red")
+                btn.add_class("mode-toggle-blue")
+        except Exception:
+            pass
 
     # ── Button handler ────────────────────────────────────────────────────────
 
@@ -728,8 +753,6 @@ class SettingsScreen(Screen):
                 self.call_after_refresh(lambda: self._update_sections("local"))
             elif bid == "btn-mode-toggle":
                 self._model_mode = "advanced" if self._model_mode == "basic" else "basic"
-                new_label = "Advanced" if self._model_mode == "basic" else "Basic"
-                self.query_one("#btn-mode-toggle", Button).label = new_label
                 self.call_after_refresh(self._update_model_section)
             elif bid == "btn-verify":
                 self.run_worker(self._verify_api_key())

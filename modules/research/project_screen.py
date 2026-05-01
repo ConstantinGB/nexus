@@ -8,7 +8,7 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
-from textual.widgets import Label, Button, Log, Checkbox
+from textual.widgets import Label, Button, Log, Checkbox, Input, RadioSet, RadioButton
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.logger import get
@@ -21,6 +21,59 @@ log = get("research.project_screen")
 
 def _slugify(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "note"
+
+
+class SearchQueryDialog(ModalScreen[dict | None]):
+    """Search dialog: query input + source selection (Notes / News / Wiki)."""
+
+    DEFAULT_CSS = """
+    SearchQueryDialog { align: center middle; }
+    #sqd-dialog {
+        background: #2D1B4E; border: solid #00B4FF;
+        padding: 1 2; width: 60; height: auto;
+    }
+    #sqd-title  { color: #00B4FF; text-style: bold; height: 2; }
+    #sqd-input  { margin-bottom: 1; }
+    #sqd-src-lbl { color: #8080AA; height: 1; }
+    #sqd-radio  { height: 5; margin-bottom: 1; }
+    #sqd-btns   { height: 3; }
+    #sqd-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._source = "Notes"
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="sqd-dialog"):
+            yield Label("Search", id="sqd-title")
+            yield Input(placeholder="Search query…", id="sqd-input")
+            yield Label("Search in:", id="sqd-src-lbl")
+            with RadioSet(id="sqd-radio"):
+                yield RadioButton("Notes", value=True)
+                yield RadioButton("News")
+                yield RadioButton("Wiki")
+            with Horizontal(id="sqd-btns"):
+                yield Button("Search", id="sqd-search", variant="primary")
+                yield Button("Cancel", id="sqd-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#sqd-input", Input).focus()
+
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        self._source = str(event.pressed.label)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "sqd-cancel":
+            self.dismiss(None)
+        elif event.button.id == "sqd-search":
+            q = self.query_one("#sqd-input", Input).value.strip()
+            self.dismiss({"query": q, "source": self._source} if q else None)
+
+    def on_input_submitted(self, _: Input.Submitted) -> None:
+        q = self.query_one("#sqd-input", Input).value.strip()
+        self.dismiss({"query": q, "source": self._source} if q else None)
 
 
 def _first_line(path: Path) -> str:
@@ -131,12 +184,14 @@ class ResearchProjectScreen(BaseProjectScreen):
     MODULE_LABEL      = "RESEARCH"
     REQUIRED_BINARIES = [("rg", "ripgrep")]
     SETUP_FIELDS      = [
-        {"id": "topic",     "label": "Research topic",
+        {"id": "topic",       "label": "Research topic",
          "placeholder": "e.g. Machine learning interpretability"},
-        {"id": "notes_dir", "label": "Notes directory",
+        {"id": "notes_dir",   "label": "Notes directory",
          "placeholder": "~/research/notes", "type": "dir"},
-        {"id": "format",    "label": "Note format (markdown / latex)",
+        {"id": "format",      "label": "Note format (markdown / latex)",
          "placeholder": "markdown"},
+        {"id": "news_api_key", "label": "News API key (newsapi.org — leave blank to skip)",
+         "placeholder": "32-char hex key", "optional": True, "password": True},
     ]
 
     DEFAULT_CSS = _screen_css("ResearchProjectScreen") + """
@@ -242,8 +297,8 @@ class ResearchProjectScreen(BaseProjectScreen):
             )
         elif bid == "btn-search":
             self.app.push_screen(
-                InputModal("Search", "Search query:", "keyword"),
-                lambda q: self._do_search(q, notes_dir),
+                SearchQueryDialog(),
+                lambda result: self._dispatch_search(result, notes_dir),
             )
         elif bid == "btn-export-doc":
             if not self._notes:
@@ -293,14 +348,94 @@ class ResearchProjectScreen(BaseProjectScreen):
             if 0 <= idx < len(self._notes):
                 self._open_note(self._notes[idx])
 
-    def _do_search(self, q: str | None, notes_dir: Path) -> None:
-        if not q:
+    def _dispatch_search(self, result: dict | None, notes_dir: Path) -> None:
+        if not result:
             return
+        query = result.get("query", "")
+        source = result.get("source", "Notes")
+        if not query:
+            return
+        if source == "Notes":
+            self._do_search(query, notes_dir)
+        elif source == "News":
+            self.run_worker(self._run_news_search(query, notes_dir))
+        elif source == "Wiki":
+            self.run_worker(self._run_wiki_search(query, notes_dir))
+
+    def _do_search(self, q: str, notes_dir: Path) -> None:
         import shutil
         if not shutil.which("rg"):
             self.app.notify("ripgrep (rg) is not installed — install it to use search.", severity="warning")
             return
         self.run_worker(self._run_cmd(["rg", "-n", q, str(notes_dir)]))
+
+    async def _run_news_search(self, query: str, notes_dir: Path) -> None:
+        from modules.research.api_client import search_news
+        from modules.research.search_results_screen import SearchResultsScreen
+        api_key = (
+            self._mod.get("news_api_key", "")
+            or __import__("os").environ.get("NEWS_API_KEY", "")
+        )
+        if not api_key:
+            self.app.notify(
+                "News API key not configured. Add it via ⚙ Edit → News API key.",
+                severity="warning",
+            )
+            return
+        try:
+            ui_log = self.query_one("#output-log", Log)
+        except Exception:
+            return
+        try:
+            ui_log.write_line(f"$ Searching News: {query!r}…")
+        except Exception:
+            return
+        try:
+            results = await search_news(query, api_key)
+        except Exception as exc:
+            log.exception("News search failed")
+            try:
+                ui_log.write_line(f"✗ {exc}")
+            except Exception:
+                pass
+            self.app.notify(f"News search failed: {exc}", severity="error")
+            return
+        try:
+            ui_log.write_line(f"✓ {len(results)} results")
+        except Exception:
+            pass
+        self.app.push_screen(
+            SearchResultsScreen(results, "News", query, notes_dir, api_key=api_key)
+        )
+
+    async def _run_wiki_search(self, query: str, notes_dir: Path) -> None:
+        from modules.research.api_client import search_wiki
+        from modules.research.search_results_screen import SearchResultsScreen
+        try:
+            ui_log = self.query_one("#output-log", Log)
+        except Exception:
+            return
+        try:
+            ui_log.write_line(f"$ Searching Wikipedia: {query!r}…")
+        except Exception:
+            return
+        try:
+            results = await search_wiki(query)
+        except Exception as exc:
+            log.exception("Wiki search failed")
+            try:
+                ui_log.write_line(f"✗ {exc}")
+            except Exception:
+                pass
+            self.app.notify(f"Wiki search failed: {exc}", severity="error")
+            return
+        try:
+            ui_log.write_line(f"✓ {len(results)} results")
+        except Exception:
+            pass
+        self.app.push_screen(
+            SearchResultsScreen(results, "Wiki", query, notes_dir)
+        )
 
     def _open_note(self, note_path: Path) -> None:
         try:

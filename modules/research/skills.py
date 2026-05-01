@@ -218,3 +218,241 @@ registry.register(
     },
     handler = _research_delete_note,
 )
+
+
+# ---------------------------------------------------------------------------
+# AI helpers
+# ---------------------------------------------------------------------------
+
+async def _ai_process(content: str, system_prompt: str) -> str:
+    from nexus.core.config_manager import is_ai_configured
+    if not is_ai_configured():
+        return json.dumps({"error": "AI not configured"})
+    from nexus.ai.client import AIClient
+    try:
+        result = await AIClient().chat(
+            messages=[{"role": "user", "content": content}],
+            system_prompt=system_prompt,
+            skill_scopes=[],
+        )
+        return json.dumps({"result": result})
+    except Exception as exc:
+        log.exception("AI processing failed")
+        return json.dumps({"error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# research_summarize_note
+# ---------------------------------------------------------------------------
+
+async def _research_summarize_note(args: dict) -> str:
+    slug     = args["project_slug"]
+    filename = args["filename"]
+    d        = _notes_dir(slug)
+    if d is None:
+        return json.dumps({"error": "Notes directory not configured"})
+    if not filename.endswith(".md"):
+        filename += ".md"
+    path = d / filename
+    if not path.resolve().is_relative_to(d.resolve()):
+        return json.dumps({"error": "filename must not escape the notes directory"})
+    if not path.exists():
+        return json.dumps({"error": f"Note not found: {filename}"})
+    content = await asyncio.to_thread(path.read_text, errors="replace")
+    return await _ai_process(
+        content,
+        "Summarize the following research note concisely. Preserve all key facts and findings.",
+    )
+
+
+registry.register(
+    scope       = "research",
+    name        = "research_summarize_note",
+    description = "Summarize a research note file using AI.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "filename":     {"type": "string", "description": "Note filename (with or without .md)"},
+        },
+        "required": ["project_slug", "filename"],
+    },
+    handler = _research_summarize_note,
+)
+
+
+# ---------------------------------------------------------------------------
+# research_clean_note
+# ---------------------------------------------------------------------------
+
+async def _research_clean_note(args: dict) -> str:
+    slug     = args["project_slug"]
+    filename = args["filename"]
+    d        = _notes_dir(slug)
+    if d is None:
+        return json.dumps({"error": "Notes directory not configured"})
+    if not filename.endswith(".md"):
+        filename += ".md"
+    path = d / filename
+    if not path.resolve().is_relative_to(d.resolve()):
+        return json.dumps({"error": "filename must not escape the notes directory"})
+    if not path.exists():
+        return json.dumps({"error": f"Note not found: {filename}"})
+    content = await asyncio.to_thread(path.read_text, errors="replace")
+    result = await _ai_process(
+        content,
+        (
+            "Clean up the following text: remove HTML artifacts, fix broken formatting, "
+            "remove duplicate whitespace, and fix obvious encoding issues. "
+            "Do not change the meaning, facts, or structure. Return the cleaned text only."
+        ),
+    )
+    try:
+        cleaned = json.loads(result).get("result", "")
+        if cleaned:
+            await asyncio.to_thread(path.write_text, cleaned, encoding="utf-8")
+    except Exception:
+        pass
+    return result
+
+
+registry.register(
+    scope       = "research",
+    name        = "research_clean_note",
+    description = "Clean up raw or scraped text in a note (remove HTML artifacts, fix formatting) using AI.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "filename":     {"type": "string", "description": "Note filename (with or without .md)"},
+        },
+        "required": ["project_slug", "filename"],
+    },
+    handler = _research_clean_note,
+)
+
+
+# ---------------------------------------------------------------------------
+# research_rewrite_note
+# ---------------------------------------------------------------------------
+
+async def _research_rewrite_note(args: dict) -> str:
+    slug        = args["project_slug"]
+    filename    = args["filename"]
+    instruction = args.get("instruction", "Improve clarity and readability")
+    d           = _notes_dir(slug)
+    if d is None:
+        return json.dumps({"error": "Notes directory not configured"})
+    if not filename.endswith(".md"):
+        filename += ".md"
+    path = d / filename
+    if not path.resolve().is_relative_to(d.resolve()):
+        return json.dumps({"error": "filename must not escape the notes directory"})
+    if not path.exists():
+        return json.dumps({"error": f"Note not found: {filename}"})
+    content = await asyncio.to_thread(path.read_text, errors="replace")
+    result = await _ai_process(
+        content,
+        (
+            f"Rewrite the following note. Instruction: {instruction}. "
+            "IMPORTANT: Do not alter any facts, data, or conclusions. "
+            "Keep all information exactly as-is — only improve the presentation. "
+            "Return the rewritten note in Markdown."
+        ),
+    )
+    try:
+        rewritten = json.loads(result).get("result", "")
+        if rewritten:
+            await asyncio.to_thread(path.write_text, rewritten, encoding="utf-8")
+    except Exception:
+        pass
+    return result
+
+
+registry.register(
+    scope       = "research",
+    name        = "research_rewrite_note",
+    description = "Rewrite a note for clarity while preserving all facts unchanged.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "filename":     {"type": "string", "description": "Note filename (with or without .md)"},
+            "instruction":  {"type": "string", "description": "Rewrite instruction (default: improve clarity)"},
+        },
+        "required": ["project_slug", "filename"],
+    },
+    handler = _research_rewrite_note,
+)
+
+
+# ---------------------------------------------------------------------------
+# research_search_news
+# ---------------------------------------------------------------------------
+
+async def _research_search_news(args: dict) -> str:
+    slug  = args["project_slug"]
+    query = args["query"]
+    cfg   = load_project_config(slug)
+    api_key = (
+        cfg.get("research", {}).get("news_api_key", "")
+        or __import__("os").environ.get("NEWS_API_KEY", "")
+    )
+    if not api_key:
+        return json.dumps({"error": "News API key not configured for this project"})
+    try:
+        from modules.research.api_client import search_news
+        results = await search_news(query, api_key)
+        return json.dumps({"results": results, "count": len(results)})
+    except Exception as exc:
+        log.exception("research_search_news skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "research",
+    name        = "research_search_news",
+    description = "Search NewsAPI for articles matching a query. Returns up to 10 article metadata records.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "query":        {"type": "string", "description": "News search query"},
+        },
+        "required": ["project_slug", "query"],
+    },
+    handler = _research_search_news,
+)
+
+
+# ---------------------------------------------------------------------------
+# research_search_wiki
+# ---------------------------------------------------------------------------
+
+async def _research_search_wiki(args: dict) -> str:
+    query    = args["query"]
+    language = args.get("language", "en")
+    try:
+        from modules.research.api_client import search_wiki
+        results = await search_wiki(query, language=language)
+        return json.dumps({"results": results, "count": len(results)})
+    except Exception as exc:
+        log.exception("research_search_wiki skill failed")
+        return json.dumps({"error": str(exc)})
+
+
+registry.register(
+    scope       = "research",
+    name        = "research_search_wiki",
+    description = "Search Wikipedia for articles matching a query. Returns titles, summaries, and URLs.",
+    schema      = {
+        "type": "object",
+        "properties": {
+            "project_slug": {"type": "string"},
+            "query":        {"type": "string", "description": "Wikipedia search query"},
+            "language":     {"type": "string", "description": "Wikipedia language code (default: en)"},
+        },
+        "required": ["project_slug", "query"],
+    },
+    handler = _research_search_wiki,
+)

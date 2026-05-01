@@ -13,6 +13,15 @@ from nexus.core.logger import get
 log = get("ui.project_tabs")
 
 
+def _short_name(project: ProjectInfo) -> str:
+    """Strip the module slug prefix (e.g. 'res-') from the display name."""
+    from nexus.core.module_manager import MODULE_PREFIX
+    prefix = MODULE_PREFIX.get(project.module, "")
+    if prefix and project.name.lower().startswith(prefix + "-"):
+        return project.name[len(prefix) + 1:]
+    return project.name
+
+
 class ProjectTabBar(Widget):
     """Thin tab strip shown at the very top of every project screen."""
 
@@ -61,7 +70,7 @@ class ProjectTabBar(Widget):
         active_idx = getattr(self.app, "_active_tab_idx", -1)
         for i, project in enumerate(tabs):
             classes = "project-tab" + (" active-tab" if i == active_idx else "")
-            yield Button(project.name, id=f"ptab-{i}", classes=classes)
+            yield Button(_short_name(project), id=f"ptab-{i}", classes=classes)
         yield Button("+", id="ptab-add", classes="tab-add-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -93,7 +102,7 @@ class ProjectTabBar(Widget):
         buttons = []
         for i, project in enumerate(tabs):
             classes = "project-tab" + (" active-tab" if i == active_idx else "")
-            buttons.append(Button(project.name, id=f"ptab-{i}", classes=classes))
+            buttons.append(Button(_short_name(project), id=f"ptab-{i}", classes=classes))
         buttons.append(Button("+", id="ptab-add", classes="tab-add-btn"))
         if buttons:
             await self.mount(*buttons)
@@ -113,7 +122,10 @@ class ProjectPickerModal(ModalScreen[ProjectInfo | None]):
     .ppm-item    { height: 3; width: 1fr; border: none; background: transparent;
                    color: #8080AA; text-align: left; }
     .ppm-item:hover { background: #2D1B4E; color: #E0E0FF; }
-    #ppm-cancel  { height: 3; margin-top: 1; }
+    #ppm-btns    { height: 3; margin-top: 1; }
+    #ppm-btns Button { margin-right: 1; }
+    #ppm-add-new { background: #1A2E1A; color: #00FF88; border: solid #00FF88; }
+    #ppm-add-new:hover { background: #2A3E2A; }
     """
 
     def compose(self) -> ComposeResult:
@@ -123,11 +135,13 @@ class ProjectPickerModal(ModalScreen[ProjectInfo | None]):
             with ScrollableContainer(id="ppm-list"):
                 for i, p in enumerate(projects):
                     yield Button(
-                        f"{p.name}  [{p.module}]",
+                        f"{_short_name(p)}  [{p.module}]",
                         id=f"ppm-proj-{i}",
                         classes="ppm-item",
                     )
-            yield Button("Cancel", id="ppm-cancel")
+            with Horizontal(id="ppm-btns"):
+                yield Button("Add New Project", id="ppm-add-new")
+                yield Button("Cancel", id="ppm-cancel")
 
     def on_mount(self) -> None:
         self._projects = list_projects()
@@ -137,6 +151,10 @@ class ProjectPickerModal(ModalScreen[ProjectInfo | None]):
         bid = event.button.id or ""
         if bid == "ppm-cancel":
             self.dismiss(None)
+        elif bid == "ppm-add-new":
+            self.dismiss(None)
+            from nexus.ui.add_project_screen import AddProjectScreen
+            self.app.push_screen(AddProjectScreen())
         elif bid.startswith("ppm-proj-"):
             try:
                 idx = int(bid[len("ppm-proj-"):])

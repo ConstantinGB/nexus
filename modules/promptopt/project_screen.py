@@ -1,5 +1,7 @@
 from __future__ import annotations
 import asyncio
+from datetime import datetime
+from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.css.query import NoMatches
@@ -32,15 +34,18 @@ _SYSTEM_PROMPTS = {
 class PromptOptProjectScreen(BaseProjectScreen):
     MODULE_KEY   = "promptopt"
     MODULE_LABEL = "PROMPT OPT"
-    SETUP_FIELDS = []
+    SETUP_FIELDS = [
+        {"id": "save_dir", "label": "Save directory for prompts (optional)",
+         "placeholder": "~/prompts", "type": "dir", "optional": True},
+    ]
 
     DEFAULT_CSS = _screen_css("PromptOptProjectScreen") + """
     PromptOptProjectScreen #mode-row { height: 3; margin-bottom: 1; }
     PromptOptProjectScreen #mode-row Button { margin-right: 1; }
     PromptOptProjectScreen #input-prompt { margin-bottom: 1; }
-    PromptOptProjectScreen #btn-optimize { margin-bottom: 1; width: 16; }
+    PromptOptProjectScreen #opt-btn-row { height: 3; margin-bottom: 1; }
+    PromptOptProjectScreen #opt-btn-row Button { margin-right: 1; }
     PromptOptProjectScreen #output-area { height: 12; margin-bottom: 1; }
-    PromptOptProjectScreen #btn-copy { width: 10; }
     """
 
     _mode: str = "text"
@@ -59,15 +64,19 @@ class PromptOptProjectScreen(BaseProjectScreen):
         await area.remove_children()
         await area.mount(
             Horizontal(
-                Button("Text",    id="btn-mode-text",    variant="primary"),
+                Button("Text",     id="btn-mode-text",    variant="primary"),
                 Button("Instruct", id="btn-mode-instruct"),
-                Button("Image",   id="btn-mode-image"),
+                Button("Image",    id="btn-mode-image"),
                 id="mode-row",
             ),
             Input(placeholder="Enter your prompt here…", id="input-prompt"),
-            Button("Optimize", id="btn-optimize", variant="primary"),
+            Horizontal(
+                Button("Optimize", id="btn-optimize", variant="primary"),
+                Button("Copy",     id="btn-copy",     disabled=True),
+                Button("Save",     id="btn-save-out", disabled=True),
+                id="opt-btn-row",
+            ),
             TextArea(id="output-area"),
-            Button("Copy", id="btn-copy", disabled=True),
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -97,12 +106,15 @@ class PromptOptProjectScreen(BaseProjectScreen):
                 self.app.notify("Copied to clipboard.")
             except Exception:
                 pass
+        elif bid == "btn-save-out":
+            self.run_worker(self._do_save_output())
 
     async def _do_optimize(self) -> None:
         try:
-            input_widget = self.query_one("#input-prompt", Input)
+            input_widget  = self.query_one("#input-prompt", Input)
             output_widget = self.query_one("#output-area", TextArea)
-            copy_btn = self.query_one("#btn-copy", Button)
+            copy_btn      = self.query_one("#btn-copy", Button)
+            save_btn      = self.query_one("#btn-save-out", Button)
         except Exception:
             return
 
@@ -129,8 +141,34 @@ class PromptOptProjectScreen(BaseProjectScreen):
             try:
                 output_widget.load_text(result)
                 copy_btn.disabled = False
+                save_btn.disabled = False
             except Exception:
                 pass
         except Exception:
             log.exception("Optimize failed")
             self.app.notify("Optimization failed — see log.", severity="error")
+
+    async def _do_save_output(self) -> None:
+        try:
+            text = self.query_one("#output-area", TextArea).text
+        except Exception:
+            return
+        if not text.strip():
+            self.app.notify("No output to save.", severity="warning")
+            return
+
+        save_dir_raw = self._mod.get("save_dir", "").strip()
+        if save_dir_raw:
+            save_dir = Path(save_dir_raw).expanduser()
+        else:
+            save_dir = Path(self.project.path)
+
+        try:
+            await asyncio.to_thread(save_dir.mkdir, parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dest = save_dir / f"{ts}.txt"
+            await asyncio.to_thread(dest.write_text, text)
+            self.app.notify(f"Saved: {dest.name}", severity="information")
+        except Exception:
+            log.exception("Failed to save prompt output")
+            self.app.notify("Save failed — see log.", severity="error")

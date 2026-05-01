@@ -11,13 +11,15 @@ log = get_logger("app")
 
 class NexusApp(App):
     TITLE = "NEXUS"
-    SUB_TITLE = "Project Manager"
+    SUB_TITLE = ""
     _docker_containers: set[str] = set()
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("s", "open_settings", "Settings"),
         ("m", "open_mcp", "MCP Servers"),
         ("ctrl+tab", "next_tab", "Next Tab"),
+        ("alt+left",  "prev_tab", "Prev Tab"),
+        ("alt+right", "next_tab", "Next Tab"),
     ]
 
     def __init__(self, open_project: str | None = None, **kwargs) -> None:
@@ -104,6 +106,13 @@ class NexusApp(App):
         current = max(0, min(self._active_tab_idx, len(self._tabs) - 1))
         next_idx = (current + 1) % len(self._tabs)
         self.switch_to_tab(self._tabs[next_idx])
+
+    def action_prev_tab(self) -> None:
+        if len(self._tabs) < 2:
+            return
+        current = max(0, min(self._active_tab_idx, len(self._tabs) - 1))
+        prev_idx = (current - 1) % len(self._tabs)
+        self.switch_to_tab(self._tabs[prev_idx])
 
     # ── Tab management ────────────────────────────────────────────────────────
 
