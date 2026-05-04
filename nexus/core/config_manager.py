@@ -79,7 +79,11 @@ def load_global_config() -> dict:
     merged = _DEFAULT_CONFIG.copy()
     for section, values in data.items():
         if isinstance(values, dict) and isinstance(merged.get(section), dict):
-            merged[section] = {**merged[section], **values}
+            # Null values in the file must not override non-null defaults (e.g. servers: null → {})
+            merged[section] = {
+                k: (v if v is not None else merged[section].get(k))
+                for k, v in {**merged[section], **values}.items()
+            }
         else:
             merged[section] = values
     return merged
@@ -102,15 +106,19 @@ def save_project_config(project_name: str, config: dict) -> None:
     _save_yaml(path, config)
 
 
+def mcp_servers(cfg: dict) -> dict:
+    """Return the MCP servers dict from a config, always a dict (never None)."""
+    return (cfg.get("mcp") or {}).get("servers") or {}
+
+
 def merged_mcp_servers(project_name: str | None = None) -> dict:
     log.debug("merged_mcp_servers: project=%s", project_name)
     global_cfg = load_global_config()
-    servers: dict = dict(global_cfg.get("mcp", {}).get("servers") or {})
+    servers: dict = dict(mcp_servers(global_cfg))
 
     if project_name is not None:
         project_cfg = load_project_config(project_name)
-        mcp = project_cfg.get("mcp", {})
-        servers.update(mcp.get("servers") or {})
+        servers.update(mcp_servers(project_cfg))
         for disabled_id in mcp.get("disabled", []):
             servers.pop(disabled_id, None)
 

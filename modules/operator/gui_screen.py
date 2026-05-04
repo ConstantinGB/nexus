@@ -557,7 +557,3 @@ class GuiScreen(BaseProjectWindow):
         self._notes.refresh()
         self._tasks.refresh()
 
-    def closeEvent(self, event) -> None:
-        if hasattr(self, "_chat"):
-            self._chat.closeEvent(event)
-        super().closeEvent(event)

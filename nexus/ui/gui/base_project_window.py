@@ -58,3 +58,8 @@ class BaseProjectWindow(QMainWindow):
         layout.addWidget(hint)
 
         self.setCentralWidget(container)
+
+    def closeEvent(self, event) -> None:
+        if hasattr(self, "_chat"):
+            self._chat.closeEvent(event)
+        super().closeEvent(event)

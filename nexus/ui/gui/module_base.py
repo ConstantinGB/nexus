@@ -188,7 +188,3 @@ class ModuleGuiBase(BaseProjectWindow):
             "Use the TUI:  uv run nexus",
         )
 
-    def closeEvent(self, event) -> None:
-        if hasattr(self, "_chat"):
-            self._chat.closeEvent(event)
-        super().closeEvent(event)

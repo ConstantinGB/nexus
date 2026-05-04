@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 _SETTINGS_ROOT = Path(__file__).parent.parent.parent.parent
 
-from nexus.core.config_manager import load_global_config, save_global_config
+from nexus.core.config_manager import load_global_config, save_global_config, mcp_servers as _mcp_servers
 from nexus.core.logger import get
 from nexus.ui.gui.theme import GUI_THEMES, GUI_THEME_LABELS, DEFAULT_GUI_THEME
 
@@ -622,7 +622,7 @@ class _MCPTab(QWidget):
         from nexus.core.config_manager import load_global_config
         self._active_list.clear()
         cfg     = load_global_config()
-        servers = cfg.get("mcp", {}).get("servers") or {}
+        servers = _mcp_servers(cfg)
         for sid, scfg in servers.items():
             args_preview = " ".join(scfg.get("args", []))[:40]
             item = QListWidgetItem(f"{sid}  —  {scfg.get('command', '')} {args_preview}")
@@ -644,7 +644,7 @@ class _MCPTab(QWidget):
         self._selected_sid = sid
         from nexus.core.config_manager import load_global_config
         cfg    = load_global_config()
-        scfg   = (cfg.get("mcp", {}).get("servers") or {}).get(sid, {})
+        scfg   = _mcp_servers(cfg).get(sid, {})
         self._edit_command.setText(scfg.get("command", ""))
         self._edit_args.setText(" ".join(scfg.get("args", [])))
         env = scfg.get("env", {})
@@ -678,7 +678,7 @@ class _MCPTab(QWidget):
         from nexus.core.config_manager import load_global_config, save_global_config
         import shlex
         cfg    = load_global_config()
-        scfg   = (cfg.get("mcp", {}).get("servers") or {}).get(self._selected_sid)
+        scfg   = _mcp_servers(cfg).get(self._selected_sid)
         if scfg is None:
             return
         scfg["command"] = self._edit_command.text().strip()
@@ -723,7 +723,7 @@ class _MCPTab(QWidget):
             return
         sid = item.data(Qt.UserRole)
         cfg = load_global_config()
-        (cfg.get("mcp", {}).get("servers") or {}).pop(sid, None)
+        _mcp_servers(cfg).pop(sid, None)
         save_global_config(cfg)
         self._refresh_active()
 
