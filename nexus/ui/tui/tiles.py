@@ -36,10 +36,6 @@ _MODULE_DISPLAY: dict[str, str] = {
 
 
 def _display_name(project: ProjectInfo) -> str:
-    from nexus.core.module_manager import MODULE_PREFIX
-    prefix = MODULE_PREFIX.get(project.module, "")
-    if prefix and project.name.lower().startswith(prefix + "-"):
-        return project.name[len(prefix) + 1:]
     return project.name
 
 
@@ -148,10 +144,17 @@ class ProjectTile(Widget):
             yield Label("", classes="tile-spacer")
             yield Button("✕", id="btn-del")
         yield Label(_display_name(self.project), classes="project-name")
-        yield Label(
-            _MODULE_DISPLAY.get(self.project.module, self.project.module.title()),
-            classes="module-label",
-        )
+        mods = self.project.modules
+        if len(mods) == 1:
+            mod_label = _MODULE_DISPLAY.get(mods[0], mods[0].title())
+        elif len(mods) == 0:
+            mod_label = ""
+        else:
+            shown = [_MODULE_DISPLAY.get(m, m.title()) for m in mods[:3]]
+            mod_label = " · ".join(shown)
+            if len(mods) > 3:
+                mod_label += f" +{len(mods) - 3}"
+        yield Label(mod_label, classes="module-label")
         if self.project.description:
             yield Label(self.project.description, classes="project-desc")
 

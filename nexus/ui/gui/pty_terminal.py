@@ -194,6 +194,7 @@ class PtyTerminalWidget(QWidget):
         self._display.setStyleSheet(
             f"background-color:{_DEFAULT_BG}; color:{_DEFAULT_FG}; border:none;"
         )
+        self._display.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._display.key_pressed.connect(self._forward_key)
         layout.addWidget(self._display)
         self.setFocusProxy(self._display)

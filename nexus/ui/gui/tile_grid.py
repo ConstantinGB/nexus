@@ -12,12 +12,7 @@ from nexus.ui.gui.theme import (
 )
 
 def _display_name(project: ProjectInfo) -> str:
-    from nexus.core.module_manager import MODULE_PREFIX
-    prefix = MODULE_PREFIX.get(project.module, "")
-    name = project.name
-    if prefix and name.lower().startswith(prefix + "-"):
-        name = name[len(prefix) + 1:]
-    return name
+    return project.name
 
 
 _MODULE_COLOURS: dict[str, str] = {
@@ -52,7 +47,8 @@ class _ProjectTile(QFrame):
     def __init__(self, project: ProjectInfo, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._project = project
-        colour        = _module_colour(project.module)
+        first_mod     = project.modules[0] if project.modules else ""
+        colour        = _module_colour(first_mod)
 
         self.setFixedSize(_TILE_W, _TILE_H)
         self.setFrameShape(QFrame.StyledPanel)
@@ -73,7 +69,13 @@ class _ProjectTile(QFrame):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(4)
 
-        badge = QLabel(project.module.upper())
+        if len(project.modules) == 1:
+            badge_text = first_mod.upper()
+        elif len(project.modules) == 0:
+            badge_text = "—"
+        else:
+            badge_text = f"{len(project.modules)} MODULES"
+        badge = QLabel(badge_text)
         badge.setStyleSheet(f"color: {colour}; font-size: 10px; font-weight: bold; background: transparent;")
         badge.setAlignment(Qt.AlignCenter)
         layout.addWidget(badge)

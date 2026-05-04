@@ -1,10 +1,10 @@
 from __future__ import annotations
-import math
 
 from textual.app import ComposeResult
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
+from textual.widget import Widget
 from textual.widgets import Header, Footer, Label, Button
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
@@ -14,6 +14,65 @@ from nexus.ui.tui.base_project_screen import InputModeModal
 
 log = get("ui.project_hub_screen")
 
+
+# ── Module tile ───────────────────────────────────────────────────────────────
+
+class ModuleTile(Widget):
+    """Single module tile — mirrors ProjectTile visual style."""
+
+    can_focus = True
+
+    DEFAULT_CSS = """
+    ModuleTile {
+        border: solid $theme-border;
+        padding: 0 2;
+        margin: 1;
+        height: 7;
+        background: $theme-surface;
+    }
+    ModuleTile:hover  { border: solid $theme-accent2; }
+    ModuleTile:focus  { border: solid $theme-accent2; }
+
+    ModuleTile .mod-name {
+        text-align: center;
+        text-style: bold;
+        color: $theme-text;
+        width: 100%;
+        height: 3;
+        content-align: center middle;
+    }
+    ModuleTile .mod-desc {
+        text-align: center;
+        color: $theme-text-dim;
+        width: 100%;
+        height: 2;
+    }
+    ModuleTile.system .mod-name { color: $theme-text-dim; }
+    """
+
+    def __init__(self, module_id: str, label: str, desc: str,
+                 is_system: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._module_id = module_id
+        self._label = label
+        self._desc = desc
+        if is_system:
+            self.add_class("system")
+
+    def compose(self) -> ComposeResult:
+        yield Label(self._label, classes="mod-name")
+        yield Label(self._desc[:80] if self._desc else "", classes="mod-desc")
+
+    def on_click(self) -> None:
+        self.screen._open_module(self._module_id)  # type: ignore[attr-defined]
+
+    def on_key(self, event) -> None:
+        if event.key == "enter":
+            event.stop()
+            self.screen._open_module(self._module_id)  # type: ignore[attr-defined]
+
+
+# ── Module selector modal ─────────────────────────────────────────────────────
 
 class ModuleSelectorModal(ModalScreen[list[str] | None]):
     """Toggle which modules are active for a project."""
@@ -90,14 +149,16 @@ class ModuleSelectorModal(ModalScreen[list[str] | None]):
                 event.button.add_class("selected-yes")
 
 
+# ── Project hub screen ────────────────────────────────────────────────────────
+
 class ProjectHubScreen(Screen):
-    """Entry point for a project. Shows all active modules as buttons."""
+    """Entry point for a project — shows all active modules as tiles."""
 
     BINDINGS = [
-        ("escape",    "dismiss",   "Home"),
-        ("ctrl+tab",  "next_tab",  "Next Tab"),
-        ("alt+left",  "prev_tab",  "Prev Tab"),
-        ("alt+right", "next_tab",  "Next Tab"),
+        ("escape",    "dismiss",  "Home"),
+        ("ctrl+tab",  "next_tab", "Next Tab"),
+        ("alt+left",  "prev_tab", "Prev Tab"),
+        ("alt+right", "next_tab", "Next Tab"),
     ]
 
     DEFAULT_CSS = """
@@ -112,31 +173,20 @@ class ProjectHubScreen(Screen):
     #hub-project-name { color: $theme-border; text-style: bold; width: 1fr; }
     #hub-project-desc { color: $theme-text-dim; }
 
-    #hub-module-grid {
-        padding: 1 2;
-        height: auto;
+    #hub-tile-grid {
         layout: grid;
-        grid-size: 4;
-        grid-rows: 5;
+        grid-size: 3;
+        grid-rows: 9;
+        padding: 1 2;
+        height: 1fr;
     }
-    .hub-mod-btn {
-        height: 5; border: solid $theme-border-dim;
-        background: $theme-surface;
-        color: $theme-text;
-        margin: 0;
-    }
-    .hub-mod-btn:hover {
-        border: solid $theme-accent2;
-        background: $theme-border-dim;
-    }
-
-    #hub-system-section { padding: 1 2; height: auto; }
-    #hub-system-label { color: $theme-text-dim; text-style: bold; height: 1; margin-bottom: 1; }
-
-    #hub-bottom {
-        height: 3; background: $theme-surface; padding: 0 2;
-        border-top: solid $theme-border-dim;
-        dock: bottom;
+    .hub-section-label {
+        column-span: 3;
+        color: $theme-text-dim;
+        text-style: bold;
+        height: 1;
+        padding: 0 1;
+        margin-top: 1;
     }
     """
 
@@ -154,37 +204,34 @@ class ProjectHubScreen(Screen):
             if self.project.description:
                 yield Label(self.project.description, id="hub-project-desc")
             yield Button("Config", id="hub-btn-config", tooltip="Manage active modules")
-            yield Button("⌨", id="hub-btn-input", classes="panel-btn", tooltip="Open input panel")
+            yield Button("⌨", id="hub-btn-input", classes="panel-btn",
+                         tooltip="Open input panel")
 
-        feature_mods = [mid for mid in self.project.modules if not is_system_module(mid)]
-        system_mods  = [mid for mid in self.project.modules if is_system_module(mid)]
+        feature_mods = [m for m in self.project.modules if not is_system_module(m)]
+        system_mods  = [m for m in self.project.modules if is_system_module(m)]
 
-        with Vertical(id="hub-module-grid"):
+        with ScrollableContainer(id="hub-tile-grid"):
             for mid in feature_mods:
                 info = get_module(mid)
-                label = info.name if info else mid.title()
-                desc  = (info.description[:60] if info else "")
-                yield Button(f"{label}\n{desc}", id=f"hub-mod-{mid}", classes="hub-mod-btn")
-
-        if system_mods:
-            with Vertical(id="hub-system-section"):
-                yield Label("System tools", id="hub-system-label")
-                with Horizontal():
-                    for mid in system_mods:
-                        info = get_module(mid)
-                        label = info.name if info else mid.title()
-                        yield Button(label, id=f"hub-mod-{mid}", classes="hub-mod-btn")
+                yield ModuleTile(
+                    mid,
+                    info.name if info else mid.title(),
+                    info.description if info else "",
+                    id=f"hub-mod-{mid}",
+                )
+            if system_mods:
+                yield Label("System Tools", classes="hub-section-label")
+                for mid in system_mods:
+                    info = get_module(mid)
+                    yield ModuleTile(
+                        mid,
+                        info.name if info else mid.title(),
+                        info.description if info else "",
+                        is_system=True,
+                        id=f"hub-mod-{mid}",
+                    )
 
         yield Footer()
-
-    def on_mount(self) -> None:
-        from nexus.core.module_manager import is_system_module
-        n = sum(1 for m in self.project.modules if not is_system_module(m))
-        rows = max(1, math.ceil(n / 4))
-        try:
-            self.query_one("#hub-module-grid").styles.height = rows * 5 + 2
-        except Exception:
-            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
@@ -193,9 +240,6 @@ class ProjectHubScreen(Screen):
             self.app.push_screen(ModuleSelectorModal(self.project), self._on_modules_updated)
         elif bid == "hub-btn-input":
             self.app.push_screen(InputModeModal(), self._on_input_mode)
-        elif bid.startswith("hub-mod-"):
-            module_id = bid[len("hub-mod-"):]
-            self._open_module(module_id)
 
     def _open_module(self, module_id: str) -> None:
         from nexus.core.module_manager import (
@@ -203,7 +247,6 @@ class ProjectHubScreen(Screen):
             needs_setup_for_module,
             get_setup_screen_for_module,
         )
-        # Check if this specific module needs setup
         if needs_setup_for_module(self.project, module_id):
             screen = get_setup_screen_for_module(self.project, module_id)
             if screen:
@@ -226,10 +269,8 @@ class ProjectHubScreen(Screen):
         self.refresh(recompose=True)
 
     def _on_input_mode(self, mode: str | None) -> None:
-        # Hub screen has no persistent terminal — just notify for now
-        # (modules handle their own terminals when pushed)
         if mode and mode != "none":
-            self.app.notify(f"Open a module first, then use the input button.")
+            self.app.notify("Open a module first, then use its input button.")
 
     def action_dismiss(self, result=None) -> None:
         if hasattr(self.app, "close_project_tab"):
