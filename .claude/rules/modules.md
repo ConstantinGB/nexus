@@ -10,6 +10,9 @@ All modules live under `modules/<id>/`. All skill handlers accept `project_slug`
 
 | Module | Key files | Skills |
 |--------|-----------|--------|
+| **calendar** | project_screen, gui_screen, skills.py (data layer: nexus/core/data/calendar.py) | `calendar_add(title,date,time?,desc?)` · `calendar_list(month?)` · `calendar_delete(event_id)` |
+| **notes** | project_screen, gui_screen, skills.py (data layer: nexus/core/data/notes.py) | `notes_create(title,content?)` · `notes_search(query)` · `notes_get(title)` · `notes_update(title,content)` · `notes_delete(title)` |
+| **tasks** | project_screen, gui_screen, skills.py (data layer: nexus/core/data/tasks.py) | `tasks_add(title,due?)` · `tasks_list(filter?)` · `tasks_complete(task_id)` · `tasks_delete(task_id)` |
 | **git** | setup_screen (6-step wizard), project_screen, git_ops.py, github_api.py | `git_status(repo)` · `git_pull(repo)` · `git_push(repo)` · `git_commit(repo,message)` · `git_log(repo,n)` · `git_clone(url,name?)` · `git_diff(repo,staged)` · `git_stash(repo,action)` |
 | **localai** | setup_screen (5-step AI-generated script), project_screen, hw_detect.py | `localai_run_inference(prompt,negative_prompt?)` |
 | **custom** | project_screen (CLAUDE.md viewer + chat + shell commands) | `custom_run_command(label)` · `custom_ask(question)` |
@@ -29,7 +32,6 @@ All modules live under `modules/<id>/`. All skill handlers accept `project_slug`
 | **security** | project_screen (ufw + nmap) | *(no registered skills — guide via Chat)* |
 | **sdforge** | setup_screen (5-step wizard) + project_screen + api_client.py | `sdforge_txt2img(prompt,…)` |
 | **promptopt** | project_screen (3-mode optimizer, no setup) | `promptopt_optimize(prompt,mode)` |
-| **operator** | project_screen (TUI), gui_screen (PySide6), calendar/notes/todo data layers | `operator_calendar_add/list/delete` · `operator_note_create/search/get/update/delete` · `operator_todo_add/list/complete/delete` |
 | **youtube** | project_screen (video metadata + download) | *(see modules/youtube/skills.py)* |
 
 ## Module Development Conventions

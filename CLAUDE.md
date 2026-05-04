@@ -4,9 +4,9 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project Overview
 
-Nexus is a Python-based personal organiser with a tile-based Textual TUI and an optional PySide6 desktop GUI. It integrates AI (Claude API, local models via OpenAI-compatible endpoints) and connects to external tools via MCP servers. Each project type is a module; multiple instances of the same type are allowed.
+Nexus is a Python-based personal organiser with a tile-based Textual TUI and an optional PySide6 desktop GUI. It integrates AI (Claude API, local models via OpenAI-compatible endpoints) and connects to external tools via MCP servers.
 
-**Design philosophy:** AI is a progressive enhancement — all core modules work without an API key. Never treat AI as a hard dependency.
+**Design philosophy:** Projects are containers of work. Modules are opt-in tools — a project can activate any combination. AI is a progressive enhancement — all core modules work without an API key.
 
 ## Running the App
 
@@ -27,11 +27,15 @@ uv run nexus install-desktop  # install taskbar launcher
 nexus/
   app.py               — entry point (NexusApp TUI + --gui dispatch + skill registration)
   core/
-    config_manager.py  — settings.yaml + per-project config.yaml; is_ai_configured()
-    module_manager.py  — _REGISTRY, needs_setup(), get_setup_screen(), get_project_screen()
+    config_manager.py  — settings.yaml + per-project config.yaml; mcp_servers() helper
+    module_manager.py  — TOML-driven registry; needs_setup(), get_project_screen()
+    project_manager.py — create_project(name, modules), list_projects(), delete_project()
+    data/
+      calendar.py      — CalendarData (shared by calendar module)
+      notes.py         — NotesData (shared by notes module)
+      tasks.py         — TodoData (shared by tasks module)
     mycelium.py        — inter-module event bus (singleton `bus`)
     platform.py        — open_path(), check_binary(), read_clipboard(), write_clipboard()
-    project_manager.py — create_project(), list_projects(), delete_project()
     scheduler.py       — BackupScheduler (asyncio polling, daily/weekly restic)
     logger.py          — RotatingFileHandler → logs/nexus.log; get("name") for child loggers
   ai/
@@ -42,15 +46,23 @@ nexus/
     global_skills.py   — list_projects, run_flow, search_logs
     flow_handlers.py   — five Mycelium cross-module flows; register_flow_handlers()
   ui/
-    tui/               — Textual screens (tiles, settings, mcp, base_project_screen, add_project)
-    gui/               — PySide6 app (app.py, tile_grid.py, chat_panel.py, theme.py, base_project_window.py)
+    tui/
+      project_hub_screen.py — project entry point: module grid + ModuleSelectorModal
+      setup_form.py         — reusable SetupForm widget (used by hub + BaseProjectScreen)
+      base_project_screen.py
+      add_project_screen.py — multi-select feature + system module tiles
+      tiles.py, settings_screen.py, mcp_screen.py, ...
+    gui/
+      project_hub_widget.py — project entry point: icon bar + QStackedWidget + input panel
+      app.py, tile_grid.py, chat_panel.py, theme.py, base_project_window.py, module_base.py
   assets/icons/        — nexus.svg app icon
   scripts/
     install_desktop.py — generates ~/.local/share/applications/nexus.desktop
 modules/
   <id>/
+    module.toml        — metadata: id, label, description, tags, system (bool), prefix
     project_screen.py  — TUI screen (BaseProjectScreen subclass)
-    gui_screen.py      — PySide6 window (GuiScreen, optional)
+    gui_screen.py      — PySide6 widget (GuiScreen, optional)
     setup_screen.py    — setup wizard (if module needs configuration)
     skills.py          — skill registrations
     CLAUDE.template.md — per-project AI context (copied to projects/<slug>/CLAUDE.md)
@@ -63,9 +75,18 @@ docs/drafts/           — dev planning documents (not committed)
 
 ## Module System
 
-`module_manager.py` is the single dispatch point. `_REGISTRY` maps module IDs to `ModuleInfo`. Three functions drive everything: `needs_setup()`, `get_setup_screen()`, `get_project_screen()`.
+Modules are discovered at startup by scanning `modules/*/module.toml`. `module_manager.py` builds `_REGISTRY` (list of `ModuleInfo`), `MODULE_PREFIX` (id → prefix), and `_META` (full toml per module).
 
-To add a module: add `ModuleInfo` to `_REGISTRY`, implement the three conditionals, create `modules/<id>/project_screen.py` subclassing `BaseProjectScreen` with:
+Key helpers:
+
+- `list_feature_modules()` — modules where `system = false`
+- `list_system_modules()` — modules where `system = true` (git, backup, localai, sdforge, security, home, server)
+- `is_system_module(id)` — bool check
+- `get_project_screen(project)` → always returns `ProjectHubScreen(project)`
+- `get_project_screen_for_module(project, module_id)` → loads `modules/<id>/project_screen.py`
+- `needs_setup_for_module(project, module_id)` → checks `module.toml [setup].config_check`
+
+To add a module: create `modules/<id>/module.toml` and `modules/<id>/project_screen.py` subclassing `BaseProjectScreen` with:
 `MODULE_KEY`, `MODULE_LABEL`, `SETUP_FIELDS`, `_compose_action_buttons()`, `_populate_content()`, `_handle_action()`.
 
 **Dual-UI rule:** every new module and every feature change must be reflected in both the TUI (`project_screen.py`) and the GUI (`gui_screen.py`). New modules require a STUB-level `gui_screen.py` at minimum. See `.claude/rules/dual-ui.md` for the full protocol, change-type table, and coverage tracker.
@@ -74,9 +95,11 @@ To add a module: add `ModuleInfo` to `_REGISTRY`, implement the three conditiona
 
 Each project lives at `projects/<slug>/`:
 
-- `config.yaml` — module-specific config + MCP overrides
-- `CLAUDE.md` — per-project AI instructions (copied from module template)
-- Module-specific dirs: `repos/` (git), `outputs/` (localai), `data/` (operator), etc.
+- `config.yaml` — `modules: list[str]` (the active module set) + per-module config + MCP overrides
+- `CLAUDE.md` — per-project AI instructions (copied from the first matching module template)
+- Module data dirs created on project creation: `repos/` (git), `notes/` (research), `data/calendar/` (calendar), `data/notes/` (notes), `data/todo/` (tasks), etc.
+
+`ProjectInfo.modules` is the canonical field. The `.module` property returns `modules[0]` for backward compat.
 
 ## Logging
 

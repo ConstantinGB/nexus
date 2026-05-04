@@ -4,15 +4,17 @@ A personal project manager with a tile-based terminal UI and an optional PySide6
 
 ## Philosophy
 
+Projects are containers of work. Modules are opt-in tools — a project can activate any combination. Create a project, tick the modules you need, and each one reads and writes to that project's directory.
+
 AI is a progressive enhancement — all modules work without an API key. Git, backups, the vault, the server dashboard, the emulator — everything runs offline. Add an Anthropic API key or a local Ollama model and every task gets dramatically better results, but nothing breaks without one.
 
 ## Features
 
 - **Dual interface** — Textual TUI (SSH-friendly, no X11 needed) and PySide6 desktop GUI (`--gui`)
 - **Tile grid** — all projects on one screen; click to open, `✕` to delete with confirmation
-- **19 modules** — each with its own setup wizard, management screen, AI skill set, and `CLAUDE.md` context template
-- **Operator** — AI daily assistant: calendar, notes, and tasks via Claude tool use, with full access to every other module's skills from a single chat
-- **74+ built-in skills** — the AI can act, not just advise: pull repos, create notes, run backups, encrypt files, control services, and more
+- **22 modules** — feature modules (calendar, notes, tasks, journal, research, …) and system tools (git, backup, localai, …); any combination per project
+- **Project hub** — opening a project shows all its active modules as buttons; switch between them without leaving the project
+- **75+ built-in skills** — the AI can act, not just advise: pull repos, create notes, run backups, encrypt files, control services, and more
 - **7 colour themes** — Nexus Legacy, Vaporwave Red/Blue/Green, Midnight Amber, Neon Pink, Terminal Mono; switch live from Settings
 - **MCP integration** — connect filesystem, GitHub, web search, SQLite, and custom MCP servers; their tools inject into every AI call
 - **Per-project AI context** — each project gets a `CLAUDE.md` pre-filled with domain knowledge and setup prompts
@@ -80,29 +82,40 @@ The interactive installer prompts for:
 
 ## Modules
 
+### Feature modules
+
 | Module | Description |
 | ------ | ----------- |
-| **Operator** | AI daily assistant — calendar, notes, tasks via Claude tool use; chat has access to all other module skills |
-| **Git** | Multi-repo manager — clone (SSH/HTTPS), pull/push/commit/diff/stash, branch create/switch/delete, PR links |
-| **Local AI** | Set up and run local models — hardware detection, AI-generated install script, live inference UI, SD model browser |
-| **Custom** | Open-ended AI project — `CLAUDE.md` context viewer, conversational chat, shell command buttons, Claude Code terminal |
-| **Web** | Dev server / build — package manager detection, `package.json` script picker, Stop button, framework auto-detect |
-| **Research** | Markdown notes with YAML frontmatter — list, search, new note, URL export, delete per-note |
-| **Codex** | Zettelkasten knowledge base — frontmatter notes, ripgrep search with context, tag filter, DirectoryTree explorer |
+| **Calendar** | Events and schedules — add, list, delete events per project |
+| **Notes** | Markdown notes — create, search, edit, delete |
+| **Tasks** | To-do list — add, complete, delete tasks |
+| **Research** | Markdown notes with YAML frontmatter — list, search, new note, URL export, delete |
+| **Codex** | Zettelkasten knowledge base — frontmatter notes, ripgrep search with context, tag filter |
 | **Journal** | LaTeX journal — word count per entry, pdflatex compile with error summary, Open PDF |
-| **Game** | Godot project dashboard — scene count, Launch Editor, Run, lint (error/warning count), headless export |
-| **Org** | Plans, Mermaid diagrams, schedules — checkbox completion tracking, Markdown and table templates |
-| **Home** | Home Assistant — ping, REST API calls (token via httpx headers, never in `ps`), YAML config file list |
+| **Org** | Plans, Mermaid diagrams, schedules — checkbox completion tracking, Markdown templates |
+| **Web** | Dev server / build — package manager detection, `package.json` script picker, Stop button |
+| **Game** | Godot project dashboard — scene count, Launch Editor, Run, lint, headless export |
 | **Streaming** | OBS Studio — scene list, Launch OBS, log tail with crash/dropped-frame warnings |
 | **VTube** | Virtual avatar pipeline — camera → openSeeFace tracker → runtime → OBS launch controls |
 | **Emulator** | ROM library by system with counts, Launch RetroArch, per-system ROM picker |
 | **Vault** | GPG, age, VeraCrypt, KeePassXC — key management, encrypt/decrypt, path-containment guard |
-| **Server** | systemd + Docker service dashboard — Start/Stop/Logs/Open URL per service, Import Compose, docker stats |
-| **Backup** | Encrypted, deduplicated backups via restic — snapshot picker, retention config, restore |
-| **SD Forge** | Stable Diffusion via Forge API — txt2img with configurable models, samplers, and parameters |
 | **YouTube** | Video metadata, download video/audio, fetch transcripts via yt-dlp |
-| **Security** | ufw firewall status, nmap scanning, guided security checks via AI chat |
 | **Prompt Opt** | AI prompt optimizer — Text / Instruct / Image (SD tags) modes, Copy button |
+| **Custom** | Open-ended AI project — `CLAUDE.md` context viewer, chat, shell command buttons |
+
+### System tools
+
+These are machine-level integrations — typically one per machine, shared across projects.
+
+| Module | Description |
+| ------ | ----------- |
+| **Git** | Multi-repo manager — clone (SSH/HTTPS), pull/push/commit/diff/stash, branch management |
+| **Backup** | Encrypted, deduplicated backups via restic — snapshot picker, retention config, restore |
+| **Local AI** | Set up and run local models — hardware detection, AI-generated install script, live inference UI |
+| **SD Forge** | Stable Diffusion via Forge API — txt2img with configurable models, samplers, and parameters |
+| **Home** | Home Assistant — ping, REST API calls (token via httpx headers, never in `ps`), YAML config |
+| **Server** | systemd + Docker service dashboard — Start/Stop/Logs/Open URL per service, docker stats |
+| **Security** | ufw firewall status, nmap scanning, guided security checks via AI chat |
 
 ## AI setup
 
@@ -126,7 +139,7 @@ Use **Test Connection** to verify. The local path supports the same tool-use loo
 Skills are built-in tools the AI can call without any configuration. When you open a project the AI gets two layers:
 
 - **Global** — available in every project
-- **Module** — specific to the active project type
+- **Module** — specific to the modules active in the project
 
 ### Global skills
 
@@ -140,7 +153,9 @@ Skills are built-in tools the AI can call without any configuration. When you op
 
 | Module | Skills |
 | ------ | ------ |
-| **Operator** | `operator_calendar_add/list/delete` · `operator_note_create/search/get/update/delete` · `operator_todo_add/list/complete/delete` |
+| **Calendar** | `calendar_add` · `calendar_list` · `calendar_delete` |
+| **Notes** | `notes_create` · `notes_search` · `notes_get` · `notes_update` · `notes_delete` |
+| **Tasks** | `tasks_add` · `tasks_list` · `tasks_complete` · `tasks_delete` |
 | **Git** | `git_status` · `git_pull` · `git_push` · `git_commit` · `git_log` · `git_clone` · `git_diff` · `git_stash` |
 | **Local AI** | `localai_run_inference` |
 | **Custom** | `custom_run_command` · `custom_ask` |

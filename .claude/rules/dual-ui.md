@@ -159,7 +159,9 @@ Update this table whenever a module's coverage level changes.
 
 | Module | GUI Level | Notes |
 | ------ | --------- | ----- |
-| operator | FULL | Calendar tabs, notes, todo, chat, Today's Brief |
+| calendar | STUB | Event list, add/delete; data via nexus/core/data/calendar.py |
+| notes | STUB | Note list, create/search/delete; data via nexus/core/data/notes.py |
+| tasks | STUB | Task list, add/complete/delete; data via nexus/core/data/tasks.py |
 | git | PARTIAL | Repo list, pull/push/commit/status, output log, chat |
 | research | PARTIAL | Note list, new note, search, delete, chat |
 | custom | PARTIAL | Commands from config, CLAUDE.md viewer, open folder |
