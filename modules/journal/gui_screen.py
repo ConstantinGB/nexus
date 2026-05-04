@@ -57,8 +57,8 @@ class GuiScreen(ModuleGuiBase):
         path = Path(journal_dir).expanduser() / f"{title}.md"
         if not path.exists():
             path.write_text(f"# {title}\n\n")
-        from nexus.core.platform import open_path
-        open_path(str(path))
+        from nexus.core.platform import launch
+        launch(str(path))
         self._refresh()
 
     def _do_compile(self) -> None:
@@ -85,5 +85,5 @@ class GuiScreen(ModuleGuiBase):
         if not pdf.exists():
             self._append("[info] PDF not found — compile first.")
             return
-        from nexus.core.platform import open_path
-        open_path(str(pdf))
+        from nexus.core.platform import launch
+        launch(str(pdf))

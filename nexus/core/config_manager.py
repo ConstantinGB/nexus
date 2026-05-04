@@ -105,12 +105,12 @@ def save_project_config(project_name: str, config: dict) -> None:
 def merged_mcp_servers(project_name: str | None = None) -> dict:
     log.debug("merged_mcp_servers: project=%s", project_name)
     global_cfg = load_global_config()
-    servers: dict = dict(global_cfg.get("mcp", {}).get("servers", {}))
+    servers: dict = dict(global_cfg.get("mcp", {}).get("servers") or {})
 
     if project_name is not None:
         project_cfg = load_project_config(project_name)
         mcp = project_cfg.get("mcp", {})
-        servers.update(mcp.get("servers", {}))
+        servers.update(mcp.get("servers") or {})
         for disabled_id in mcp.get("disabled", []):
             servers.pop(disabled_id, None)
 

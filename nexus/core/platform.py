@@ -1,18 +1,61 @@
 from __future__ import annotations
+import logging
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+log = logging.getLogger("nexus.core.platform")
+
+
+def _is_wsl() -> bool:
+    """True when running inside Windows Subsystem for Linux."""
+    try:
+        return "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        return False
+
 
 def open_path(path: str | Path) -> list[str]:
-    """Return the command list to open a file or URL with the system default handler."""
+    """Return the best available command list to open a file, directory, or URL.
+
+    Priority on Linux: xdg-open → wslview → explorer.exe (WSL) → nautilus/dolphin/thunar.
+    Falls back to ["xdg-open", ...] even when not found so callers that stream output
+    through _run_cmd() still display a useful error in the TUI log.
+    """
+    p = str(path)
     if sys.platform == "darwin":
-        return ["open", str(path)]
+        return ["open", p]
     if sys.platform.startswith("win"):
-        return ["start", str(path)]
-    return ["xdg-open", str(path)]
+        return ["cmd", "/c", "start", "", p]
+    # Linux — prefer xdg-open, then WSL helpers, then bare file managers
+    if shutil.which("xdg-open"):
+        return ["xdg-open", p]
+    if _is_wsl():
+        if shutil.which("wslview"):          # wslu package
+            return ["wslview", p]
+        if shutil.which("explorer.exe"):
+            return ["explorer.exe", p]
+    for fm in ("nautilus", "dolphin", "thunar", "nemo", "pcmanfm"):
+        if shutil.which(fm):
+            return [fm, p]
+    return ["xdg-open", p]  # best error message when nothing is found
+
+
+def launch(path: str | Path) -> None:
+    """Open a file, directory, or URL with the system default handler (fire-and-forget).
+
+    Use this from GUI code.  TUI code should use _run_cmd(open_path(path)) instead
+    so errors are visible in the output log.
+    """
+    cmd = open_path(path)
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        log.warning("launch: opener not found: %r (path=%s)", cmd[0], path)
+    except Exception as exc:
+        log.warning("launch: failed to open %s: %s", path, exc)
 
 
 def check_binary(name_or_path: str) -> bool:

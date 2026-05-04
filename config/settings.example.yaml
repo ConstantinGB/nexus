@@ -6,7 +6,7 @@ ai:
   # local_model: "llama3.2"
 
 mcp:
-  servers:
+  servers: {}   # Add MCP servers here (see MCP settings in the app)
     # Example: GitHub MCP server
     # github:
     #   command: npx

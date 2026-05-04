@@ -97,6 +97,57 @@ python_pkg() {
     eval echo "\$_PYTHON_PKG_${PM}"
 }
 
+# ── GUI (PySide6/Qt6) runtime deps ────────────────────────────────────────────
+# PySide6 bundles Qt6 itself, but the XCB platform plugin still needs these
+# system libraries.  libxcb-cursor0 is the most commonly absent on WSL/servers.
+
+install_gui_deps() {
+    _yellow "Installing GUI (Qt6/PySide6) runtime libraries…"
+    case "$PM" in
+        apt)
+            if [ "$MODE" = "local" ]; then
+                pkg_install_local libgl1 libegl1 libxcb-cursor0 libxkbcommon-x11-0 \
+                    libdbus-1-3 libglib2.0-0 libfontconfig1 xdg-utils 2>/dev/null || true
+            else
+                pkg_install libgl1 libegl1 libxcb-cursor0 libxkbcommon-x11-0 \
+                    libdbus-1-3 libglib2.0-0 libfontconfig1 xdg-utils 2>/dev/null \
+                    && _green "Qt6 runtime + xdg-utils OK" \
+                    || _yellow "Some Qt6 libs unavailable — GUI may not start on this system"
+            fi
+            ;;
+        dnf|yum)
+            pkg_install mesa-libGL mesa-libEGL xcb-util-cursor libxkbcommon-x11 \
+                dbus-libs glib2 fontconfig xdg-utils 2>/dev/null \
+                && _green "Qt6 runtime + xdg-utils OK" \
+                || _yellow "Some Qt6 libs unavailable — GUI may not start on this system"
+            ;;
+        pacman)
+            pkg_install mesa libxcb xcb-util-cursor libxkbcommon-x11 \
+                dbus glib2 fontconfig xdg-utils 2>/dev/null \
+                && _green "Qt6 runtime + xdg-utils OK" \
+                || _yellow "Some Qt6 libs unavailable — GUI may not start on this system"
+            ;;
+        *)
+            _yellow "Unknown package manager — install Qt6 runtime libs manually if the GUI does not start"
+            ;;
+    esac
+}
+
+download_gui_deps() {
+    _yellow "Downloading GUI runtime libraries…"
+    case "$PM" in
+        apt)
+            pkg_download libgl1 libegl1 libxcb-cursor0 libxkbcommon-x11-0 \
+                libdbus-1-3 libglib2.0-0 libfontconfig1 xdg-utils 2>/dev/null || true ;;
+        dnf|yum)
+            pkg_download mesa-libGL mesa-libEGL xcb-util-cursor libxkbcommon-x11 \
+                dbus-libs glib2 fontconfig xdg-utils 2>/dev/null || true ;;
+        pacman)
+            pkg_download mesa libxcb xcb-util-cursor libxkbcommon-x11 \
+                dbus glib2 fontconfig xdg-utils 2>/dev/null || true ;;
+    esac
+}
+
 # ── Install uv ────────────────────────────────────────────────────────────────
 
 install_uv() {
@@ -403,6 +454,7 @@ do_download_only() {
     PKG="$(python_pkg)"
     pkg_download $PKG
     curl -Ls https://astral.sh/uv/install.sh -o "$OFFLINE_DIR/uv-installer.sh"
+    download_gui_deps
     run_uv_sync
     if [ "$SCOPE" = "full" ]; then
         download_full_packages
@@ -421,6 +473,7 @@ do_local() {
     fi
     install_python
     install_uv
+    install_gui_deps
     run_uv_sync
     setup_dirs
     if [ "$SCOPE" = "full" ]; then
@@ -443,6 +496,7 @@ do_direct() {
     _bold "Mode: Install Direct (from internet)"
     install_python
     install_uv
+    install_gui_deps
     run_uv_sync
     setup_dirs
     if [ "$SCOPE" = "full" ]; then

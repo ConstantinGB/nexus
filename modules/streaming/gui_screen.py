@@ -73,5 +73,5 @@ class GuiScreen(ModuleGuiBase):
     def _open_config(self) -> None:
         d = self._mod.get("obs_config_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)

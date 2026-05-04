@@ -69,7 +69,7 @@ class GuiScreen(ModuleGuiBase):
         import os
         vault_dir = self._mod.get("vault_dir", "")
         if vault_dir:
-            from nexus.core.platform import open_path
-            open_path(vault_dir)
+            from nexus.core.platform import launch
+            launch(vault_dir)
         else:
             self._append("[error] Vault dir not configured.")

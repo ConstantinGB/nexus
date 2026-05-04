@@ -251,9 +251,16 @@ class NexusGuiApp(QMainWindow):
     # ── Settings ──────────────────────────────────────────────────────────────
 
     def _open_settings(self) -> None:
-        from nexus.ui.gui.settings_dialog import SettingsDialog
-        dlg = SettingsDialog(self)
-        dlg.exec()
+        try:
+            from nexus.ui.gui.settings_dialog import SettingsDialog
+            dlg = SettingsDialog(self)
+            dlg.exec()
+        except Exception as exc:
+            log.exception("Failed to open settings dialog")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Settings Error",
+                                 f"Could not open Settings:\n\n{exc}\n\n"
+                                 "Check the terminal for the full traceback.")
 
     # ── Add project ───────────────────────────────────────────────────────────
 

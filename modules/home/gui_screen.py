@@ -53,8 +53,8 @@ class GuiScreen(ModuleGuiBase):
     def _do_open_config(self) -> None:
         d = self._mod.get("config_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)
         else:
             self._append("[info] Config dir not set.")
 

@@ -65,5 +65,5 @@ class GuiScreen(ModuleGuiBase):
     def _do_open(self) -> None:
         d = self._mod.get("project_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)

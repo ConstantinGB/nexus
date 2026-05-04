@@ -58,13 +58,13 @@ class GuiScreen(ModuleGuiBase):
         if not sel:
             self._append("[info] Select a system from the list first.")
             return
-        from nexus.core.platform import open_path
+        from nexus.core.platform import launch
         rom_dir = self._mod.get("rom_dir", "")
         if rom_dir:
-            open_path(str(Path(rom_dir).expanduser() / sel.text()))
+            launch(str(Path(rom_dir).expanduser() / sel.text()))
 
     def _open_rom_dir(self) -> None:
         d = self._mod.get("rom_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)

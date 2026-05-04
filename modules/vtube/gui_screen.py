@@ -50,7 +50,7 @@ class GuiScreen(ModuleGuiBase):
     def _open_model_dir(self) -> None:
         d = self._mod.get("model_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)
         else:
             self._append("[info] Model dir not configured.")

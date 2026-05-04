@@ -74,17 +74,17 @@ class GuiScreen(ModuleGuiBase):
     def _open_video(self) -> None:
         d = self._mod.get("video_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)
 
     def _open_audio(self) -> None:
         d = self._mod.get("audio_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)
 
     def _open_transcript(self) -> None:
         d = self._mod.get("transcript_dir", "")
         if d:
-            from nexus.core.platform import open_path
-            open_path(d)
+            from nexus.core.platform import launch
+            launch(d)

@@ -1,0 +1,70 @@
+╭─────────────────────────────────────────────────────────────────────────── Traceback (most recent call last) ────────────────────────────────────────────────────────────────────────────╮
+│ /home/constantin/project/nexus/nexus/ui/tui/mcp_screen.py:288 in on_mount                                                                                                                │
+│                                                                                                                                                                                          │
+│   285 │   │   yield Footer()                                                                   ╭────── locals ──────╮                                                                    │
+│   286 │                                                                                        │ self = MCPScreen() │                                                                    │
+│   287 │   def on_mount(self) -> None:                                                          ╰────────────────────╯                                                                    │
+│ ❱ 288 │   │   self.refresh_active()                                                                                                                                                      │
+│   289 │                                                                                                                                                                                  │
+│   290 │   # ── Active tab ────────────────────────────────────────────────────────────                                                                                                   │
+│   291                                                                                                                                                                                    │
+│                                                                                                                                                                                          │
+│ /home/constantin/project/nexus/nexus/ui/tui/mcp_screen.py:293 in refresh_active                                                                                                          │
+│                                                                                                                                                                                          │
+│   290 │   # ── Active tab ────────────────────────────────────────────────────────────         ╭────── locals ──────╮                                                                    │
+│   291 │                                                                                        │ self = MCPScreen() │                                                                    │
+│   292 │   def refresh_active(self) -> None:                                                    ╰────────────────────╯                                                                    │
+│ ❱ 293 │   │   active_servers = merged_mcp_servers()                                                                                                                                      │
+│   294 │   │   n_active  = len(active_servers)                                                                                                                                            │
+│   295 │   │   n_catalog = len(REGISTRY)                                                                                                                                                  │
+│   296                                                                                                                                                                                    │
+│                                                                                                                                                                                          │
+│ /home/constantin/project/nexus/nexus/core/config_manager.py:108 in merged_mcp_servers                                                                                                    │
+│                                                                                                                                                                                          │
+│   105 def merged_mcp_servers(project_name: str | None = None) -> dict:                                                                                                                   │
+│   106 │   log.debug("merged_mcp_servers: project=%s", project_name)                                                                                                                      │
+│   107 │   global_cfg = load_global_config()                                                                                                                                              │
+│ ❱ 108 │   servers: dict = dict(global_cfg.get("mcp", {}).get("servers", {}))                                                                                                             │
+│   109 │                                                                                                                                                                                  │
+│   110 │   if project_name is not None:                                                                                                                                                   │
+│   111 │   │   project_cfg = load_project_config(project_name)                                                                                                                            │
+│                                                                                                                                                                                          │
+│ ╭────────────────────────────────────────────────────────────────── locals ───────────────────────────────────────────────────────────────────╮                                          │
+│ │   global_cfg = {                                                                                                                            │                                          │
+│ │                │   'ai': {                                                                                                                  │                                          │
+│ │                │   │   'provider': 'api_key',                                                                                               │                                          │
+│ │                │   │   'api_key': '',                                                                                                       │                                          │
+│ │                │   │   'local_endpoint': 'http://localhost:11434',                                                                          │                                          │
+│ │                │   │   'local_model': '',                                                                                                   │                                          │
+│ │                │   │   'model_mode': 'basic',                                                                                               │                                          │
+│ │                │   │   'model': '',                                                                                                         │                                          │
+│ │                │   │   'default_panel': 'none',                                                                                             │                                          │
+│ │                │   │   'models': {                                                                                                          │                                          │
+│ │                │   │   │   'coding': {'enabled': True, 'model': ''},                                                                        │                                          │
+│ │                │   │   │   'embedding': {'enabled': False, 'model': ''},                                                                    │                                          │
+│ │                │   │   │   'function_calling': {'enabled': True, 'model': ''},                                                              │                                          │
+│ │                │   │   │   'instruct': {'enabled': True, 'model': ''},                                                                      │                                          │
+│ │                │   │   │   'reasoning': {'enabled': True, 'model': ''},                                                                     │                                          │
+│ │                │   │   │   'stt_tts': {'enabled': False, 'model': ''},                                                                      │                                          │
+│ │                │   │   │   'vision': {'enabled': True, 'model': ''}                                                                         │                                          │
+│ │                │   │   }                                                                                                                    │                                          │
+│ │                │   },                                                                                                                       │                                          │
+│ │                │   'mcp': {'servers': None},                                                                                                │                                          │
+│ │                │   'ui': {'theme': 'neon-pink'},                                                                                            │                                          │
+│ │                │   'system_modules': {                                                                                                      │                                          │
+│ │                │   │   'localai': {'enabled': False, 'endpoint': 'http://localhost:11434', 'model': ''},                                    │                                          │
+│ │                │   │   'backup': {                                                                                                          │                                          │
+│ │                │   │   │   'backend': 'local',                                                                                              │                                          │
+│ │                │   │   │   'enabled': False,                                                                                                │                                          │
+│ │                │   │   │   'password': '',                                                                                                  │                                          │
+│ │                │   │   │   'paths': '',                                                                                                     │                                          │
+│ │                │   │   │   'repo_path': '',                                                                                                 │                                          │
+│ │                │   │   │   'schedule': 'manual'                                                                                             │                                          │
+│ │                │   │   }                                                                                                                    │                                          │
+│ │                │   }                                                                                                                        │                                          │
+│ │                }                                                                                                                            │                                          │
+│ │ project_name = None                                                                                                                         │                                          │
+│ ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+TypeError: 'NoneType' object is not iterable
+

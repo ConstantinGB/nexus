@@ -622,7 +622,7 @@ class _MCPTab(QWidget):
         from nexus.core.config_manager import load_global_config
         self._active_list.clear()
         cfg     = load_global_config()
-        servers = cfg.get("mcp", {}).get("servers", {})
+        servers = cfg.get("mcp", {}).get("servers") or {}
         for sid, scfg in servers.items():
             args_preview = " ".join(scfg.get("args", []))[:40]
             item = QListWidgetItem(f"{sid}  —  {scfg.get('command', '')} {args_preview}")
@@ -644,7 +644,7 @@ class _MCPTab(QWidget):
         self._selected_sid = sid
         from nexus.core.config_manager import load_global_config
         cfg    = load_global_config()
-        scfg   = cfg.get("mcp", {}).get("servers", {}).get(sid, {})
+        scfg   = (cfg.get("mcp", {}).get("servers") or {}).get(sid, {})
         self._edit_command.setText(scfg.get("command", ""))
         self._edit_args.setText(" ".join(scfg.get("args", [])))
         env = scfg.get("env", {})
@@ -678,7 +678,7 @@ class _MCPTab(QWidget):
         from nexus.core.config_manager import load_global_config, save_global_config
         import shlex
         cfg    = load_global_config()
-        scfg   = cfg.get("mcp", {}).get("servers", {}).get(self._selected_sid)
+        scfg   = (cfg.get("mcp", {}).get("servers") or {}).get(self._selected_sid)
         if scfg is None:
             return
         scfg["command"] = self._edit_command.text().strip()
@@ -723,7 +723,7 @@ class _MCPTab(QWidget):
             return
         sid = item.data(Qt.UserRole)
         cfg = load_global_config()
-        cfg.get("mcp", {}).get("servers", {}).pop(sid, None)
+        (cfg.get("mcp", {}).get("servers") or {}).pop(sid, None)
         save_global_config(cfg)
         self._refresh_active()
 
@@ -781,10 +781,10 @@ class _GeneralTab(QWidget):
         QMessageBox.information(self, "Saved", "General settings saved.")
 
     def _open_log_folder(self) -> None:
-        from nexus.core.platform import open_path
+        from nexus.core.platform import launch
         log_dir = _SETTINGS_ROOT / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        open_path(str(log_dir))
+        launch(str(log_dir))
 
 
 # ── Main dialog ───────────────────────────────────────────────────────────────
