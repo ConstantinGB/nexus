@@ -45,7 +45,7 @@ def _load_registry() -> tuple[list[ModuleInfo], dict[str, str], dict[str, dict]]
             system=mod.get("system", False),
         )
         registry.append(info)
-        prefix_map[mod["id"]] = mod["prefix"]
+        prefix_map[mod["id"]] = mod.get("prefix", mod["id"][:3])
         meta_map[mod["id"]] = data  # full toml, including [setup] if present
 
     return registry, prefix_map, meta_map
@@ -59,8 +59,17 @@ def list_modules() -> list[ModuleInfo]:
     return list(_REGISTRY)
 
 
+def list_feature_modules() -> list[ModuleInfo]:
+    return [m for m in _REGISTRY if not m.system]
+
+
 def list_system_modules() -> list[ModuleInfo]:
     return [m for m in _REGISTRY if m.system]
+
+
+def is_system_module(module_id: str) -> bool:
+    m = _REGISTRY_BY_ID.get(module_id)
+    return bool(m and m.system)
 
 
 def get_module(module_id: str) -> ModuleInfo | None:
@@ -79,8 +88,22 @@ def _resolve_config_key(cfg: dict, dot_path: str) -> object:
 
 
 def needs_setup(project) -> bool:
-    """Return True if the project hasn't been configured yet."""
-    setup = _META.get(project.module, {}).get("setup", {})
+    """Return True if ANY module in the project hasn't been configured yet."""
+    for mid in project.modules:
+        setup = _META.get(mid, {}).get("setup", {})
+        config_check = setup.get("config_check")
+        if not config_check:
+            continue
+        from nexus.core.config_manager import load_project_config
+        cfg = load_project_config(project.slug)
+        if not bool(_resolve_config_key(cfg, config_check)):
+            return True
+    return False
+
+
+def needs_setup_for_module(project, module_id: str) -> bool:
+    """Return True if a specific module in the project needs setup."""
+    setup = _META.get(module_id, {}).get("setup", {})
     config_check = setup.get("config_check")
     if not config_check:
         return False
@@ -90,15 +113,25 @@ def needs_setup(project) -> bool:
 
 
 def get_setup_screen(project):
-    """Return the setup Screen instance for a project, or None."""
-    setup = _META.get(project.module, {}).get("setup", {})
+    """Return the setup Screen instance for the FIRST unconfigured module that needs one."""
+    for mid in project.modules:
+        if needs_setup_for_module(project, mid):
+            screen = get_setup_screen_for_module(project, mid)
+            if screen:
+                return screen
+    return None
+
+
+def get_setup_screen_for_module(project, module_id: str):
+    """Return the setup Screen instance for a specific module, or None."""
+    setup = _META.get(module_id, {}).get("setup", {})
 
     if setup.get("has_setup_screen"):
-        mod = importlib.import_module(f"modules.{project.module}.setup_screen")
+        mod = importlib.import_module(f"modules.{module_id}.setup_screen")
         return mod.SetupScreen(project)
 
     if setup.get("use_project_screen"):
-        mod = importlib.import_module(f"modules.{project.module}.project_screen")
+        mod = importlib.import_module(f"modules.{module_id}.project_screen")
         return mod.ProjectScreen(project)
 
     return None
@@ -106,6 +139,9 @@ def get_setup_screen(project):
 
 def get_project_screen(project):
     """Return the main Screen instance for an already-configured project, or None.
+
+    Returns the ProjectHubScreen for multi-module projects, or the single module
+    screen for single-module projects (for backward compat with legacy projects).
 
     Checks projects/<slug>/screen.py first — if it exists and defines ProjectScreen,
     that per-project override is used instead of the module default.
@@ -128,11 +164,28 @@ def get_project_screen(project):
                 project.slug,
             )
 
+    # Use hub screen for all projects (handles both single and multi-module)
     try:
-        mod = importlib.import_module(f"modules.{project.module}.project_screen")
-    except ModuleNotFoundError:
+        from nexus.ui.tui.project_hub_screen import ProjectHubScreen
+        return ProjectHubScreen(project)
+    except Exception:
+        import logging
+        logging.getLogger("nexus.module_manager").exception(
+            "Failed to load ProjectHubScreen for %s — falling back to first module screen",
+            project.slug,
+        )
+
+    # Fallback: first module screen
+    if not project.modules:
         return None
-    cls = getattr(mod, "ProjectScreen", None)
-    if cls is None:
+    return get_project_screen_for_module(project, project.modules[0])
+
+
+def get_project_screen_for_module(project, module_id: str):
+    """Load ProjectScreen for a specific module in a multi-module project."""
+    try:
+        mod = importlib.import_module(f"modules.{module_id}.project_screen")
+        cls = getattr(mod, "ProjectScreen", None)
+        return cls(project) if cls else None
+    except Exception:
         return None
-    return cls(project)

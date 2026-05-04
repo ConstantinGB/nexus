@@ -3,7 +3,7 @@ id = "git"
 label = "Git"
 description = "Manage Git repositories — GitHub, self-hosted, or local."
 tags = ["dev", "vcs"]
-system = false
+system = true
 prefix = "git"
 
 [setup]

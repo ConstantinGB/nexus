@@ -3,5 +3,5 @@ id = "server"
 label = "Server"
 description = "Spin up local servers: Minecraft, web server, mail server, and more."
 tags = ["server", "hosting"]
-system = false
+system = true
 prefix = "srv"

@@ -14,6 +14,7 @@ from nexus.core.config_manager import load_project_config, save_project_config
 from nexus.core.platform import open_path
 from nexus.ui.tui.chat_panel import ChatPanel
 from nexus.ui.tui.dir_picker import DirPickerModal
+from nexus.ui.tui.setup_form import SetupForm
 
 log = get("ui.base_project_screen")
 
@@ -231,7 +232,7 @@ class MissingDepsModal(ModalScreen):
         self._missing = missing
 
     def compose(self) -> ComposeResult:
-        body = "\n".join(f"  • {name}" for name in self._missing)
+        body = "\n".join(f"  - {name}" for name in self._missing)
         with Vertical(id="mdm-dialog"):
             yield Label("Missing Software", id="mdm-title")
             yield Label(
@@ -245,6 +246,44 @@ class MissingDepsModal(ModalScreen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         self.dismiss("settings" if event.button.id == "mdm-settings" else None)
+
+
+class InputModeModal(ModalScreen[str | None]):
+    """Picker for which input panel mode to open."""
+
+    DEFAULT_CSS = """
+    InputModeModal { align: center middle; }
+    #imm-box {
+        background: $theme-surface; border: solid $theme-border;
+        padding: 1 2; width: 32; height: auto;
+    }
+    #imm-title { color: $theme-border; text-style: bold; height: 2; }
+    .imm-opt { width: 1fr; height: 3; margin-bottom: 1; text-align: left; }
+    #imm-cancel { margin-top: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="imm-box"):
+            yield Label("Open input panel", id="imm-title")
+            yield Button("AI Chat",      id="imm-chat",   classes="imm-opt")
+            yield Button("Claude",       id="imm-claude", classes="imm-opt")
+            yield Button("Shell",        id="imm-shell",  classes="imm-opt")
+            yield Button("Close panel",  id="imm-none",   classes="imm-opt")
+            yield Button("Cancel",       id="imm-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        mapping = {
+            "imm-chat":   "chat",
+            "imm-claude": "claude_code",
+            "imm-shell":  "bash",
+            "imm-none":   "none",
+        }
+        bid = event.button.id or ""
+        if bid == "imm-cancel":
+            self.dismiss(None)
+        elif bid in mapping:
+            self.dismiss(mapping[bid])
 
 
 class BaseProjectScreen(Screen):
@@ -296,10 +335,6 @@ class BaseProjectScreen(Screen):
         align: center middle;
         margin: 2 4;
     }
-    #setup-title { color: $theme-border; text-style: bold; height: 2; }
-    #setup-error { color: #FF4444; height: 1; }
-    #setup-btns  { height: 3; margin-top: 1; }
-    #setup-btns Button { margin-right: 1; }
 
     #body-row    { height: 1fr; }
     #main-pane   { width: 1fr; height: 1fr; min-width: 0; }
@@ -409,34 +444,12 @@ class BaseProjectScreen(Screen):
             yield Label(meta, id="project-meta")
             yield Button("📁", id="btn-open-folder", tooltip="Open project folder")
             yield Button("⚙", id="btn-edit-project", tooltip="Edit name & description")
-            yield Button("💬 Chat",  id="btn-panel-chat",   classes="panel-btn")
-            yield Button("⌨ Claude", id="btn-panel-claude", classes="panel-btn")
-            yield Button("$ Shell",  id="btn-panel-bash",   classes="panel-btn")
+            yield Button("⌨", id="btn-panel-input", classes="panel-btn", tooltip="Open input panel")
         with Horizontal(id="action-bar"):
             yield from self._compose_action_buttons()
 
         with Vertical(id="setup-pane"):
-            yield Label(f"Configure — {self.project.name}", id="setup-title")
-            for field in self.SETUP_FIELDS:
-                yield Label(field["label"], classes="field-label")
-                if field.get("type") == "dir":
-                    with Horizontal(classes="setup-field-row"):
-                        yield Input(
-                            placeholder=field.get("placeholder", ""),
-                            id=f"setup-{field['id']}",
-                            password=field.get("password", False),
-                        )
-                        yield Button("Browse…", id=f"btn-browse-{field['id']}",
-                                     classes="browse-btn")
-                else:
-                    yield Input(
-                        placeholder=field.get("placeholder", ""),
-                        id=f"setup-{field['id']}",
-                        password=field.get("password", False),
-                    )
-            yield Label("", id="setup-error")
-            with Horizontal(id="setup-btns"):
-                yield Button("Save", id="btn-save-setup", variant="primary")
+            yield SetupForm(self.SETUP_FIELDS, self.project, self.MODULE_KEY, id="setup-form")
 
         with Horizontal(id="body-row"):
             with Vertical(id="main-pane"):
@@ -477,43 +490,52 @@ class BaseProjectScreen(Screen):
 
         self.app.push_screen(MissingDepsModal(missing), _on_modal_dismiss)
 
+    # ── Message handler for SetupForm ─────────────────────────────────────────
+
+    def on_setup_form_saved(self, event: SetupForm.Saved) -> None:
+        try:
+            extra = self._on_before_save(event.data)
+        except Exception as _e:
+            try:
+                self.query_one("#sf-error", Label).update(str(_e))
+            except Exception:
+                pass
+            return
+        event.data.update(extra)
+        self._save_cfg(event.data)
+        self._reload_screen()
+
     # ── Button dispatcher ─────────────────────────────────────────────────────
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
         try:
-            if bid == "btn-save-setup":
-                self._handle_save_setup()
-            elif bid == "btn-panel-chat":
-                new_mode = "none" if self._panel_mode == "chat" else "chat"
-                self._set_panel_mode(new_mode)
-            elif bid == "btn-panel-claude":
-                if self._panel_mode == "claude_code":
-                    self._set_panel_mode("none")
-                else:
-                    self.run_worker(self._launch_claude())
-            elif bid == "btn-panel-bash":
-                if self._panel_mode == "bash":
-                    self._set_panel_mode("none")
-                else:
-                    self.run_worker(self._launch_bash())
+            if bid == "btn-panel-input":
+                def _apply_mode(mode: str | None) -> None:
+                    if mode is None:
+                        return
+                    if mode == "none":
+                        self._set_panel_mode("none")
+                    elif mode == "chat":
+                        new = "none" if self._panel_mode == "chat" else "chat"
+                        self._set_panel_mode(new)
+                    elif mode == "claude_code":
+                        if self._panel_mode == "claude_code":
+                            self._set_panel_mode("none")
+                        else:
+                            self.run_worker(self._launch_claude())
+                    elif mode == "bash":
+                        if self._panel_mode == "bash":
+                            self._set_panel_mode("none")
+                        else:
+                            self.run_worker(self._launch_bash())
+                self.app.push_screen(InputModeModal(), _apply_mode)
             elif bid == "btn-open-folder":
                 self._open_primary_folder()
             elif bid == "btn-edit-project":
                 self.app.push_screen(
                     EditProjectModal(self.project.name, self.project.description),
                     self._apply_project_edit,
-                )
-            elif bid and bid.startswith("btn-browse-"):
-                field_id = bid[len("btn-browse-"):]
-                try:
-                    inp = self.query_one(f"#setup-{field_id}", Input)
-                    start = inp.value or "~"
-                except NoMatches:
-                    start = "~"
-                self.app.push_screen(
-                    DirPickerModal(start),
-                    lambda p, fid=field_id: self._fill_dir(fid, p),
                 )
             else:
                 self._handle_action(bid)
@@ -537,35 +559,6 @@ class BaseProjectScreen(Screen):
             pass
         self.app.notify("Project updated.", severity="information")
 
-    def _fill_dir(self, field_id: str, path: str | None) -> None:
-        if not path:
-            return
-        try:
-            self.query_one(f"#setup-{field_id}", Input).value = path
-        except NoMatches:
-            pass
-
-    def _handle_save_setup(self) -> None:
-        data: dict = {}
-        for field in self.SETUP_FIELDS:
-            fid = field["id"]
-            val = self.query_one(f"#setup-{fid}", Input).value.strip()
-            if not val and not field.get("optional", False):
-                self.query_one("#setup-error", Label).update(
-                    f"'{field['label']}' is required."
-                )
-                return
-            data[fid] = val
-
-        try:
-            extra = self._on_before_save(data)
-        except Exception as _e:
-            self.query_one("#setup-error", Label).update(str(_e))
-            return
-        data.update(extra)
-        self._save_cfg(data)
-        self._reload_screen()
-
     def _apply_panel_default(self) -> None:
         if not self._is_configured():
             return
@@ -588,7 +581,6 @@ class BaseProjectScreen(Screen):
             except NoMatches:
                 pass
             if not self._is_configured():
-                # hide setup-pane + empty main-pane so panel fills the space
                 try:
                     self.query_one("#setup-pane").display = False
                 except NoMatches:
@@ -625,19 +617,15 @@ class BaseProjectScreen(Screen):
                 self.query_one(wid).display = (mode == active_mode)
             except NoMatches:
                 pass
-        for bid, active_mode in [
-            ("btn-panel-chat",   "chat"),
-            ("btn-panel-claude", "claude_code"),
-            ("btn-panel-bash",   "bash"),
-        ]:
-            try:
-                btn = self.query_one(f"#{bid}", Button)
-                if mode == active_mode:
-                    btn.add_class("panel-btn-active")
-                else:
-                    btn.remove_class("panel-btn-active")
-            except NoMatches:
-                pass
+        # Update the single input button active state
+        try:
+            btn = self.query_one("#btn-panel-input", Button)
+            if mode != "none":
+                btn.add_class("panel-btn-active")
+            else:
+                btn.remove_class("panel-btn-active")
+        except NoMatches:
+            pass
 
     async def _launch_claude(self) -> None:
         import shutil
@@ -788,18 +776,18 @@ class BaseProjectScreen(Screen):
                     break  # screen dismissed mid-stream
             await proc.wait()
             try:
-                ui_log.write_line(f"✓ Exited {proc.returncode}")
+                ui_log.write_line(f"Exited {proc.returncode}")
             except Exception:
                 pass
         except FileNotFoundError:
             try:
-                ui_log.write_line(f"✗ Not found: {cmd[0]}")
+                ui_log.write_line(f"Not found: {cmd[0]}")
                 self.app.notify(f"'{cmd[0]}' not found on PATH.", severity="error")
             except Exception:
                 pass
         except Exception:
             log.exception("Command failed: %s", cmd)
             try:
-                ui_log.write_line("✗ Error — see log.")
+                ui_log.write_line("Error — see log.")
             except Exception:
                 pass

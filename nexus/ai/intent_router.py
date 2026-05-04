@@ -4,7 +4,6 @@ from __future__ import annotations
 _SCOPE_HINTS: dict[str, list[str]] = {
     "calendar":  ["event", "meeting", "appointment", "schedule", "calendar", "remind", "today", "tomorrow"],
     "notes":     ["note", "write", "draft", "document", "record", "memo"],
-    "todo":      ["task", "todo", "do", "complete", "finish", "deadline", "priority"],
     "git":       ["commit", "push", "pull", "branch", "repo", "diff", "stash", "merge", "clone"],
     "research":  ["research", "paper", "find", "search", "analyse", "analyze", "literature", "source"],
     "codex":     ["codex", "knowledge", "zettelkasten", "entry", "concept", "idea", "definition"],
@@ -15,7 +14,7 @@ _SCOPE_HINTS: dict[str, list[str]] = {
     "security":  ["firewall", "vpn", "audit", "nmap", "ports", "fail2ban", "scan", "exploit"],
     "localai":   ["ollama", "local model", "inference", "generate", "stable diffusion", "image gen"],
     "promptopt": ["prompt", "optimize", "improve", "rewrite prompt", "prompt engineer"],
-    "operator":  ["operator", "brief", "summary", "today", "overview"],
+    "tasks":     ["task", "todo", "do", "complete", "finish", "deadline", "priority", "brief", "summary", "today", "overview"],
     "youtube":   ["youtube", "video", "download", "url", "watch"],
     "streaming": ["obs", "stream", "scene", "overlay", "broadcast"],
     "emulator":  ["emulator", "rom", "retroarch", "system", "game", "play"],

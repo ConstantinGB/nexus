@@ -1,0 +1,7 @@
+[module]
+id = "tasks"
+label = "Tasks"
+description = "Manage to-do lists and tasks."
+tags = ["productivity"]
+system = false
+prefix = "tsk"
