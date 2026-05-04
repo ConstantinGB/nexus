@@ -1,0 +1,7 @@
+[module]
+id = "game"
+label = "Game"
+description = "Godot game development environment."
+tags = ["dev", "game"]
+system = false
+prefix = "gam"

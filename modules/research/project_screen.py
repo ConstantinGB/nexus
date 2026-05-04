@@ -13,8 +13,8 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
-from nexus.ui.base_project_screen import BaseProjectScreen, ConfirmModal, InputModal, _screen_css
-from nexus.ui.text_editor_screen import TextEditorScreen
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, ConfirmModal, InputModal, _screen_css
+from nexus.ui.tui.text_editor_screen import TextEditorScreen
 
 log = get("research.project_screen")
 
@@ -179,7 +179,7 @@ class ExportDocModal(ModalScreen[tuple[str, list[Path]] | None]):
         self.dismiss((fmt, checked) if checked else None)
 
 
-class ResearchProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "research"
     MODULE_LABEL      = "RESEARCH"
     REQUIRED_BINARIES = [("rg", "ripgrep")]

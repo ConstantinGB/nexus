@@ -13,7 +13,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
-from nexus.ui.chat_panel import ChatPanel
+from nexus.ui.tui.chat_panel import ChatPanel
 
 log = get("sdforge.project_screen")
 
@@ -132,7 +132,7 @@ class SDForgeModelBrowserModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class SDForgeProjectScreen(Screen):
+class ProjectScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Back")]
 
     DEFAULT_CSS = """
@@ -214,7 +214,7 @@ class SDForgeProjectScreen(Screen):
         model    = self._sdf.get("model", "")
         meta     = endpoint + (f" · {model}" if model else "")
 
-        from nexus.ui.project_tabs import ProjectTabBar
+        from nexus.ui.tui.project_tabs import ProjectTabBar
         yield Header()
         yield ProjectTabBar()
         with Horizontal(id="top-bar"):
@@ -318,7 +318,7 @@ class SDForgeProjectScreen(Screen):
 
     async def _launch_claude(self) -> None:
         import shutil
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
         if not shutil.which("claude"):
             self.app.notify(
                 "'claude' not found on PATH — install Claude Code first.",
@@ -412,7 +412,7 @@ class SDForgeProjectScreen(Screen):
     def _open_docker(self) -> None:
         import re
         import shutil as _shutil
-        from nexus.ui.docker_screen import DockerManagerScreen, DockerContainerConfig
+        from nexus.ui.tui.docker_screen import DockerManagerScreen, DockerContainerConfig
         slug  = self.project.slug
         image = self._sdf.get("docker_image", "ghcr.io/lllyasviel/stable-diffusion-webui-forge:latest")
         vram  = self._sdf.get("vram", "none")

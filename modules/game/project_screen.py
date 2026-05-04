@@ -9,7 +9,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.platform import check_binary
-from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("game.project_screen")
 
@@ -34,7 +34,7 @@ def _read_godot_project(project_path: Path) -> dict:
     return result
 
 
-class GameProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY   = "game"
     MODULE_LABEL = "GAME"
     SETUP_FIELDS = [
@@ -193,7 +193,7 @@ class GameProjectScreen(BaseProjectScreen):
             if not shutil.which(godot_bin):
                 self.app.notify(f"'{godot_bin}' not found on PATH.", severity="error")
                 return
-            from nexus.ui.base_project_screen import InputModal
+            from nexus.ui.tui.base_project_screen import InputModal
             self.app.push_screen(
                 InputModal("Export Game", "Target platform (linux / windows / mac / web):", "linux"),
                 lambda platform: self.run_worker(

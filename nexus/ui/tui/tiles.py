@@ -89,19 +89,19 @@ class ProjectTile(Widget):
 
     DEFAULT_CSS = """
     ProjectTile {
-        border: solid #00B4FF;
+        border: solid $theme-border;
         padding: 0 2;
         margin: 1;
         height: 7;
-        background: #2D1B4E;
+        background: $theme-surface;
     }
     ProjectTile:hover {
-        border: solid #00FF88;
-        background: #3A2260;
+        border: solid $theme-accent2;
+        background: $theme-surface;
     }
     ProjectTile:focus {
-        border: solid #00FF88;
-        background: #3A2260;
+        border: solid $theme-accent2;
+        background: $theme-surface;
     }
 
     ProjectTile #tile-header  { height: 1; }
@@ -117,20 +117,20 @@ class ProjectTile(Widget):
     ProjectTile .project-name {
         text-align: center;
         text-style: bold;
-        color: #E0E0FF;
+        color: $theme-text;
         width: 100%;
         height: 2;
         content-align: center middle;
     }
     ProjectTile .module-label {
         text-align: center;
-        color: #00B4FF;
+        color: $theme-accent;
         width: 100%;
         height: 1;
     }
     ProjectTile .project-desc {
         text-align: center;
-        color: #8080AA;
+        color: $theme-text-dim;
         width: 100%;
         height: 1;
     }
@@ -205,23 +205,23 @@ class AddProjectTile(Widget):
 
     DEFAULT_CSS = """
     AddProjectTile {
-        border: dashed #00FF88;
+        border: dashed $theme-accent2;
         padding: 1 2;
         margin: 1;
         height: 7;
-        background: #1A0A2E;
+        background: $theme-bg;
         align: center middle;
     }
     AddProjectTile:hover {
-        border: solid #00FF88;
-        background: #0A2A1A;
+        border: solid $theme-accent2;
+        background: $theme-bg;
     }
     AddProjectTile:focus {
-        border: solid #00FF88;
-        background: #0A2A1A;
+        border: solid $theme-accent2;
+        background: $theme-bg;
     }
     AddProjectTile .add-label {
-        color: #00FF88;
+        color: $theme-accent2;
         text-style: bold;
         width: 100%;
         text-align: center;
@@ -232,7 +232,7 @@ class AddProjectTile(Widget):
         yield Label("＋  Add Project", classes="add-label")
 
     def _open(self) -> None:
-        from nexus.ui.add_project_screen import AddProjectScreen
+        from nexus.ui.tui.add_project_screen import AddProjectScreen
 
         def on_created(project: ProjectInfo | None) -> None:
             if project:
@@ -262,29 +262,29 @@ class SettingsTile(Widget):
 
     DEFAULT_CSS = """
     SettingsTile {
-        border: dashed #8080AA;
+        border: dashed $theme-text-dim;
         padding: 1 2;
         margin: 1;
         height: 7;
-        background: #1A0A2E;
+        background: $theme-bg;
         align: center middle;
     }
     SettingsTile:hover {
-        border: solid #00B4FF;
-        background: #1A1A3A;
+        border: solid $theme-border;
+        background: $theme-bg;
     }
     SettingsTile:focus {
-        border: solid #00B4FF;
-        background: #1A1A3A;
+        border: solid $theme-border;
+        background: $theme-bg;
     }
     SettingsTile .settings-label {
-        color: #8080AA;
+        color: $theme-text-dim;
         text-style: bold;
         width: 100%;
         text-align: center;
     }
     SettingsTile:hover .settings-label {
-        color: #00B4FF;
+        color: $theme-accent;
     }
     """
 
@@ -292,7 +292,7 @@ class SettingsTile(Widget):
         yield Label("⚙  Settings", classes="settings-label")
 
     def _open(self) -> None:
-        from nexus.ui.settings_screen import SettingsScreen
+        from nexus.ui.tui.settings_screen import SettingsScreen
         self.app.push_screen(SettingsScreen())
 
     def on_click(self) -> None:

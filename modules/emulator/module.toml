@@ -1,0 +1,7 @@
+[module]
+id = "emulator"
+label = "Emulator"
+description = "Retro console emulation — RetroArch, Dolphin, PCSX2, RPCS3, and more."
+tags = ["gaming", "retro"]
+system = false
+prefix = "emu"

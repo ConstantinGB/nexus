@@ -11,7 +11,7 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.platform import open_path
-from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 
 class _ScriptPickerModal(ModalScreen):
@@ -63,7 +63,7 @@ _FRAMEWORK_KEYS = {
 }
 
 
-class WebProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "web"
     MODULE_LABEL      = "WEB"
     REQUIRED_BINARIES = [("node", "Node.js"), ("npm", "npm")]

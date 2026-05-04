@@ -1,0 +1,7 @@
+[module]
+id = "security"
+label = "Security"
+description = "Firewall, VPN, DNS privacy and system hardening."
+tags = ["security", "privacy", "network"]
+system = false
+prefix = "sec"

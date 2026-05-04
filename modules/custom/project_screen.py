@@ -11,46 +11,46 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo
-from nexus.ui.base_project_screen import InputModal
-from nexus.ui.chat_panel import ChatPanel
+from nexus.ui.tui.base_project_screen import InputModal
+from nexus.ui.tui.chat_panel import ChatPanel
 
 log = get("custom.project_screen")
 
 _PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 
 
-class CustomProjectScreen(Screen):
+class ProjectScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Back")]
 
     DEFAULT_CSS = """
-    CustomProjectScreen { background: #1A0A2E; }
-    CustomProjectScreen Header { background: #2D1B4E; color: #00B4FF; }
-    CustomProjectScreen Footer { background: #2D1B4E; color: #00FF88; }
+    ProjectScreen { background: $theme-bg; }
+    ProjectScreen Header { background: $theme-surface; color: $theme-border; }
+    ProjectScreen Footer { background: $theme-surface; color: $theme-accent2; }
 
-    #top-bar       { height: 3; background: #2D1B4E; padding: 0 2;
-                     border-bottom: solid #3A2260; }
-    #project-title { color: #00B4FF; text-style: bold; width: 1fr; }
+    #top-bar       { height: 3; background: $theme-surface; padding: 0 2;
+                     border-bottom: solid $theme-border-dim; }
+    #project-title { color: $theme-border; text-style: bold; width: 1fr; }
     .panel-btn        { margin-left: 1; }
-    .panel-btn-active { border: solid #00FF88; color: #00FF88; }
+    .panel-btn-active { border: solid $theme-accent2; color: $theme-accent2; }
 
     #pane-row      { height: 1fr; }
 
-    #context-pane  { width: 35; border-right: solid #3A2260; display: none; }
-    .pane-title    { color: #00FF88; text-style: bold; height: 1;
-                     background: #2D1B4E; padding: 0 1; }
-    #context-log   { height: 10; background: #130822; }
+    #context-pane  { width: 35; border-right: solid $theme-border-dim; display: block; }
+    .pane-title    { color: $theme-accent2; text-style: bold; height: 1;
+                     background: $theme-surface; padding: 0 1; }
+    #context-log   { height: 10; background: $theme-bg; }
     #file-tree     { height: 1fr; background: #0E0620; }
 
-    CustomProjectScreen ChatPanel { display: block; width: 1fr; border-left: none; }
+    ProjectScreen ChatPanel { display: block; width: 1fr; border-left: none; }
 
     #terminal-panel { width: 1fr; height: 1fr;
-                      border-left: solid #3A2260; display: none; }
+                      border-left: solid $theme-border-dim; display: none; }
 
-    #cmd-bar       { height: 3; background: #2D1B4E;
-                     border-top: solid #3A2260; padding: 0 1; }
+    #cmd-bar       { height: 3; background: $theme-surface;
+                     border-top: solid $theme-border-dim; padding: 0 1; }
     #cmd-bar Button { margin-right: 1; height: 3; }
-    .util-btn      { background: #1A0A2E; color: #8080AA;
-                     border: solid #3A2260; }
+    .util-btn      { background: $theme-bg; color: $theme-text-dim;
+                     border: solid $theme-border-dim; }
     """
 
     def __init__(self, project: ProjectInfo) -> None:
@@ -58,7 +58,7 @@ class CustomProjectScreen(Screen):
         self.project      = project
         self._commands: list[dict] = []
         self._panel_mode: str = "chat"
-        self._context_visible: bool = False
+        self._context_visible: bool = True
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ class CustomProjectScreen(Screen):
     # ── Compose ───────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
-        from nexus.ui.project_tabs import ProjectTabBar
+        from nexus.ui.tui.project_tabs import ProjectTabBar
         self._load()
         yield Header()
         yield ProjectTabBar()
@@ -123,6 +123,13 @@ class CustomProjectScreen(Screen):
     def on_mount(self) -> None:
         self.call_after_refresh(self._init_context)
         self.call_after_refresh(self._apply_panel_default)
+        self.call_after_refresh(self._activate_context_btn)
+
+    def _activate_context_btn(self) -> None:
+        try:
+            self.query_one("#btn-toggle-context", Button).add_class("panel-btn-active")
+        except Exception:
+            pass
 
     def _apply_panel_default(self) -> None:
         from nexus.core.config_manager import load_global_config
@@ -181,7 +188,7 @@ class CustomProjectScreen(Screen):
     def on_directory_tree_file_selected(
         self, event: DirectoryTree.FileSelected
     ) -> None:
-        from nexus.ui.text_editor_screen import TextEditorScreen
+        from nexus.ui.tui.text_editor_screen import TextEditorScreen
         path = event.path
         try:
             content = path.read_text(errors="replace")
@@ -209,7 +216,7 @@ class CustomProjectScreen(Screen):
     def action_dismiss(self, result=None) -> None:
         for tid in ("#claude-terminal", "#bash-terminal"):
             try:
-                from nexus.ui.terminal_widget import Terminal
+                from nexus.ui.tui.terminal_widget import Terminal
                 self.query_one(tid, Terminal).stop()
             except NoMatches:
                 pass
@@ -269,7 +276,7 @@ class CustomProjectScreen(Screen):
 
     async def _launch_claude(self) -> None:
         import shutil
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
 
         if not shutil.which("claude"):
             self.app.notify(
@@ -301,7 +308,7 @@ class CustomProjectScreen(Screen):
 
     async def _launch_bash(self) -> None:
         import shutil
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
 
         shell = shutil.which("bash") or shutil.which("sh")
         if not shell:
@@ -353,7 +360,7 @@ class CustomProjectScreen(Screen):
     # ── Custom commands ───────────────────────────────────────────────────────
 
     async def _run_command(self, cmd: str) -> None:
-        from nexus.ui.chat_panel import ChatPanel
+        from nexus.ui.tui.chat_panel import ChatPanel
         try:
             chat_log = self.query_one(ChatPanel).query_one("#chat-log", RichLog)
         except NoMatches:

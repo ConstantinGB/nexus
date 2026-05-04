@@ -61,7 +61,7 @@ class RepoCheckRow(Horizontal):
         yield Label((self.repo.get("description") or "")[:50], classes="repo-desc")
 
 
-class GitSetupScreen(Screen):
+class SetupScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Cancel")]
 
     DEFAULT_CSS = """

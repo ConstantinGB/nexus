@@ -1,0 +1,11 @@
+[module]
+id = "backup"
+label = "Backup"
+description = "Encrypted, deduplicated backups via restic — local, NAS (SFTP), or NFS."
+tags = ["system", "backup"]
+system = true
+prefix = "bak"
+
+[setup]
+has_setup_screen = true
+config_check = "backup.setup_done"

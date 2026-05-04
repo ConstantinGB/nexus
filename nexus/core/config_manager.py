@@ -31,6 +31,7 @@ _DEFAULT_CONFIG: dict = {
         },
     },
     "mcp": {"servers": {}},
+    "ui": {"theme": "nexus-legacy"},
     "system_modules": {
         "localai": {
             "enabled": False,

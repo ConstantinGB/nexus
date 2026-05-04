@@ -1,0 +1,7 @@
+[module]
+id = "org"
+label = "Org"
+description = "Organize with timetables, diagrams, and workflows."
+tags = ["planning"]
+system = false
+prefix = "org"

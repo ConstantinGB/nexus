@@ -97,7 +97,7 @@ class SetupModelRow(Horizontal):
 # Setup screen
 # ---------------------------------------------------------------------------
 
-class LocalAISetupScreen(Screen):
+class SetupScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Cancel")]
 
     DEFAULT_CSS = """

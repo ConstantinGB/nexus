@@ -1,0 +1,7 @@
+[module]
+id = "home"
+label = "Home"
+description = "Home Assistant setup and automation management."
+tags = ["iot", "home"]
+system = false
+prefix = "hom"

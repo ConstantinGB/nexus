@@ -3,8 +3,8 @@ from textual.widgets import Header, Footer
 
 from nexus.core.logger import setup as setup_logging, get as get_logger
 from nexus.core.platform import read_clipboard, write_clipboard
-from nexus.ui.tiles import TileGrid
-from nexus.ui.mcp_screen import MCPScreen
+from nexus.ui.tui.tiles import TileGrid
+from nexus.ui.tui.mcp_screen import MCPScreen
 
 log = get_logger("app")
 
@@ -17,12 +17,20 @@ class NexusApp(App):
         ("q", "quit", "Quit"),
         ("s", "open_settings", "Settings"),
         ("m", "open_mcp", "MCP Servers"),
+        ("g", "launch_gui", "Launch GUI"),
         ("ctrl+tab", "next_tab", "Next Tab"),
         ("alt+left",  "prev_tab", "Prev Tab"),
         ("alt+right", "next_tab", "Next Tab"),
     ]
 
     def __init__(self, open_project: str | None = None, **kwargs) -> None:
+        from nexus.ui.tui.theme import DEFAULT_THEME
+        from nexus.core.config_manager import load_global_config
+        try:
+            cfg = load_global_config()
+            self._current_theme_name: str = cfg.get("ui", {}).get("theme", DEFAULT_THEME)
+        except Exception:
+            self._current_theme_name = DEFAULT_THEME
         super().__init__(**kwargs)
         self._open_project = open_project
         self._tabs: list = []          # list[ProjectInfo]
@@ -30,18 +38,29 @@ class NexusApp(App):
         self._going_home_for_new_tab: bool = False
 
     DEFAULT_CSS = """
-    Screen {
-        background: #1A0A2E;
-    }
-    Header {
-        background: #2D1B4E;
-        color: #00B4FF;
-    }
-    Footer {
-        background: #2D1B4E;
-        color: #00FF88;
-    }
+    Screen  { background: $theme-bg; }
+    Header  { background: $theme-surface; color: $theme-accent; }
+    Footer  { background: $theme-surface; color: $theme-accent2; }
     """
+
+    def get_css_variables(self) -> dict[str, str]:
+        from nexus.ui.tui.theme import get as _get_theme
+        t = _get_theme(self._current_theme_name)
+        return {
+            **super().get_css_variables(),
+            "theme-bg":         t.bg,
+            "theme-surface":    t.surface,
+            "theme-border":     t.border,
+            "theme-accent":     t.accent,
+            "theme-accent2":    t.accent2,
+            "theme-text":       t.text,
+            "theme-text-dim":   t.text_dim,
+            "theme-border-dim": t.border_dim,
+        }
+
+    def update_theme(self, name: str) -> None:
+        self._current_theme_name = name
+        self.refresh_css()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -93,8 +112,27 @@ class NexusApp(App):
         self._clipboard = text
         write_clipboard(text)
 
+    def action_launch_gui(self) -> None:
+        import subprocess
+        import sys
+        nexus_bin = (
+            __import__("shutil").which("nexus")
+            or str(__import__("pathlib").Path(sys.executable).parent / "nexus")
+        )
+        try:
+            subprocess.Popen(
+                [nexus_bin, "--gui"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self.notify("GUI launched.", severity="information")
+        except Exception as exc:
+            log.exception("Failed to launch GUI: %s", exc)
+            self.notify("Could not launch GUI — see log.", severity="error")
+
     def action_open_settings(self) -> None:
-        from nexus.ui.settings_screen import SettingsScreen
+        from nexus.ui.tui.settings_screen import SettingsScreen
         self.push_screen(SettingsScreen())
 
     def action_open_mcp(self) -> None:
@@ -160,7 +198,7 @@ class NexusApp(App):
         # Stop terminals and any running server processes on the current screen
         current = self.screen
         try:
-            from nexus.ui.terminal_widget import Terminal
+            from nexus.ui.tui.terminal_widget import Terminal
             for tid in ("#claude-terminal", "#bash-terminal"):
                 try:
                     current.query_one(tid, Terminal).stop()
@@ -209,7 +247,8 @@ def _register_skills() -> None:
     import modules.custom.skills        # noqa: F401
     import modules.security.skills     # noqa: F401
     import modules.promptopt.skills    # noqa: F401
-    import modules.youtube.skills     # noqa: F401
+    import modules.youtube.skills      # noqa: F401
+    import modules.operator.skills    # noqa: F401
     from nexus.ai.flow_handlers import register_flow_handlers
     register_flow_handlers()
     from nexus.ai.skill_registry import registry
@@ -221,9 +260,14 @@ def _register_skills() -> None:
 def _launch_tui(open_project: str | None = None) -> None:
     setup_logging()
     _register_skills()
-    log.info("Starting Nexus UI")
+    log.info("Starting Nexus TUI")
     NexusApp(open_project=open_project).run()
     log.info("Nexus exited cleanly")
+
+
+def _launch_gui() -> None:
+    from nexus.ui.gui.app import run_gui
+    run_gui()
 
 
 def main() -> None:
@@ -233,11 +277,22 @@ def main() -> None:
         prog="nexus",
         description="Nexus — personal project organiser",
     )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Launch the PySide6 desktop GUI instead of the TUI",
+    )
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="Launch the Textual TUI (default)",
+    )
     sub = parser.add_subparsers(dest="cmd")
-    sub.add_parser("list",    help="List all projects")
-    sub.add_parser("version", help="Print version and exit")
-    p_open = sub.add_parser("open", help="Launch TUI with a project pre-opened")
-    p_open.add_argument("name", help="Project name (case-insensitive prefix match)")
+    sub.add_parser("list",            help="List all projects")
+    sub.add_parser("version",         help="Print version and exit")
+    sub.add_parser("install-desktop", help="Install .desktop launcher and icon for taskbar pinning")
+    p_open = sub.add_parser("open",   help="Launch TUI with a project pre-opened")
+    p_open.add_argument("name",       help="Project name (case-insensitive prefix match)")
 
     args = parser.parse_args()
 
@@ -249,8 +304,16 @@ def main() -> None:
         from nexus.cli import cmd_version
         cmd_version()
         return
+    if args.cmd == "install-desktop":
+        from nexus.scripts.install_desktop import install
+        install()
+        return
     if args.cmd == "open":
         _launch_tui(open_project=args.name)
+        return
+
+    if args.gui:
+        _launch_gui()
         return
 
     _launch_tui()

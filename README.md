@@ -1,234 +1,235 @@
 # Nexus
 
-A personal project manager with a terminal UI. Nexus keeps all your projects in one place, provides AI-assisted setup and automation for each project type, and connects to external services via MCP servers.
+A personal project manager with a tile-based terminal UI and an optional PySide6 desktop GUI. Nexus integrates AI (Claude API or any local model via OpenAI-compatible endpoint) and connects to external tools via MCP servers.
 
 ## Philosophy
 
-Nexus is designed to run independently of AI. Every module works out of the box — Git, backups, web dashboards, vault, emulators — without an API key, an internet connection, or a running model. AI is an optional enhancement layer: add a local model (Ollama) or an Anthropic API key and every task gets dramatically better results, but nothing breaks without it.
-
-The goal is that a complete novice can download, install, and run Nexus with no prior context, and that a power user can take it fully offline with a portable bundle.
+AI is a progressive enhancement — all modules work without an API key. Git, backups, the vault, the server dashboard, the emulator — everything runs offline. Add an Anthropic API key or a local Ollama model and every task gets dramatically better results, but nothing breaks without one.
 
 ## Features
 
-- **Tile-based UI** — browse and open all your projects from a single screen
-- **Module system** — each project type has its own setup wizard, management screen, and AI instructions template
-- **Git module** — manage multiple GitHub / self-hosted / local git repositories; pull, push, commit, view status; add repos by SSH or HTTPS URL
-- **LocalAI module** — AI-assisted setup for local language models and diffusion models; Claude detects your hardware, generates a one-time setup script; inference UI with live output streaming
-- **12 additional modules** — Web, Research, Codex, Journal, Game, Org, Home, Streaming, VTube, Emulator, Vault, and Server each have a functional dashboard with inline setup form, action buttons, and a live command-output log
-- **AI Skills** — 61 built-in tool functions the AI can call without any configuration: pull repos, create notes, start services, run custom commands, and more
-- **Missing-software popup** — opening a module that requires an uninstalled binary immediately shows a modal with an "Open Settings" shortcut to the Setup tab
-- **AI provider config** — Anthropic API key or any OpenAI-compatible local model (Ollama, LM Studio, llama.cpp); full tool-use and Mycelium flows work on both paths
-- **MCP integration** — connect to MCP servers (filesystem, GitHub, web search, SQLite, and more) and inject their tools into every Claude API call
-- **Per-project AI instructions** — each project gets its own `CLAUDE.md` copied from the module's template; templates include domain knowledge, key software, and prompts for the AI
-- **Project deletion** — remove any project tile with a confirmation dialog
-- **Structured logging** — all activity written to `logs/nexus.log` with rotation
-- **Clipboard paste** — `Ctrl+V` pastes from the system clipboard in every input field (xclip on X11, wl-clipboard on Wayland, pbpaste on macOS)
-
-## Requirements
-
-- Python 3.12 or later
-- [uv](https://docs.astral.sh/uv/) package manager
-- `git` (for the Git module)
-- An Anthropic API key or a running Ollama instance (optional — for AI features)
-
-See [Dependencies](#dependencies) for a full list of software by module.
+- **Dual interface** — Textual TUI (SSH-friendly, no X11 needed) and PySide6 desktop GUI (`--gui`)
+- **Tile grid** — all projects on one screen; click to open, `✕` to delete with confirmation
+- **19 modules** — each with its own setup wizard, management screen, AI skill set, and `CLAUDE.md` context template
+- **Operator** — AI daily assistant: calendar, notes, and tasks via Claude tool use, with full access to every other module's skills from a single chat
+- **74+ built-in skills** — the AI can act, not just advise: pull repos, create notes, run backups, encrypt files, control services, and more
+- **7 colour themes** — Nexus Legacy, Vaporwave Red/Blue/Green, Midnight Amber, Neon Pink, Terminal Mono; switch live from Settings
+- **MCP integration** — connect filesystem, GitHub, web search, SQLite, and custom MCP servers; their tools inject into every AI call
+- **Per-project AI context** — each project gets a `CLAUDE.md` pre-filled with domain knowledge and setup prompts
+- **Clipboard paste** — `Ctrl+V` in every input field (xclip / wl-clipboard / pbpaste)
+- **Structured logging** — `logs/nexus.log` with rotation
 
 ## Quickstart
 
 ```bash
 git clone <repo-url> nexus
 cd nexus
+./nexus-install.sh        # interactive installer
+uv run nexus              # TUI
+uv run nexus --gui        # desktop GUI
+```
+
+Or manually:
+
+```bash
 uv sync
 uv run nexus
 ```
 
-On first run the main tile grid appears. Press `s` to open Settings and configure your AI provider before adding projects.
+Press `s` on the main screen to open Settings and configure your AI provider.
 
-## Usage
+## CLI reference
 
-### Main screen
+```bash
+uv run nexus                      # Textual TUI (default)
+uv run nexus --gui                # PySide6 desktop GUI
+uv run nexus open "my project"    # TUI with a project pre-opened
+uv run nexus list                 # list all projects (no UI)
+uv run nexus version              # print version
+uv run nexus install-desktop      # install GUI taskbar launcher
+```
+
+## TUI keyboard shortcuts
 
 | Key | Action |
-|-----|--------|
-| `s` | Open Settings |
-| `m` | Open MCP server manager |
+| --- | ------ |
+| `s` | Settings |
+| `m` | MCP server manager |
+| `g` | Launch GUI (opens desktop window alongside TUI) |
 | `q` | Quit |
-| `Escape` | Go back from any screen |
+| `Escape` | Go back |
+| `Ctrl+Tab` | Next open project tab |
+| `Alt+←/→` | Previous / next tab |
 
-Click a project tile to open it. Click **＋ Add Project** to create a new one. Click **✕** on a tile to delete that project (with confirmation). Click **⚙ Settings** to configure your AI provider.
+## Installer (`nexus-install.sh`)
 
-### Adding a project
+```bash
+./nexus-install.sh                 # interactive menu
+./nexus-install.sh --direct        # install from internet
+./nexus-install.sh --local         # install from ./offline-packages/
+./nexus-install.sh --download-only # download packages only (offline/portable use)
+./nexus-install.sh --install-desktop  # install GUI icon + .desktop launcher
+./nexus-install.sh --install-shell    # install 'nexus' shell command to ~/.local/bin
+```
 
-1. Click **＋ Add Project**
-2. A full-screen grid of module tiles appears — click any tile to select the module type
-3. Enter a name and optional description, then click **Create Project**
-4. The project tile appears on the main screen — click it to open the project screen. Git and LocalAI show a multi-step setup wizard; all other modules show a short inline setup form on first use
+The interactive installer prompts for:
 
-### Deleting a project
-
-Click the **✕** button in the top-right corner of any project tile. A confirmation dialog prevents accidental deletion. This removes the project directory and all its files.
-
-### Adding a repository to a Git project
-
-Open a Git project, then click **Clone / Add**. Enter a repository URL — both SSH (`git@github.com:user/repo.git`) and HTTPS (`https://github.com/user/repo.git`) are supported. The name is auto-filled from the URL. Clone progress is shown live; on success the repo appears in the list.
+- **Scope** — Minimum (Python + uv + Nexus libraries) or Full (all module tools)
+- **Desktop launcher** — installs `.desktop` + icon so Nexus appears in your app menu and can be pinned to the taskbar
+- **Shell command** — symlinks `~/.local/bin/nexus` so you can type `nexus` without `uv run`
 
 ## Modules
 
 | Module | Description |
-|--------|-------------|
-| **Git** | Manage GitHub, self-hosted, or local git repositories — 6-step wizard (PAT optional for public repos), pull/push/commit per repo, branch switch/create/delete, Open PR link for GitHub/GitLab |
-| **LocalAI** | Set up and run local AI models — Claude detects hardware, generates install script, live inference UI, Test Endpoint button |
-| **Custom** | AI-first open project — CLAUDE.md as system context, conversational AI chat, user-defined shell command buttons |
-| **Web** | Dev/Build/Test/Lint/Install via your package manager; Run Script… picker from `package.json`; Stop button for long-running processes; auto-detects framework |
-| **Research** | Note list with YAML-frontmatter-aware titles, per-note delete button, New Note, ripgrep Search, URL export, Export All; configurable notes directory |
-| **Codex** | Zettelkasten knowledge base — new notes with frontmatter, search with 2-line context, tag filter, open vault |
-| **Journal** | LaTeX journal entries — word count in list, compile with pdflatex (error summary), Open PDF button |
-| **Game** | Godot project dashboard — game name, scene count, Launch Editor, Run Game, Lint (error/warning count), Export headless |
-| **Org** | Plan/diagram/schedule creator — checkbox completion tracking (N/M done), Mermaid and Markdown table templates |
-| **Home** | Home Assistant dashboard — ping HA, call API (token in-process via httpx), YAML config file list |
-| **Streaming** | OBS dashboard — scene collection list, Launch OBS, log tail with crash/dropped-frame warning summary |
-| **VTube** | Virtual avatar pipeline (camera → tracker → runtime → OBS), launch controls, openSeeFace port config |
-| **Emulator** | ROM library browser by system with counts, Launch RetroArch, Browse by System → ROM picker |
-| **Vault** | Tool inventory (gpg/age/veracrypt/keepassxc-cli), GPG export/import, age encrypt/decrypt, KeePassXC list, VeraCrypt mount |
-| **Server** | Service dashboard (systemd + docker) — Start/Stop/Logs/Open URL per service, Import Compose, docker stats |
-| **Backup** | Encrypted, deduplicated backups via restic — snapshot picker, configurable retention/excludes, restore |
-| **Prompt Opt** | AI prompt optimizer — rewrite prompts for clarity (Text), AI instructions (Instruct), or Stable Diffusion tags (Image); Copy button |
+| ------ | ----------- |
+| **Operator** | AI daily assistant — calendar, notes, tasks via Claude tool use; chat has access to all other module skills |
+| **Git** | Multi-repo manager — clone (SSH/HTTPS), pull/push/commit/diff/stash, branch create/switch/delete, PR links |
+| **Local AI** | Set up and run local models — hardware detection, AI-generated install script, live inference UI, SD model browser |
+| **Custom** | Open-ended AI project — `CLAUDE.md` context viewer, conversational chat, shell command buttons, Claude Code terminal |
+| **Web** | Dev server / build — package manager detection, `package.json` script picker, Stop button, framework auto-detect |
+| **Research** | Markdown notes with YAML frontmatter — list, search, new note, URL export, delete per-note |
+| **Codex** | Zettelkasten knowledge base — frontmatter notes, ripgrep search with context, tag filter, DirectoryTree explorer |
+| **Journal** | LaTeX journal — word count per entry, pdflatex compile with error summary, Open PDF |
+| **Game** | Godot project dashboard — scene count, Launch Editor, Run, lint (error/warning count), headless export |
+| **Org** | Plans, Mermaid diagrams, schedules — checkbox completion tracking, Markdown and table templates |
+| **Home** | Home Assistant — ping, REST API calls (token via httpx headers, never in `ps`), YAML config file list |
+| **Streaming** | OBS Studio — scene list, Launch OBS, log tail with crash/dropped-frame warnings |
+| **VTube** | Virtual avatar pipeline — camera → openSeeFace tracker → runtime → OBS launch controls |
+| **Emulator** | ROM library by system with counts, Launch RetroArch, per-system ROM picker |
+| **Vault** | GPG, age, VeraCrypt, KeePassXC — key management, encrypt/decrypt, path-containment guard |
+| **Server** | systemd + Docker service dashboard — Start/Stop/Logs/Open URL per service, Import Compose, docker stats |
+| **Backup** | Encrypted, deduplicated backups via restic — snapshot picker, retention config, restore |
+| **SD Forge** | Stable Diffusion via Forge API — txt2img with configurable models, samplers, and parameters |
+| **YouTube** | Video metadata, download video/audio, fetch transcripts via yt-dlp |
+| **Security** | ufw firewall status, nmap scanning, guided security checks via AI chat |
+| **Prompt Opt** | AI prompt optimizer — Text / Instruct / Image (SD tags) modes, Copy button |
 
-All modules open an inline setup form on first use. After saving, the main dashboard appears with action buttons and a live command-output log at the bottom. Each project also gets a `CLAUDE.md` pre-filled with domain knowledge and setup prompts.
+## AI setup
 
-## AI Setup
+Open Settings (`s`) and choose a provider under **AI Provider**.
 
-Open Settings with `s` and choose your provider under **AI Provider**:
+### Anthropic API key
 
-### Anthropic API Key
-Enter your key from [console.anthropic.com](https://console.anthropic.com). Use the **Verify** button to confirm it works. The key is stored in `config/settings.yaml` (git-ignored).
+Enter your key from [console.anthropic.com](https://console.anthropic.com). Use **Verify** to confirm it works. Stored in `config/settings.yaml` (git-ignored).
 
-### Local Model
-Enter the endpoint URL and model name for any OpenAI-compatible server:
-- **Ollama**: `http://localhost:11434`, model e.g. `llama3.2`
-- **LM Studio**: `http://localhost:1234/v1`, model as shown in the app
+### Local model
 
-Use the **Test Connection** button to verify the endpoint is reachable. The local provider supports the same tool-use loop as the Anthropic path — all skills and MCP tools work. If the model doesn't support function calling, tool use is silently disabled and the model replies directly.
+Enter an endpoint URL and model name for any OpenAI-compatible server:
 
-### Claude.ai Login
-Browser-based OAuth — not yet supported in the terminal UI. Use an API key in the meantime.
+- **Ollama** — `http://localhost:11434`, model e.g. `llama3.2`
+- **LM Studio** — `http://localhost:1234/v1`, model as shown in the app
 
-## MCP Servers
+Use **Test Connection** to verify. The local path supports the same tool-use loop as Anthropic — all skills and MCP tools work.
 
-Press `m` to open the MCP manager. The **Add Servers** tab shows a curated list of popular MCP servers. Click one, fill in any required credentials (API keys, tokens), and it appears under **Active Servers**. Configured servers are automatically available as tools in all Claude API calls.
+## AI skills
 
-Popular servers include:
-- **filesystem** — read and write local files
-- **github** — repos, issues, PRs (needs a GitHub token)
-- **fetch** — fetch web pages
-- **brave-search** — web search (needs a Brave API key)
-- **sqlite** — query local SQLite databases
-- **memory** — persistent key-value memory across sessions
+Skills are built-in tools the AI can call without any configuration. When you open a project the AI gets two layers:
 
-## AI Skills
-
-Skills are built-in tools the AI can call directly without any configuration. Unlike MCP servers (external processes you set up), skills are native Nexus functions that run in-process and are always available.
-
-When you open a project, the AI automatically has access to two layers of skills:
-- **Global skills** — available in every project
-- **Module skills** — specific to the active project type
-
-The AI uses these to act, not just advise — pulling repos, creating notes, starting services, encrypting files — all from a single conversation.
+- **Global** — available in every project
+- **Module** — specific to the active project type
 
 ### Global skills
 
-| Skill | What it does |
-|-------|--------------|
-| `list_projects` | List all your Nexus projects with type and description |
-| `run_flow` | Trigger a cross-module Mycelium flow (`research_to_codex`, `git_to_journal`, `research_to_org`, `codex_to_journal`, `org_to_journal`) |
-| `search_logs` | Search the application log for recent events |
+| Skill | Description |
+| ----- | ----------- |
+| `list_projects` | List all Nexus projects |
+| `run_flow` | Trigger a cross-module Mycelium flow |
+| `search_logs` | Search the application log |
 
 ### Module skills
 
 | Module | Skills |
-|--------|--------|
-| **Git** | `git_status`, `git_pull`, `git_push`, `git_commit`, `git_log`, `git_clone`, `git_diff`, `git_stash` |
-| **LocalAI** | `localai_run_inference` |
-| **Web** | `web_run_script` (dev/build/test/lint), `web_list_scripts` |
-| **Research** | `research_list_notes`, `research_new_note`, `research_search`, `research_get_note`, `research_delete_note` |
-| **Codex** | `codex_list`, `codex_new_entry`, `codex_search`, `codex_get_entry` |
-| **Journal** | `journal_list_entries`, `journal_new_entry`, `journal_compile` |
-| **Game** | `game_launch_editor`, `game_run`, `game_scene_list` |
-| **Org** | `org_list_plans`, `org_new_plan`, `org_new_diagram`, `org_new_schedule`, `org_get_plan` |
-| **Home** | `home_ping`, `home_api_call` |
-| **Streaming** | `streaming_launch_obs`, `streaming_list_scenes`, `streaming_check_logs` |
-| **VTube** | `vtube_launch_runtime`, `vtube_start_tracker` |
-| **Emulator** | `emulator_list_systems`, `emulator_launch` |
-| **Vault** | `vault_list_gpg_keys`, `vault_age_key_status`, `vault_encrypt_file`, `vault_decrypt_file` |
-| **Backup** | `backup_run_backup`, `backup_list_snapshots`, `backup_check`, `backup_restore`, `backup_forget` |
-| **Server** | `server_list_services`, `server_status`, `server_start`, `server_stop`, `server_restart`, `server_logs` |
-| **Custom** | `custom_run_command`, `custom_ask` |
+| ------ | ------ |
+| **Operator** | `operator_calendar_add/list/delete` · `operator_note_create/search/get/update/delete` · `operator_todo_add/list/complete/delete` |
+| **Git** | `git_status` · `git_pull` · `git_push` · `git_commit` · `git_log` · `git_clone` · `git_diff` · `git_stash` |
+| **Local AI** | `localai_run_inference` |
+| **Custom** | `custom_run_command` · `custom_ask` |
+| **Web** | `web_list_scripts` · `web_run_script` |
+| **Research** | `research_list_notes` · `research_new_note` · `research_search` · `research_get_note` · `research_delete_note` |
+| **Codex** | `codex_list` · `codex_new_entry` · `codex_search` · `codex_get_entry` |
+| **Journal** | `journal_list_entries` · `journal_new_entry` · `journal_compile` |
+| **Game** | `game_scene_list` · `game_launch_editor` · `game_run` |
+| **Org** | `org_list_plans` · `org_new_plan` · `org_new_diagram` · `org_new_schedule` · `org_get_plan` |
+| **Home** | `home_ping` · `home_api_call` |
+| **Streaming** | `streaming_list_scenes` · `streaming_launch_obs` · `streaming_check_logs` |
+| **VTube** | `vtube_launch_runtime` · `vtube_start_tracker` |
+| **Emulator** | `emulator_list_systems` · `emulator_launch` |
+| **Vault** | `vault_list_gpg_keys` · `vault_age_key_status` · `vault_encrypt_file` · `vault_decrypt_file` |
+| **Server** | `server_list_services` · `server_status` · `server_start` · `server_stop` · `server_restart` · `server_logs` |
+| **Backup** | `backup_run_backup` · `backup_list_snapshots` · `backup_check` · `backup_restore` · `backup_forget` |
+| **SD Forge** | `sdforge_txt2img` |
+| **YouTube** | `youtube_fetch_info` · `youtube_download_video` · `youtube_download_audio` · `youtube_get_transcript` |
 | **Prompt Opt** | `promptopt_optimize` |
 
-All module skills take the project slug as their first argument so the AI always knows which project it is acting on. Skills are registered at app startup and require no configuration.
+## MCP servers
 
-## Security
+Press `m` to open the MCP manager. The **Add Servers** tab shows a curated catalog. Click a server, fill in credentials, and it appears under **Active Servers** — its tools are automatically available in all AI calls.
 
-- **LocalAI**: user prompt values are passed to inference commands via environment variables (`$NEXUS_PROMPT`, `$NEXUS_NEGATIVE_PROMPT`), never interpolated into shell strings.
-- **Home Assistant token**: passed via Python `httpx` headers — never exposed in subprocess arguments visible in `ps aux`.
-- **Vault age key**: public key extracted via `age-keygen -y` (the correct API) rather than comment-line parsing.
-- **Vault path containment**: all age/gpg operations resolve file paths with `Path.resolve()` and verify the result is inside the configured vault directory — prevents directory traversal attacks.
-- **SDForge launch args**: extra server arguments from your config are split with `shlex.split` and passed as individual arguments (not a shell string) — eliminates shell injection from config-file content.
-- **Docker daemon check**: Nexus verifies the Docker daemon is actually running (not just that the binary exists) before attempting any container operation.
-- **Docker `~/.ollama` mount**: the LocalAI Docker manager checks for symlinks and refuses to mount a symlinked `~/.ollama` path, preventing accidental exposure of unintended host directories inside the container.
-- **Docker container cleanup**: containers started by Nexus are tracked and stopped cleanly when the app exits, preventing orphaned containers from holding ports on the next launch.
-- **Backup**: `backup_run_backup` skill auto-initialises the restic repo before running, matching the UI behaviour. Repo and source paths are tilde-expanded before use.
-- **Cross-platform open**: all "open file/URL" actions use `nexus.core.platform.open_path()` (`xdg-open` / `open` / `start`) rather than hard-coded `xdg-open`.
-- All credentials and personal data stay on your machine — `config/settings.yaml` and `projects/` are git-ignored.
+Popular servers: `filesystem`, `github`, `fetch`, `brave-search`, `sqlite`, `memory`.
 
-## Project Data & Privacy
+## Themes
+
+Seven colour themes, switchable live from Settings → Appearance (no restart required):
+
+- **Nexus Legacy** — cyan / purple (default)
+- **Vaporwave Red / Blue / Green**
+- **Midnight Amber**
+- **Neon Pink**
+- **Terminal Mono**
+
+## Project data and privacy
 
 All personal data stays local:
 
 | Path | Contents | Git status |
-|------|----------|------------|
-| `projects/` | All project instances, repos, and AI outputs | **ignored** |
+| ---- | -------- | ---------- |
+| `projects/` | Project instances, repos, notes, AI outputs | **ignored** |
 | `config/settings.yaml` | API keys, tokens, MCP credentials | **ignored** |
 | `logs/nexus.log` | Application log | **ignored** |
 
-`config/settings.example.yaml` is committed as a reference — it contains no real credentials.
+`config/settings.example.yaml` is committed as a reference — no real credentials.
+
+## Security notes
+
+- Prompt values for LocalAI passed via `$NEXUS_PROMPT` env var — never interpolated into shell strings
+- Home Assistant token passed via `httpx` headers — never visible in `ps aux`
+- Vault operations resolve file paths with `Path.resolve()` and verify they stay inside the vault directory (path traversal prevention)
+- SDForge launch args split with `shlex.split` and passed as an arg list — no shell injection from config
+- Docker daemon verified running (not just binary present) before any container operation
+- Containers started by Nexus are tracked and stopped cleanly on exit
 
 ## Dependencies
 
-Everything Nexus needs that is not provided by a stock Linux install, organised by layer.
-Python packages are managed by `uv` and installed automatically by `uv sync`.
+Python packages are managed by `uv sync` automatically.
 
-| Layer | Software | How to install | Required by |
-|-------|----------|----------------|-------------|
-| **System** | xclip | `apt install xclip` | Clipboard paste (X11) |
-| **System** | wl-clipboard | `apt install wl-clipboard` | Clipboard paste (Wayland) |
-| **Runtime** | Python 3.12+ | `apt install python3.12` / `dnf install python3.12` | Core |
+| Layer | Software | Install | Required by |
+| ----- | -------- | ------- | ----------- |
+| **System** | xclip | `apt install xclip` | Clipboard (X11) |
+| **System** | wl-clipboard | `apt install wl-clipboard` | Clipboard (Wayland) |
+| **Runtime** | Python 3.12+ | `apt install python3.12` | Core |
 | **Runtime** | uv | `curl -Ls https://astral.sh/uv/install.sh \| sh` | Core |
-| **Python deps** | anthropic, mcp, pyyaml, textual | `uv sync` (automatic) | Core |
-| **Core** | git | `apt install git` | Git module |
-| **Core** | node / npx | `apt install nodejs npm` | MCP servers (optional) |
-| **Journal** | pdflatex | `apt install texlive-latex-base` | Journal module |
-| **Game** | Godot Engine | [godotengine.org](https://godotengine.org/download) | Game module |
-| **Streaming** | OBS Studio | `apt install obs-studio` | Streaming module |
-| **Emulator** | RetroArch | `apt install retroarch` | Emulator module |
-| **Vault** | gpg | `apt install gnupg` | Vault module |
-| **Vault** | age | `apt install age` | Vault module |
-| **Vault** | keepassxc-cli | `apt install keepassxc` | Vault module |
-| **Server** | docker + compose | [docs.docker.com/engine/install](https://docs.docker.com/engine/install/) | Server module |
-| **AI (local)** | ollama | `curl -fsSL https://ollama.com/install.sh \| sh` | LocalAI system module |
-| **Backup** | restic | `apt install restic` | Backup module |
-| **AI hw detect** | nvidia-smi | included with NVIDIA drivers | LocalAI hardware detection |
-| **AI hw detect** | rocm-smi | included with AMD ROCm | LocalAI hardware detection |
+| **Module** | git | `apt install git` | Git module |
+| **Module** | ripgrep (`rg`) | `apt install ripgrep` | Codex / Research search |
+| **Module** | pdflatex | `apt install texlive-latex-base` | Journal module |
+| **Module** | Godot Engine | [godotengine.org](https://godotengine.org/download) | Game module |
+| **Module** | OBS Studio | `apt install obs-studio` | Streaming module |
+| **Module** | RetroArch | `apt install retroarch` | Emulator module |
+| **Module** | gpg | `apt install gnupg` | Vault module |
+| **Module** | age | `apt install age` | Vault module |
+| **Module** | KeePassXC | `apt install keepassxc` | Vault module |
+| **Module** | Docker + Compose | [docs.docker.com](https://docs.docker.com/engine/install/) | Server / LocalAI modules |
+| **Module** | restic | `apt install restic` | Backup module |
+| **Module** | Ollama | `curl -fsSL https://ollama.com/install.sh \| sh` | LocalAI module |
+| **Module** | yt-dlp | installed via `uv sync` | YouTube module |
+| **Module** | node / npx | `apt install nodejs npm` | MCP servers (optional) |
 
-Install scripts are provided to automate this process — see `nexus-install.sh` for the
-core runtime, and Settings → Setup inside the app to install per-module software.
+Use `./nexus-install.sh --direct` with scope **Full** to install all system packages automatically.
 
 ## Development
 
 ```bash
-uv sync                  # install dependencies
+uv sync                  # install / update dependencies
 uv add <package>         # add a runtime dependency
-uv add --dev <package>   # add a dev dependency
 uv run nexus             # run the app
 ```
 

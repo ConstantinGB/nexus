@@ -12,8 +12,8 @@ from nexus.core.logger import get
 from nexus.core.project_manager import ProjectInfo, update_project_meta
 from nexus.core.config_manager import load_project_config, save_project_config
 from nexus.core.platform import open_path
-from nexus.ui.chat_panel import ChatPanel
-from nexus.ui.dir_picker import DirPickerModal
+from nexus.ui.tui.chat_panel import ChatPanel
+from nexus.ui.tui.dir_picker import DirPickerModal
 
 log = get("ui.base_project_screen")
 
@@ -21,9 +21,9 @@ log = get("ui.base_project_screen")
 def _screen_css(name: str) -> str:
     """Return the 3 screen-scoped CSS rules every project screen needs."""
     return (
-        f"{name} {{ background: #1A0A2E; }}\n"
-        f"{name} Header {{ background: #2D1B4E; color: #00B4FF; }}\n"
-        f"{name} Footer {{ background: #2D1B4E; color: #00FF88; }}\n"
+        f"{name} {{ background: $theme-bg; }}\n"
+        f"{name} Header {{ background: $theme-surface; color: $theme-border; }}\n"
+        f"{name} Footer {{ background: $theme-surface; color: $theme-accent2; }}\n"
     )
 
 
@@ -33,11 +33,11 @@ class InputModal(ModalScreen):
     DEFAULT_CSS = """
     InputModal { align: center middle; }
     #im-dialog {
-        background: #2D1B4E; border: solid #00B4FF;
+        background: $theme-surface; border: solid $theme-border;
         padding: 1 2; width: 60; height: auto;
     }
-    #im-title  { color: #00B4FF; text-style: bold; height: 2; }
-    #im-prompt { color: #E0E0FF; height: 1; margin-bottom: 1; }
+    #im-title  { color: $theme-border; text-style: bold; height: 2; }
+    #im-prompt { color: $theme-text; height: 1; margin-bottom: 1; }
     #im-input  { margin-bottom: 1; }
     #im-btns   { height: 3; }
     #im-btns Button { margin-right: 1; }
@@ -77,11 +77,11 @@ class SudoModal(ModalScreen[str | None]):
     DEFAULT_CSS = """
     SudoModal { align: center middle; }
     #sudo-dialog {
-        background: #2D1B4E; border: solid #FF8800;
+        background: $theme-surface; border: solid #FF8800;
         padding: 1 2; width: 60; height: auto;
     }
     #sudo-title  { color: #FF8800; text-style: bold; height: 2; }
-    #sudo-prompt { color: #E0E0FF; height: 1; margin-bottom: 1; }
+    #sudo-prompt { color: $theme-text; height: 1; margin-bottom: 1; }
     #sudo-input  { margin-bottom: 1; }
     #sudo-btns   { height: 3; }
     #sudo-btns Button { margin-right: 1; }
@@ -117,10 +117,10 @@ class EditProjectModal(ModalScreen):
     DEFAULT_CSS = """
     EditProjectModal { align: center middle; }
     #ep-dialog {
-        background: #2D1B4E; border: solid #00B4FF;
+        background: $theme-surface; border: solid $theme-border;
         padding: 1 2; width: 60; height: auto;
     }
-    #ep-title  { color: #00B4FF; text-style: bold; height: 2; }
+    #ep-title  { color: $theme-border; text-style: bold; height: 2; }
     #ep-btns   { height: 3; margin-top: 1; }
     #ep-btns Button { margin-right: 1; }
     """
@@ -174,12 +174,12 @@ class ConfirmModal(ModalScreen[bool]):
     DEFAULT_CSS = """
     ConfirmModal { align: center middle; }
     #cm-box {
-        background: #2D1B4E; border: solid #FF4444;
+        background: $theme-surface; border: solid #FF4444;
         padding: 1 2; width: 56; height: auto;
     }
     #cm-title   { color: #FF4444; text-style: bold; height: 2; }
-    #cm-detail  { color: #E0E0FF; height: auto; margin-bottom: 1; }
-    #cm-hint    { color: #8080AA; height: 1; margin-bottom: 1; }
+    #cm-detail  { color: $theme-text; height: auto; margin-bottom: 1; }
+    #cm-hint    { color: $theme-text-dim; height: 1; margin-bottom: 1; }
     #cm-btns    { height: 3; margin-top: 1; }
     #cm-btns Button { margin-right: 1; }
     """
@@ -217,11 +217,11 @@ class MissingDepsModal(ModalScreen):
     DEFAULT_CSS = """
     MissingDepsModal { align: center middle; }
     #mdm-dialog {
-        background: #2D1B4E; border: solid #FF8800;
+        background: $theme-surface; border: solid #FF8800;
         padding: 1 2; width: 60; height: auto;
     }
     #mdm-title  { color: #FF8800; text-style: bold; height: 2; }
-    #mdm-body   { color: #E0E0FF; height: auto; margin-bottom: 1; }
+    #mdm-body   { color: $theme-text; height: auto; margin-bottom: 1; }
     #mdm-btns   { height: 3; }
     #mdm-btns Button { margin-right: 1; }
     """
@@ -272,31 +272,31 @@ class BaseProjectScreen(Screen):
     DEFAULT_CSS = """
     #top-bar {
         height: 3;
-        background: #2D1B4E;
+        background: $theme-surface;
         padding: 0 2;
-        border-bottom: solid #3A2260;
+        border-bottom: solid $theme-border-dim;
     }
-    #project-title { color: #00B4FF; text-style: bold; width: 1fr; }
-    #project-meta  { color: #8080AA; }
+    #project-title { color: $theme-border; text-style: bold; width: 1fr; }
+    #project-meta  { color: $theme-text-dim; }
 
     #action-bar {
         height: 3;
         padding: 0 2;
-        background: #241540;
-        border-bottom: solid #3A2260;
+        background: $theme-surface;
+        border-bottom: solid $theme-border-dim;
     }
     #action-bar Button { margin-right: 1; }
 
     #setup-pane {
-        background: #2D1B4E;
-        border: solid #00B4FF;
+        background: $theme-surface;
+        border: solid $theme-border;
         padding: 1 2;
         width: 72;
         height: auto;
         align: center middle;
         margin: 2 4;
     }
-    #setup-title { color: #00B4FF; text-style: bold; height: 2; }
+    #setup-title { color: $theme-border; text-style: bold; height: 2; }
     #setup-error { color: #FF4444; height: 1; }
     #setup-btns  { height: 3; margin-top: 1; }
     #setup-btns Button { margin-right: 1; }
@@ -305,34 +305,34 @@ class BaseProjectScreen(Screen):
     #main-pane   { width: 1fr; height: 1fr; min-width: 0; }
     #content-area { height: 1fr; padding: 1 2; overflow-y: auto; }
     .panel-btn          { margin-left: 1; }
-    .panel-btn-active   { border: solid #00FF88; color: #00FF88; }
+    .panel-btn-active   { border: solid $theme-accent2; color: $theme-accent2; }
     #btn-open-folder   { margin-left: 1; }
     #btn-edit-project  { margin-left: 1; }
     #chat-panel {
         width: 1fr;
         height: 1fr;
-        border-left: solid #3A2260;
-        background: #130822;
+        border-left: solid $theme-border-dim;
+        background: $theme-bg;
         display: none;
     }
     #terminal-panel {
         width: 1fr;
         height: 1fr;
-        border-left: solid #3A2260;
+        border-left: solid $theme-border-dim;
         display: none;
     }
 
-    #output-log { height: 8; background: #0A0518; border: solid #3A2260; }
+    #output-log { height: 8; background: $theme-bg; border: solid $theme-border-dim; }
 
     .setup-field-row { height: 3; }
     .setup-field-row Input  { width: 1fr; }
     .browse-btn { width: 10; margin-left: 1; }
-    .field-label   { color: #00FF88; height: 1; margin-top: 1; }
-    .section-label { color: #00FF88; height: 1; margin-top: 1; }
-    .hint          { color: #555588; height: 1; }
+    .field-label   { color: $theme-accent2; height: 1; margin-top: 1; }
+    .section-label { color: $theme-accent2; height: 1; margin-top: 1; }
+    .hint          { color: $theme-text-dim; height: 1; }
     .info-row      { height: 1; }
-    .info-key      { color: #8080AA; width: 22; }
-    .info-val      { color: #E0E0FF; width: 1fr; }
+    .info-key      { color: $theme-text-dim; width: 22; }
+    .info-val      { color: $theme-text; width: 1fr; }
     .status-ok     { color: #00FF88; }
     .status-err    { color: #FF4444; }
     """
@@ -396,7 +396,7 @@ class BaseProjectScreen(Screen):
     # ── Compose ───────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
-        from nexus.ui.project_tabs import ProjectTabBar
+        from nexus.ui.tui.project_tabs import ProjectTabBar
         self._load_cfg()
         meta = self.MODULE_LABEL
         if self.project.description:
@@ -472,7 +472,7 @@ class BaseProjectScreen(Screen):
 
         def _on_modal_dismiss(result: str | None) -> None:
             if result == "settings":
-                from nexus.ui.settings_screen import SettingsScreen
+                from nexus.ui.tui.settings_screen import SettingsScreen
                 self.app.push_screen(SettingsScreen(initial_tab="tab_setup"))
 
         self.app.push_screen(MissingDepsModal(missing), _on_modal_dismiss)
@@ -641,7 +641,7 @@ class BaseProjectScreen(Screen):
 
     async def _launch_claude(self) -> None:
         import shutil
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
 
         if not shutil.which("claude"):
             self.app.notify(
@@ -684,7 +684,7 @@ class BaseProjectScreen(Screen):
 
     async def _launch_bash(self) -> None:
         import os, shutil
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
 
         shell = os.environ.get("SHELL", "") or shutil.which("bash") or "bash"
 
@@ -738,7 +738,7 @@ class BaseProjectScreen(Screen):
             pass
 
     def action_dismiss(self, result=None) -> None:
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
         for wid in ("#claude-terminal", "#bash-terminal"):
             try:
                 self.query_one(wid, Terminal).stop()

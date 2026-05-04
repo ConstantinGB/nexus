@@ -1,0 +1,11 @@
+[module]
+id = "localai"
+label = "LocalAI"
+description = "Set up and run local AI models — LLMs, diffusion, audio, and more."
+tags = ["ai", "local"]
+system = true
+prefix = "loc"
+
+[setup]
+has_setup_screen = true
+config_check = "localai.setup_done"

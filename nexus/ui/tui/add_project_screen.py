@@ -31,25 +31,25 @@ class ModuleTile(Widget):
 
     DEFAULT_CSS = """
     ModuleTile {
-        border: solid #3A2260;
+        border: solid $theme-border-dim;
         padding: 1 1;
         margin: 0;
         height: 5;
-        background: #2D1B4E;
+        background: $theme-surface;
     }
     ModuleTile:hover {
-        border: solid #00FF88;
-        background: #3A2260;
+        border: solid $theme-accent2;
+        background: $theme-border-dim;
     }
-    ModuleTile .mod-name { color: #E0E0FF; text-style: bold; height: 1; }
-    ModuleTile .mod-desc { color: #8080AA; height: 2; }
+    ModuleTile .mod-name { color: $theme-text; text-style: bold; height: 1; }
+    ModuleTile .mod-desc { color: $theme-text-dim; height: 2; }
 
     ModuleTile.custom-tile {
         border: dashed #5A3A7E;
         background: #1C0A34;
     }
     ModuleTile.custom-tile:hover {
-        border: solid #00FF88;
+        border: solid $theme-accent2;
         background: #2A1050;
     }
     ModuleTile.custom-tile .mod-name { color: #B080FF; }
@@ -72,12 +72,12 @@ class AddProjectScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Cancel")]
 
     DEFAULT_CSS = """
-    AddProjectScreen { background: #1A0A2E; }
-    AddProjectScreen Header { background: #2D1B4E; color: #00B4FF; }
-    AddProjectScreen Footer { background: #2D1B4E; color: #00FF88; }
+    AddProjectScreen { background: $theme-bg; }
+    AddProjectScreen Header { background: $theme-surface; color: $theme-border; }
+    AddProjectScreen Footer { background: $theme-surface; color: $theme-accent2; }
 
-    #pick-title { color: #00B4FF; text-style: bold; height: 2; padding: 0 2; }
-    #pick-hint  { color: #555588; height: 1; padding: 0 2; margin-bottom: 1; }
+    #pick-title { color: $theme-border; text-style: bold; height: 2; padding: 0 2; }
+    #pick-hint  { color: $theme-text-dim; height: 1; padding: 0 2; margin-bottom: 1; }
 
     #tile-grid {
         layout: grid;
@@ -88,15 +88,15 @@ class AddProjectScreen(Screen):
 
     #step-name  { align: center middle; height: 1fr; }
     #name-box {
-        background: #2D1B4E;
-        border: solid #00B4FF;
+        background: $theme-surface;
+        border: solid $theme-border;
         padding: 1 2;
         width: 64;
         height: auto;
     }
-    #name-box-title { color: #00B4FF; text-style: bold; height: 2; }
-    #sel-mod-label  { color: #8080AA; height: 1; margin-bottom: 1; }
-    .field-label    { color: #00FF88; height: 1; margin-top: 1; }
+    #name-box-title { color: $theme-border; text-style: bold; height: 2; }
+    #sel-mod-label  { color: $theme-text-dim; height: 1; margin-bottom: 1; }
+    .field-label    { color: $theme-accent2; height: 1; margin-top: 1; }
     Input           { margin-bottom: 0; }
     #btn-row        { height: 3; margin-top: 1; }
     #btn-back       { margin-right: 1; }

@@ -11,7 +11,7 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.config_manager import load_project_config, save_project_config
 from nexus.core.platform import open_path
-from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 log = get("server.project_screen")
 
@@ -95,7 +95,7 @@ class ServiceRow(Horizontal):
             yield Button(f"Open", id=f"svc-open-{name}")
 
 
-class ServerProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "server"
     MODULE_LABEL      = "SERVER"
     REQUIRED_BINARIES = [("docker", "Docker")]

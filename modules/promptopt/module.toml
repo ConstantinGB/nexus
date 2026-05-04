@@ -1,0 +1,7 @@
+[module]
+id = "promptopt"
+label = "Prompt Opt"
+description = "Optimize and rewrite prompts for AI clarity, instructions, or image generation."
+tags = ["ai", "tools"]
+system = false
+prefix = "pro"

@@ -180,6 +180,8 @@ run_uv_sync() {
 # ── Scope selection ───────────────────────────────────────────────────────────
 
 SCOPE="minimum"
+INSTALL_DESKTOP="no"
+INSTALL_SHELL_CMD="no"
 FAILED_PKGS=""
 
 choose_scope() {
@@ -196,6 +198,24 @@ choose_scope() {
     case "$scope_choice" in
         2) SCOPE="full" ;;
         *) SCOPE="minimum" ;;
+    esac
+}
+
+choose_extras() {
+    echo ""
+    _bold "Optional extras:"
+    echo ""
+    printf "  Install desktop launcher (GUI icon in app menu)? [y/N]: "
+    read -r _ans
+    case "$_ans" in
+        [Yy]*) INSTALL_DESKTOP="yes" ;;
+        *)     INSTALL_DESKTOP="no"  ;;
+    esac
+    printf "  Install 'nexus' shell command (run without 'uv run')? [y/N]: "
+    read -r _ans
+    case "$_ans" in
+        [Yy]*) INSTALL_SHELL_CMD="yes" ;;
+        *)     INSTALL_SHELL_CMD="no"  ;;
     esac
 }
 
@@ -337,6 +357,43 @@ PKGEOF
     fi
 }
 
+# ── Desktop launcher ──────────────────────────────────────────────────────────
+
+install_desktop_launcher() {
+    UV_BIN="$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")"
+    printf '  %-45s' "Installing desktop launcher…"
+    if "$UV_BIN" run nexus install-desktop >/dev/null 2>&1; then
+        _green "OK"
+    else
+        _yellow "FAILED — run 'uv run nexus install-desktop' manually"
+    fi
+}
+
+# ── Shell command ──────────────────────────────────────────────────────────────
+
+install_shell_command() {
+    NEXUS_BIN="$SCRIPT_DIR/.venv/bin/nexus"
+    TARGET_DIR="$HOME/.local/bin"
+    TARGET="$TARGET_DIR/nexus"
+    mkdir -p "$TARGET_DIR"
+    printf '  %-45s' "Installing 'nexus' shell command…"
+    if [ ! -f "$NEXUS_BIN" ]; then
+        _yellow "FAILED — venv not found at $NEXUS_BIN (run uv sync first)"
+        return
+    fi
+    # Remove existing symlink/file so we get a clean link
+    rm -f "$TARGET"
+    if ln -s "$NEXUS_BIN" "$TARGET" 2>/dev/null; then
+        _green "OK  →  $TARGET"
+        case ":${PATH}:" in
+            *":$TARGET_DIR:"*) ;;
+            *) _yellow "  Note: add '$TARGET_DIR' to your PATH if nexus is not found." ;;
+        esac
+    else
+        _yellow "FAILED — could not create symlink at $TARGET"
+    fi
+}
+
 # ── Mode: download-only ───────────────────────────────────────────────────────
 
 do_download_only() {
@@ -369,6 +426,12 @@ do_local() {
     if [ "$SCOPE" = "full" ]; then
         install_full_packages
     fi
+    if [ "$INSTALL_DESKTOP" = "yes" ]; then
+        install_desktop_launcher
+    fi
+    if [ "$INSTALL_SHELL_CMD" = "yes" ]; then
+        install_shell_command
+    fi
     _green ""
     _green "Nexus installed from local packages."
     _green "Run: export PATH=\"\$HOME/.local/bin:\$PATH\" && uv run nexus"
@@ -384,6 +447,12 @@ do_direct() {
     setup_dirs
     if [ "$SCOPE" = "full" ]; then
         install_full_packages
+    fi
+    if [ "$INSTALL_DESKTOP" = "yes" ]; then
+        install_desktop_launcher
+    fi
+    if [ "$INSTALL_SHELL_CMD" = "yes" ]; then
+        install_shell_command
     fi
     _green ""
     _green "Nexus installed."
@@ -410,10 +479,14 @@ interactive_menu() {
     read -r choice
     choose_scope
     case "$choice" in
-        1) MODE="direct";   do_direct ;;
-        2) MODE="local";    pkg_download "$(python_pkg)" 2>/dev/null; MODE="local"; do_local ;;
-        3) MODE="download"; do_download_only ;;
-        *) _red "Invalid choice."; exit 1 ;;
+        3) MODE="download"; do_download_only; return ;;
+        2) _choice="local" ;;
+        *) _choice="direct" ;;
+    esac
+    choose_extras
+    case "$_choice" in
+        local)  MODE="local";  pkg_download "$(python_pkg)" 2>/dev/null; do_local ;;
+        direct) MODE="direct"; do_direct ;;
     esac
 }
 
@@ -422,11 +495,13 @@ interactive_menu() {
 case "${1:-}" in
     --direct)
         choose_scope
+        choose_extras
         MODE="direct"
         do_direct
         ;;
     --local)
         choose_scope
+        choose_extras
         MODE="local"
         do_local
         ;;
@@ -435,12 +510,20 @@ case "${1:-}" in
         MODE="download"
         do_download_only
         ;;
+    --install-desktop)
+        install_desktop_launcher
+        ;;
+    --install-shell)
+        install_shell_command
+        ;;
     --help|-h)
-        echo "Usage: $0 [--direct | --local | --download-only | --help]"
+        echo "Usage: $0 [--direct | --local | --download-only | --install-desktop | --install-shell | --help]"
         echo ""
-        echo "  --direct        Install from internet (default interactive option 1)"
-        echo "  --local         Install from ./offline-packages/"
-        echo "  --download-only Download packages only (for offline/portable use)"
+        echo "  --direct           Install from internet"
+        echo "  --local            Install from ./offline-packages/"
+        echo "  --download-only    Download packages only (for offline/portable use)"
+        echo "  --install-desktop  Install GUI desktop launcher (.desktop + icon)"
+        echo "  --install-shell    Install 'nexus' as a shell command (~/.local/bin/nexus)"
         exit 0
         ;;
     "")

@@ -1,0 +1,7 @@
+[module]
+id = "codex"
+label = "Codex"
+description = "Persistent knowledge base — store and categorize what you've learned."
+tags = ["ai", "knowledge"]
+system = false
+prefix = "cod"

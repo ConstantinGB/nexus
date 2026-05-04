@@ -7,7 +7,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.platform import open_path
-from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 log = get("vault.project_screen")
 
@@ -21,7 +21,7 @@ _TOOLS = [
 ]
 
 
-class VaultProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "vault"
     MODULE_LABEL      = "VAULT"
     REQUIRED_BINARIES = [("gpg", "GnuPG"), ("age", "age"), ("keepassxc-cli", "KeePassXC CLI")]

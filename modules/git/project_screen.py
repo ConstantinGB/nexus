@@ -14,7 +14,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
-from nexus.ui.chat_panel import ChatPanel
+from nexus.ui.tui.chat_panel import ChatPanel
 
 log = get("git.project_screen")
 
@@ -649,7 +649,7 @@ class RepoRow(Vertical):
 
 # ── Main screen ───────────────────────────────────────────────────────────────
 
-class GitProjectScreen(Screen):
+class ProjectScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Back")]
 
     DEFAULT_CSS = """
@@ -726,7 +726,7 @@ class GitProjectScreen(Screen):
             display_user = username
         meta = git_type.upper() + (f" · {display_user}" if display_user else "")
 
-        from nexus.ui.project_tabs import ProjectTabBar
+        from nexus.ui.tui.project_tabs import ProjectTabBar
         yield Header()
         yield ProjectTabBar()
         with Horizontal(id="top-bar"):
@@ -757,10 +757,10 @@ class GitProjectScreen(Screen):
         missing = [name for bin_, name in [("git", "Git")] if not shutil.which(bin_)]
         if not missing:
             return
-        from nexus.ui.base_project_screen import MissingDepsModal
+        from nexus.ui.tui.base_project_screen import MissingDepsModal
         def _on_dismiss(result):
             if result == "settings":
-                from nexus.ui.settings_screen import SettingsScreen
+                from nexus.ui.tui.settings_screen import SettingsScreen
                 self.app.push_screen(SettingsScreen(initial_tab="tab_setup"))
         self.app.push_screen(MissingDepsModal(missing), _on_dismiss)
 
@@ -800,7 +800,7 @@ class GitProjectScreen(Screen):
 
     async def _launch_claude(self) -> None:
         import shutil
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
         if not shutil.which("claude"):
             self.app.notify(
                 "'claude' not found on PATH — install Claude Code first.",
@@ -836,7 +836,7 @@ class GitProjectScreen(Screen):
 
     def action_dismiss(self, result=None) -> None:
         try:
-            from nexus.ui.terminal_widget import Terminal
+            from nexus.ui.tui.terminal_widget import Terminal
             self.query_one("#claude-terminal", Terminal).stop()
         except NoMatches:
             pass

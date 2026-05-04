@@ -16,7 +16,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 from nexus.core.config_manager import load_global_config, save_global_config
 from nexus.core.logger import get
 import nexus.core.sudo as _sudo
-from nexus.ui.base_project_screen import SudoModal
+from nexus.ui.tui.base_project_screen import SudoModal
 
 log = get("ui.settings_screen")
 
@@ -131,9 +131,9 @@ class _ResticRequiredModal(ModalScreen[bool]):
     _ResticRequiredModal { align: center middle; }
     _ResticRequiredModal > Vertical {
         width: 52; height: auto; padding: 2 3;
-        background: #2D1B4E; border: solid #00B4FF;
+        background: $theme-surface; border: solid $theme-border;
     }
-    _ResticRequiredModal Label { height: auto; margin-bottom: 1; color: #E0E0FF; }
+    _ResticRequiredModal Label { height: auto; margin-bottom: 1; color: $theme-text; }
     _ResticRequiredModal Button { margin-top: 1; }
     """
 
@@ -154,29 +154,29 @@ class SettingsScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Close")]
 
     DEFAULT_CSS = """
-    SettingsScreen { background: #1A0A2E; }
-    SettingsScreen Header { background: #2D1B4E; color: #00B4FF; }
-    SettingsScreen Footer { background: #2D1B4E; color: #00FF88; }
+    SettingsScreen { background: $theme-bg; }
+    SettingsScreen Header { background: $theme-surface; color: $theme-border; }
+    SettingsScreen Footer { background: $theme-surface; color: $theme-accent2; }
 
     SettingsScreen TabbedContent { height: 1fr; }
     SettingsScreen TabPane       { padding: 1 2; }
 
     .setting-section {
-        background: #2D1B4E;
-        border: solid #3A2260;
+        background: $theme-surface;
+        border: solid $theme-border-dim;
         padding: 1 2;
         margin-bottom: 1;
         height: auto;
     }
-    .setting-section.active-section { border: solid #00B4FF; }
+    .setting-section.active-section { border: solid $theme-border; }
 
-    .section-title  { color: #00B4FF; text-style: bold; height: 1; margin-bottom: 1; }
-    .section-desc   { color: #8080AA; height: 3; }
-    .field-label    { color: #00FF88; height: 1; margin-top: 1; }
-    .hint           { color: #555588; height: 1; }
+    .section-title  { color: $theme-border; text-style: bold; height: 1; margin-bottom: 1; }
+    .section-desc   { color: $theme-text-dim; height: 3; }
+    .field-label    { color: $theme-accent2; height: 1; margin-top: 1; }
+    .hint           { color: $theme-text-dim; height: 1; }
     .status-ok      { color: #00FF88; height: 1; }
     .status-err     { color: #FF4444; height: 1; }
-    .status-pending { color: #8080AA; height: 1; }
+    .status-pending { color: $theme-text-dim; height: 1; }
 
     /* Provider selector bar */
     #provider-bar   { height: 3; margin-bottom: 1; }
@@ -184,19 +184,19 @@ class SettingsScreen(Screen):
     .provider-btn {
         width: 12;
         margin-right: 1;
-        background: #2D1B4E;
-        color: #8080AA;
-        border: solid #3A2260;
+        background: $theme-surface;
+        color: $theme-text-dim;
+        border: solid $theme-border-dim;
     }
     .provider-btn.provider-selected {
-        background: #1A1040;
-        color: #00B4FF;
-        border: solid #00B4FF;
+        background: $theme-bg;
+        color: $theme-border;
+        border: solid $theme-border;
     }
     .mode-toggle-btn {
         width: 14;
-        background: #2D1B4E;
-        border: solid #3A2260;
+        background: $theme-surface;
+        border: solid $theme-border-dim;
         margin-left: 1;
     }
     .mode-toggle-red {
@@ -217,31 +217,31 @@ class SettingsScreen(Screen):
     #local-test-bar   { height: 3; }
 
     /* Model section */
-    #model-section   { height: auto; background: #2D1B4E; border: solid #3A2260;
+    #model-section   { height: auto; background: $theme-surface; border: solid $theme-border-dim;
                         padding: 1 2; margin-bottom: 1; }
-    #model-section.active-section { border: solid #00B4FF; }
+    #model-section.active-section { border: solid $theme-border; }
     #model-basic     { height: auto; }
     #model-advanced  { height: auto; }
 
     .model-row            { height: 3; margin-bottom: 0; }
-    .model-cap-label      { width: 18; color: #E0E0FF; content-align: left middle; height: 3; }
+    .model-cap-label      { width: 18; color: $theme-text; content-align: left middle; height: 3; }
     .model-row Input      { width: 1fr; }
 
     /* Square checkboxes: solid border so it looks like a box, not a pill */
     .model-row Checkbox {
         width: 5;
         height: 3;
-        border: solid #3A2260;
-        background: #1A0A2E;
+        border: solid $theme-border-dim;
+        background: $theme-bg;
         padding: 0;
-        color: #555577;
+        color: $theme-text-dim;
     }
     .model-row Checkbox > .toggle--button {
         background: transparent;
     }
     .model-row Checkbox.-on {
-        border: solid #00B4FF;
-        color: #00B4FF;
+        border: solid $theme-border;
+        color: $theme-border;
     }
     .model-row Checkbox.-on > .toggle--button {
         background: transparent;
@@ -249,30 +249,31 @@ class SettingsScreen(Screen):
 
     /* Dim model input when its capability is disabled */
     .model-row Input:disabled {
-        color: #444455;
-        background: #130822;
-        border: solid #241540;
+        color: $theme-border-dim;
+        background: $theme-bg;
+        border: solid $theme-border-dim;
     }
 
     #save-bar         { height: 3; margin-top: 1; }
     #save-bar Button  { margin-right: 1; }
 
-    .general-row         { height: 3; padding: 0 1; border-bottom: solid #241540; }
-    .general-label       { color: #E0E0FF; width: 1fr; }
-    .general-value       { color: #8080AA; }
+    .general-row         { height: 3; padding: 0 1; border-bottom: solid $theme-border-dim; }
+    .general-label       { color: $theme-text; width: 1fr; }
+    .general-value       { color: $theme-text-dim; }
     .general-row Select  { width: 30; }
     #general-save-bar    { height: 3; margin-top: 1; }
+    #appearance-save-bar { height: 3; margin-top: 1; }
 
     /* System Modules tab */
     .sysmod-card { height: auto; }
     .sysmod-card Checkbox {
         height: 3;
-        border: solid #3A2260;
-        background: #1A0A2E;
-        color: #555577;
+        border: solid $theme-border-dim;
+        background: $theme-bg;
+        color: $theme-text-dim;
     }
     .sysmod-card Checkbox > .toggle--button { background: transparent; }
-    .sysmod-card Checkbox.-on { border: solid #00B4FF; color: #00B4FF; }
+    .sysmod-card Checkbox.-on { border: solid $theme-border; color: $theme-border; }
     #sysmod-save-bar { height: 3; margin-top: 1; }
     #sysmod-save-bar Button { margin-right: 1; }
     #sysmod-backup-schedule-row { height: 3; margin-top: 1; }
@@ -284,28 +285,28 @@ class SettingsScreen(Screen):
     .setup-mode-btn {
         width: 20;
         margin-right: 1;
-        background: #2D1B4E;
-        color: #8080AA;
-        border: solid #3A2260;
+        background: $theme-surface;
+        color: $theme-text-dim;
+        border: solid $theme-border-dim;
     }
     .setup-mode-btn.mode-selected {
-        background: #1A1040;
-        color: #00B4FF;
-        border: solid #00B4FF;
+        background: $theme-bg;
+        color: $theme-border;
+        border: solid $theme-border;
     }
-    .mod-group-label { color: #00FF88; text-style: bold; height: 1; margin-top: 1; }
-    .dep-row         { height: 3; padding: 0 1; border-bottom: solid #241540; }
-    .dep-name        { width: 1fr; color: #E0E0FF; content-align: left middle; }
+    .mod-group-label { color: $theme-accent2; text-style: bold; height: 1; margin-top: 1; }
+    .dep-row         { height: 3; padding: 0 1; border-bottom: solid $theme-border-dim; }
+    .dep-name        { width: 1fr; color: $theme-text; content-align: left middle; }
     .dep-status-ok   { width: 12; color: #00FF88; content-align: left middle; }
     .dep-status-miss { width: 12; color: #FF4444; content-align: left middle; }
     .dep-install-btn { width: 12; height: 3; }
     #setup-log {
         height: 8;
-        border: solid #3A2260;
-        background: #130822;
+        border: solid $theme-border-dim;
+        background: $theme-bg;
         padding: 0 1;
         margin-top: 1;
-        color: #8080AA;
+        color: $theme-text-dim;
     }
     """
 
@@ -355,16 +356,41 @@ class SettingsScreen(Screen):
                         yield Label("Managed via MCP screen (press m)", classes="general-value")
                     with Horizontal(classes="general-row"):
                         yield Label("Default AI panel", classes="general-label")
+                        _panel_opts = [("Chat (built-in)", "chat"),
+                                       ("Local AI", "local"),
+                                       ("Claude Code CLI", "claude_code"),
+                                       ("None", "none")]
+                        _panel_val = self._cfg.get("ai", {}).get("default_panel", "chat")
+                        _valid = {v for _, v in _panel_opts}
+                        if _panel_val not in _valid:
+                            _panel_val = "chat"
                         yield Select(
-                            [("Chat (built-in)", "chat"),
-                             ("Claude Code CLI", "claude_code"),
-                             ("None", "none")],
-                            value=self._cfg.get("ai", {}).get("default_panel", "chat"),
+                            _panel_opts,
+                            value=_panel_val,
                             id="select-default-panel",
                             allow_blank=False,
                         )
                     with Horizontal(id="general-save-bar"):
                         yield Button("Save", id="btn-general-save", variant="primary")
+
+            # ── Appearance tab ────────────────────────────────────────────
+            with TabPane("Appearance", id="tab_appearance"):
+                with ScrollableContainer():
+                    from nexus.ui.tui.theme import THEMES
+                    current_theme = self._cfg.get("ui", {}).get("theme", "nexus-legacy")
+                    yield Label("Theme", classes="section-title")
+                    yield Label(
+                        "Choose a colour theme. Changes apply immediately.",
+                        classes="hint",
+                    )
+                    yield Select(
+                        [(t.label, t.name) for t in THEMES.values()],
+                        value=current_theme,
+                        id="select-theme",
+                        allow_blank=False,
+                    )
+                    with Horizontal(id="appearance-save-bar"):
+                        yield Button("Save", id="btn-appearance-save", variant="primary")
 
             # ── Setup tab ─────────────────────────────────────────────────
             with TabPane("Setup", id="tab_setup"):
@@ -762,6 +788,8 @@ class SettingsScreen(Screen):
                 self._save()
             elif bid == "btn-close":
                 self.dismiss()
+            elif bid == "btn-appearance-save":
+                self._save_appearance()
             elif bid == "btn-general-save":
                 self._save_general()
             elif bid == "btn-sysmod-save":
@@ -907,6 +935,19 @@ class SettingsScreen(Screen):
         except Exception:
             log.exception("Failed to save settings")
             self.app.notify("Failed to save settings — see log.", severity="error")
+
+    def _save_appearance(self) -> None:
+        log.info("Saving appearance settings")
+        try:
+            theme_name = str(self.query_one("#select-theme", Select).value)
+            cfg = load_global_config()
+            cfg.setdefault("ui", {})["theme"] = theme_name
+            save_global_config(cfg)
+            self.app.update_theme(theme_name)
+            self.app.notify("Theme applied.", severity="information")
+        except Exception:
+            log.exception("Failed to save appearance settings")
+            self.app.notify("Failed to save — see log.", severity="error")
 
     def _save_general(self) -> None:
         log.info("Saving general settings")

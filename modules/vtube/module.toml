@@ -1,0 +1,7 @@
+[module]
+id = "vtube"
+label = "VTube"
+description = "Virtual avatar setup — face tracking, Live2D/VRM models, OBS integration."
+tags = ["media", "avatar"]
+system = false
+prefix = "vtu"

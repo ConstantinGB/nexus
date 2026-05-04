@@ -29,9 +29,14 @@ class AIClient:
 
     MODEL = "claude-sonnet-4-6"
 
-    def __init__(self, api_key: str = "", mcp: MCPClient | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str = "",
+        mcp: MCPClient | None = None,
+        force_provider: str = "",
+    ) -> None:
         cfg = load_global_config().get("ai", {})
-        self._provider = cfg.get("provider", "api_key")
+        self._provider = force_provider or cfg.get("provider", "api_key")
         if self._provider == "local":
             self._local_endpoint = cfg.get("local_endpoint", "http://localhost:11434").rstrip("/")
             self._local_model    = cfg.get("local_model", "")
@@ -46,20 +51,25 @@ class AIClient:
         messages: list[dict],
         system_prompt: str = "",
         skill_scopes: list[str] | None = None,
+        intent: dict | None = None,
     ) -> str:
         if self._provider == "local":
-            return await self._chat_local(messages, system_prompt, skill_scopes)
-        return await self._chat_anthropic(messages, system_prompt, skill_scopes)
+            return await self._chat_local(messages, system_prompt, skill_scopes, intent)
+        return await self._chat_anthropic(messages, system_prompt, skill_scopes, intent)
 
     async def _chat_anthropic(
         self,
         messages: list[dict],
         system_prompt: str = "",
         skill_scopes: list[str] | None = None,
+        intent: dict | None = None,
     ) -> str:
+        hints       = intent.get("intra_scope_hints") if intent else None
         mcp_tools   = await self._mcp.get_tools() if self._mcp else []
-        skill_tools = registry.get_tools(skill_scopes or [])
+        skill_tools = registry.get_tools(skill_scopes or [], hints=hints)
         tools       = mcp_tools + skill_tools
+        if intent and not intent.get("likely_tool_use", True):
+            tools = []
 
         kwargs: dict[str, Any] = {"model": self.MODEL, "max_tokens": 4096, "messages": messages}
         if system_prompt:
@@ -88,6 +98,19 @@ class AIClient:
                         except Exception as exc:
                             result = json.dumps({"error": str(exc)})
                             is_error = True
+                        # Give the model structured feedback on validation failures
+                        try:
+                            result_dict = json.loads(result)
+                            if "validation_error" in result_dict:
+                                result = (
+                                    f"Your arguments for '{block.name}' were invalid: "
+                                    f"{result_dict['validation_error']}. "
+                                    f"Schema requires: {result_dict.get('schema', {})}. "
+                                    "Please retry with valid arguments."
+                                )
+                                is_error = True
+                        except (ValueError, TypeError):
+                            pass
                         tool_results.append({
                             "type":        "tool_result",
                             "tool_use_id": block.id,
@@ -111,11 +134,15 @@ class AIClient:
         messages: list[dict],
         system_prompt: str = "",
         skill_scopes: list[str] | None = None,
+        intent: dict | None = None,
     ) -> str:
         import httpx
-        skill_tools = registry.get_tools(skill_scopes or [])
+        hints       = intent.get("intra_scope_hints") if intent else None
+        skill_tools = registry.get_tools(skill_scopes or [], hints=hints)
         mcp_tools   = await self._mcp.get_tools() if self._mcp else []
         oai_tools   = [_to_oai_tool(t) for t in skill_tools + mcp_tools]
+        if intent and not intent.get("likely_tool_use", True):
+            oai_tools = []
 
         oai_msgs: list[dict] = []
         if system_prompt:
@@ -182,6 +209,18 @@ class AIClient:
                             result = json.dumps({"error": f"Unknown tool: {name}"})
                     except Exception as exc:
                         result = json.dumps({"error": str(exc)})
+                    # Give the model structured feedback on validation failures
+                    try:
+                        result_dict = json.loads(result)
+                        if "validation_error" in result_dict:
+                            result = (
+                                f"Your arguments for '{name}' were invalid: "
+                                f"{result_dict['validation_error']}. "
+                                f"Schema requires: {result_dict.get('schema', {})}. "
+                                "Please retry with valid arguments."
+                            )
+                    except (ValueError, TypeError):
+                        pass
                     oai_msgs.append({
                         "role":         "tool",
                         "tool_call_id": tc["id"],

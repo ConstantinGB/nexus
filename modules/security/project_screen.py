@@ -6,7 +6,7 @@ from textual.widgets import Label, Button, Log
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
-from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("security.project_screen")
 
@@ -25,7 +25,7 @@ _TOOLS = [
 ]
 
 
-class SecurityProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "security"
     MODULE_LABEL      = "SECURITY"
     REQUIRED_BINARIES = [("ufw", "ufw"), ("nmap", "nmap")]

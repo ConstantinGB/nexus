@@ -17,7 +17,7 @@ log = get("backup.setup_screen")
 _ALL_STEPS = ["step-backend", "step-paths", "step-password", "step-init", "step-done"]
 
 
-class BackupSetupScreen(Screen):
+class SetupScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "Back")]
 
     DEFAULT_CSS = """
@@ -271,19 +271,19 @@ class BackupSetupScreen(Screen):
         except ValueError:
             keep_daily, keep_weekly = 7, 4
         excludes = [p.strip() for p in self._excludes.split(",") if p.strip()]
-        cfg = {
-            "backup": {
-                "setup_done":   True,
-                "configured":   True,
-                "backend":      self._backend,
-                "repo":         self._repo,
-                "password":     self._password,
-                "paths":        [p.strip() for p in self._paths.split(",") if p.strip()],
-                "schedule":     self._schedule,
-                "keep_daily":   keep_daily,
-                "keep_weekly":  keep_weekly,
-                "excludes":     excludes,
-            }
+        from nexus.core.config_manager import load_project_config
+        cfg = load_project_config(self._project.slug)
+        cfg["backup"] = {
+            "setup_done":   True,
+            "configured":   True,
+            "backend":      self._backend,
+            "repo":         self._repo,
+            "password":     self._password,
+            "paths":        [p.strip() for p in self._paths.split(",") if p.strip()],
+            "schedule":     self._schedule,
+            "keep_daily":   keep_daily,
+            "keep_weekly":  keep_weekly,
+            "excludes":     excludes,
         }
         save_project_config(self._project.slug, cfg)
         log.info("Backup project config saved for %s", self._project.slug)

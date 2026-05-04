@@ -1,0 +1,11 @@
+[module]
+id = "youtube"
+label = "YouTube"
+description = "Download videos, audio and transcripts from YouTube."
+tags = ["media", "download"]
+system = false
+prefix = "ytb"
+
+[setup]
+use_project_screen = true
+config_check = "youtube.configured"

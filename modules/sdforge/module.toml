@@ -1,0 +1,11 @@
+[module]
+id = "sdforge"
+label = "SDForge"
+description = "Stable Diffusion Forge — local image generation via A1111-compatible API."
+tags = ["ai", "image", "local"]
+system = true
+prefix = "sdf"
+
+[setup]
+has_setup_screen = true
+config_check = "sdforge.setup_done"

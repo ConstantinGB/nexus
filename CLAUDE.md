@@ -1,515 +1,94 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ## Project Overview
 
-Nexus is a Python-based personalized organizational tool with a tile-based terminal UI for browsing and managing projects. It integrates AI/LLM support (Claude API, local models) and connects to external services via MCP servers. Each project type is a module; multiple instances of the same type are allowed.
+Nexus is a Python-based personal organiser with a tile-based Textual TUI and an optional PySide6 desktop GUI. It integrates AI (Claude API, local models via OpenAI-compatible endpoints) and connects to external tools via MCP servers. Each project type is a module; multiple instances of the same type are allowed.
 
-**Design philosophy:** Nexus is designed to run independently of AI. All core modules work without an API key or local model; AI is an optional enhancement that improves output quality when available. Never assume AI is reachable — treat it as a progressive enhancement, not a hard dependency.
+**Design philosophy:** AI is a progressive enhancement — all core modules work without an API key. Never treat AI as a hard dependency.
 
 ## Running the App
 
 **Package manager:** [uv](https://docs.astral.sh/uv/)
 
 ```bash
-uv sync          # install dependencies
-uv run nexus     # run the app
+uv sync            # install dependencies
+uv run nexus       # Textual TUI (default)
+uv run nexus --gui # PySide6 desktop GUI
+uv run nexus install-desktop  # install taskbar launcher
 ```
 
-**Keyboard shortcuts** (main screen):
-- `q` — quit
-- `s` — open Settings
-- `m` — open MCP server manager
-- `Escape` — go back from any screen
+**TUI keyboard shortcuts:** `q` quit · `s` settings · `m` MCP servers · `Escape` go back
 
-## Architecture
-
-### Directory layout
+## Directory Layout
 
 ```
 nexus/
-  app.py                 — NexusApp (Textual App), entry point; overrides clipboard property +
-                           copy_to_clipboard() to integrate system clipboard (xclip/wl-paste/pbpaste)
+  app.py               — entry point (NexusApp TUI + --gui dispatch + skill registration)
   core/
-    config_manager.py    — read/write settings.yaml + per-project config.yaml; is_ai_configured() helper
-    logger.py            — centralised logging (RotatingFileHandler → logs/nexus.log)
-    module_manager.py    — module registry + screen dispatch
-    mycelium.py          — inter-module communication bus
-    platform.py          — cross-platform helpers: open_path() → xdg-open/open/start; check_binary() →
-                           shutil.which + path check; read_clipboard() / write_clipboard() → system
-                           clipboard via pyperclip / wl-paste / xclip / xsel / pbpaste / PowerShell
-    project_manager.py   — create / list / delete project instances
-    scheduler.py         — BackupScheduler: asyncio polling loop; fires restic backups on daily/weekly schedules
+    config_manager.py  — settings.yaml + per-project config.yaml; is_ai_configured()
+    module_manager.py  — _REGISTRY, needs_setup(), get_setup_screen(), get_project_screen()
+    mycelium.py        — inter-module event bus (singleton `bus`)
+    platform.py        — open_path(), check_binary(), read_clipboard(), write_clipboard()
+    project_manager.py — create_project(), list_projects(), delete_project()
+    scheduler.py       — BackupScheduler (asyncio polling, daily/weekly restic)
+    logger.py          — RotatingFileHandler → logs/nexus.log; get("name") for child loggers
   ai/
-    client.py            — AIClient: provider-aware (api_key → _chat_anthropic via Anthropic SDK;
-                           local → _chat_local via OpenAI-compatible HTTP); _to_oai_tool() translates
-                           Anthropic tool format to OpenAI function format; full tool-use loop for both paths
-    mcp_client.py        — MCPClient: connects to MCP servers via stdio
-    mcp_registry.py      — curated catalog of popular MCP servers
-    skill_registry.py    — SkillRegistry singleton: register(), get_tools(scopes), call(), has()
-    global_skills.py     — global-scope skills: list_projects, run_flow, search_logs
+    client.py          — AIClient: _chat_anthropic() + _chat_local(); full tool-use loop
+    skill_registry.py  — SkillRegistry singleton: register(), get_tools(scopes), call()
+    mcp_client.py      — MCPClient: connects to MCP servers via stdio
+    mcp_registry.py    — curated MCP server catalog
+    global_skills.py   — list_projects, run_flow, search_logs
+    flow_handlers.py   — five Mycelium cross-module flows; register_flow_handlers()
   ui/
-    tiles.py             — TileGrid, ProjectTile, AddProjectTile, SettingsTile, ConfirmDeleteModal
-    add_project_screen.py — full-screen tile grid of module types (ModuleTile) + name/desc form;
-                            Custom tile always last with distinct purple styling; grid auto-sizes
-    settings_screen.py   — AI provider config (api_key / local / login) + general settings;
-                           Test Connection button for local provider; Verify button for api_key;
-                           Setup tab: per-module dependency installer + system group (xclip, wl-clipboard);
-                           accepts optional initial_tab kwarg to pre-select a tab on push
-    mcp_screen.py        — MCP server manager (Active / Add Servers tabs)
-    base_project_screen.py — BaseProjectScreen: shared layout (top-bar with 💬 Chat + ⌨ Claude
-                             panel buttons, action-bar, setup-pane, main-pane, output log),
-                             _run_cmd async helper, InputModal; all skeleton modules subclass this;
-                             panels work in both configured and unconfigured states; output-log
-                             auto-hides while a panel is active; MissingDepsModal pushed on mount
-                             when REQUIRED_BINARIES are absent; REQUIRED_BINARIES class attr on each
-                             module screen lists (binary, display_name) pairs to check
+    tui/               — Textual screens (tiles, settings, mcp, base_project_screen, add_project)
+    gui/               — PySide6 app (app.py, tile_grid.py, chat_panel.py, theme.py, base_project_window.py)
+  assets/icons/        — nexus.svg app icon
+  scripts/
+    install_desktop.py — generates ~/.local/share/applications/nexus.desktop
 modules/
-  git/                   — Git module (FULLY IMPLEMENTED)
-    setup_screen.py      — 6-step wizard: name → type → credentials (optional for public repos) → git config → software → repos → clone
-    project_screen.py    — repo management: pull/push/commit/info/delete per repo; 💬 Chat + ⌨ Claude panel buttons;
-                           BranchModal: switch/create/delete branch + Open PR link (GitHub/GitLab);
-                           AddRepoModal for cloning via SSH or HTTPS URL
-    git_ops.py           — subprocess wrappers for git, all return (bool, str); get_remote_url + pr_url helpers
-    github_api.py        — async GitHub REST API (list repos, verify token)
-    skills.py            — git_status, git_pull, git_push, git_commit, git_log, git_clone, git_diff, git_stash
-  localai/               — LocalAI module (FULLY IMPLEMENTED)
-    setup_screen.py      — 5-step wizard: config → AI generates script → review → install → done
-    project_screen.py    — inference UI: prompt input, output log, optional negative prompt + file open;
-                           Test Endpoint button; 💬 Chat + ⌨ Claude panel buttons
-    hw_detect.py         — hardware detection (GPU via nvidia-smi/rocm-smi/lspci, RAM, CPU, OS, disk)
-    skills.py            — localai_run_inference
-  custom/                — AI-first open project: CLAUDE.md viewer + conversational AI chat + user-defined shell commands
-    project_screen.py    — CustomProjectScreen: two-pane layout (context | chat | Claude Code terminal),
-                           💬 Chat + ⌨ Claude panel toggles, dynamic command buttons,
-                           graceful degradation without AI; skill_scopes=["global","custom"]
-    skills.py            — custom_run_command, custom_ask
-  web/                   — project_screen: Dev/Build/Test/Lint/Install via package manager; Run Script…
-                           picker (all package.json scripts); Stop button for long-running processes;
-                           auto-detects framework; inline setup for project_path + pm
-                           skills.py: web_list_scripts, web_run_script
-  research/              — project_screen: note list (.md files) with YAML-frontmatter-aware title display
-                           and per-note ✕ delete button; New Note (YAML frontmatter: date/topic/tags) /
-                           Search / Export URLs / Export All; inline setup for topic + notes_dir
-                           skills.py: research_list_notes, research_new_note, research_search, research_get_note, research_delete_note
-  codex/                 — project_screen: Zettelkasten note list, New Note with frontmatter skeleton,
-                           Search (ripgrep -C 2 with context), Filter Tags, Open Vault; inline setup for vault_dir
-                           skills.py: codex_list, codex_new_entry, codex_search, codex_get_entry
-  journal/               — project_screen: entry list (.tex newest-first, word count), New Entry (LaTeX template),
-                           Compile Latest (pdflatex with `!` error summary), Open PDF; inline setup for journal_dir + author
-                           skills.py: journal_list_entries, journal_new_entry, journal_compile
-  game/                  — project_screen: Godot info (game name, version, scene count), Launch Editor,
-                           Run Game, Lint (gdtoolkit with error/warning count summary), Export (headless);
-                           inline setup for project_path + godot_bin; binary validated at setup save
-                           skills.py: game_scene_list, game_launch_editor, game_run
-  org/                   — project_screen: .md file list by mtime with checkbox completion tracking (N/M done),
-                           New Plan / New Diagram (Mermaid) / New Schedule (Markdown table); inline setup for output_dir
-                           skills.py: org_list_plans, org_new_plan, org_new_diagram, org_new_schedule, org_get_plan
-  home/                  — project_screen: HA URL + ping status, YAML config file list, Ping HA /
-                           Check API (httpx, token stays in-process) / Open in Browser;
-                           inline setup for ha_url + config_dir + token; validates configuration.yaml at save
-                           skills.py: home_ping, home_api_call
-  streaming/             — project_screen: OBS config status, scene collection list, Launch OBS /
-                           Check Logs (crash/dropped-frames warning summary) / List Scenes;
-                           inline setup for obs_config_dir + platform + obs_bin; binary validated at setup save
-                           skills.py: streaming_list_scenes, streaming_launch_obs, streaming_check_logs
-  vtube/                 — project_screen: pipeline display (Camera → tracker → runtime → OBS),
-                           Launch Runtime / Start Tracker / Check Camera; inline setup for model_path +
-                           runtime + tracker + openseeface_port (optional); runtime + model validated at save
-                           skills.py: vtube_launch_runtime, vtube_start_tracker
-  emulator/              — project_screen: ROM directory tree (system dirs + ROM counts), Launch
-                           RetroArch / Browse by System → ROM picker modal; inline setup for rom_dir + retroarch_bin;
-                           binary validated at setup save
-                           skills.py: emulator_list_systems, emulator_launch
-  vault/                 — project_screen: tool inventory (gpg/age/veracrypt/keepassxc-cli ✓/✗), age key
-                           status, GPG List Keys / Gen Key / Export Key / Import Key / Encrypt File / Decrypt File /
-                           KeePassXC List / VeraCrypt Mount+Dismount;
-                           inline setup for vault_dir + age_key_path + keepassxc_db + veracrypt_volume
-                           skills.py: vault_list_gpg_keys, vault_age_key_status, vault_encrypt_file, vault_decrypt_file
-  server/                — project_screen: service rows (name|port|type|status|Start/Stop/Logs/Open URL),
-                           concurrent status polling (systemd + docker), Add Service / Import Compose /
-                           Refresh / Docker PS / Stats (docker stats --no-stream); duplicate name detection;
-                           inline setup for docker_compose_dir
-                           skills.py: server_list_services, server_status, server_start, server_stop, server_restart, server_logs
-  backup/                — project_screen: restic snapshot list, Run Backup / Check / Restore / Browse Snapshots;
-                           inline setup for repo_path + source_path + password; auto-initialises repo on first backup
-                           backup_ops.py: restic wrappers (ensure_initialized, backup, list_snapshots, check, restore, forget)
-                           skills.py: backup_run_backup, backup_list_snapshots, backup_check, backup_restore, backup_forget
-  security/              — project_screen: ufw status + rules list, nmap quick-scan; inline setup for interface
-                           skills.py: (none — security module has no registered skills; use Chat for guidance)
-  sdforge/               — project_screen: SD Forge server controls (Start/Stop), model browser, txt2img UI;
-                           setup_screen: 5-step wizard (install_dir → endpoint → vram → model → launch_args);
-                           api_client.py: async httpx wrappers for A1111-compatible REST API
-                           skills.py: sdforge_txt2img
-  promptopt/             — project_screen: three-mode prompt optimizer (Text / Instruct / Image);
-                           no setup required; always AI-configured path; Copy button for output
-                           skills.py: promptopt_optimize
-projects/                — project instances (git-ignored except .gitkeep)
+  <id>/
+    project_screen.py  — TUI screen (BaseProjectScreen subclass)
+    gui_screen.py      — PySide6 window (GuiScreen, optional)
+    setup_screen.py    — setup wizard (if module needs configuration)
+    skills.py          — skill registrations
+    CLAUDE.template.md — per-project AI context (copied to projects/<slug>/CLAUDE.md)
+projects/              — project instances (git-ignored except .gitkeep)
 config/
-  settings.yaml          — global config: AI provider + MCP servers (git-ignored)
-  settings.example.yaml  — committed reference copy
-logs/
-  nexus.log              — rotating log file (git-ignored)
+  settings.yaml        — global config: AI provider + MCP servers (git-ignored)
+  settings.example.yaml
+docs/drafts/           — dev planning documents (not committed)
 ```
 
-### Module system
+## Module System
 
-Each directory under `modules/` is a project-type template. `project_manager.create_project()` instantiates it under `projects/<slug>/`, copying `CLAUDE.template.md` → `CLAUDE.md`.
+`module_manager.py` is the single dispatch point. `_REGISTRY` maps module IDs to `ModuleInfo`. Three functions drive everything: `needs_setup()`, `get_setup_screen()`, `get_project_screen()`.
 
-All 19 modules have comprehensive `CLAUDE.template.md` files containing:
-- **Static AI knowledge** — key software, commands, config patterns, and domain-specific reference tables
-- **User fill-in sections** — commented prompts for the user to describe their specific setup
+To add a module: add `ModuleInfo` to `_REGISTRY`, implement the three conditionals, create `modules/<id>/project_screen.py` subclassing `BaseProjectScreen` with:
+`MODULE_KEY`, `MODULE_LABEL`, `SETUP_FIELDS`, `_compose_action_buttons()`, `_populate_content()`, `_handle_action()`.
 
-`module_manager.py` is the single dispatch point:
-- `needs_setup(project) -> bool` — True if the project hasn't been configured yet
-- `get_setup_screen(project)` — returns the setup `Screen` for that module
-- `get_project_screen(project)` — returns the main `Screen` for an already-configured project
+**Dual-UI rule:** every new module and every feature change must be reflected in both the TUI (`project_screen.py`) and the GUI (`gui_screen.py`). New modules require a STUB-level `gui_screen.py` at minimum. See `.claude/rules/dual-ui.md` for the full protocol, change-type table, and coverage tracker.
 
-To add a new module, add a `ModuleInfo` entry to `_REGISTRY` and implement the conditionals in those three functions. For a module that uses `BaseProjectScreen`, subclass it in `modules/<id>/project_screen.py`, define `MODULE_KEY`, `MODULE_LABEL`, `SETUP_FIELDS`, `_compose_action_buttons()`, `_populate_content()`, and `_handle_action()`.
-
-### Project instances
+## Project Instances
 
 Each project lives at `projects/<slug>/`:
-```
-config.yaml      — project config (module-specific keys + mcp overrides)
-CLAUDE.md        — per-project AI instructions (copied from module template, user-editable)
-repos/           — (git module) cloned repositories
-setup.sh         — (localai module) generated one-time setup script
-outputs/         — (localai module) inference output files
-```
 
-### UI patterns
+- `config.yaml` — module-specific config + MCP overrides
+- `CLAUDE.md` — per-project AI instructions (copied from module template)
+- Module-specific dirs: `repos/` (git), `outputs/` (localai), `data/` (operator), etc.
 
-- **Multi-step forms**: use `_ALL_STEPS` list + `_show(step_id)` toggling `.display` on each container. Do NOT use `ContentSwitcher` (CSS height issues).
-- **Async workers**: always pass the coroutine directly — `self.run_worker(self._my_async_method())`, not a lambda or method reference.
-- **Blocking calls**: wrap in `asyncio.get_event_loop().run_in_executor(None, blocking_fn, args)`.
-- **Modal screens**: push via `self.app.push_screen(Modal(...), callback)` — `push_screen` is on `App`, not `Screen`.
-- **Button events in tiles**: call `event.stop()` in `on_button_pressed` to prevent the event from also triggering `on_click` on the parent widget.
-- **Dynamic grid sizing**: set `widget.styles.height = rows * tile_height` in `on_mount` when a grid must fit all items without scrolling.
-- **Custom messages**: subclass `Message` inside the widget class, post with `self.post_message(...)`, receive with `on_<widget_class>_<message_class>` naming.
+## Logging
 
-### Logging
+`setup_logging()` once at startup. `get("some.name")` → `logging.getLogger("nexus.some.name")`. Log at appropriate levels; use `log.exception(...)` for tracebacks.
 
-`nexus/core/logger.py` sets up a `RotatingFileHandler` writing to `logs/nexus.log` (5 MB × 3 backups). All modules get a child logger via `get("some.name")` which returns `logging.getLogger("nexus.some.name")`.
+---
 
-Call `setup_logging()` once at app startup (`nexus/app.py`). Every significant operation logs at appropriate levels; exceptions use `log.exception(...)` to capture tracebacks.
+Detailed guidance loaded on demand from `.claude/rules/`:
 
-## MCP Integration
-
-Nexus acts as an MCP **client** — it connects to configured MCP servers at runtime and injects their tools into Claude API calls.
-
-### Data flow
-```
-config/settings.yaml  ──► ConfigManager ──► MCPClient (connects to servers)
-projects/<name>/config.yaml ──►┘              └──► AIClient (passes tools to Claude)
-```
-
-### Key files
-| File | Role |
-|------|------|
-| `nexus/core/config_manager.py` | `load_global_config()`, `save_global_config()`, `merged_mcp_servers()` |
-| `nexus/ai/mcp_registry.py` | Curated catalog: `REGISTRY`, `REGISTRY_BY_ID` |
-| `nexus/ai/mcp_client.py` | `MCPClient.connect_all()`, `get_tools()`, `call_tool()`, `disconnect_all()` |
-| `nexus/ai/client.py` | `AIClient.chat(skill_scopes?)` — merges skill + MCP tools, full tool-use loop |
-| `nexus/ui/mcp_screen.py` | Active / Add Servers tabs, guided config form |
-
-### Config format
-
-**Global** (`config/settings.yaml`):
-```yaml
-ai:
-  provider: api_key        # api_key | local | login
-  api_key: ""              # Anthropic API key (or set ANTHROPIC_API_KEY env var)
-  local_endpoint: "http://localhost:11434"
-  local_model: ""
-mcp:
-  servers:
-    github:
-      command: npx
-      args: ["-y", "@modelcontextprotocol/server-github"]
-      env:
-        GITHUB_TOKEN: "ghp_..."
-```
-
-**Per-project** (`projects/<name>/config.yaml`):
-```yaml
-mcp:
-  servers:             # project-specific additions
-    sqlite:
-      command: npx
-      args: ["-y", "@modelcontextprotocol/server-sqlite", "--db-path", "./data.db"]
-      env: {}
-  disabled:            # opt-out of global servers for this project
-    - brave-search
-```
-
-## AI Provider Configuration
-
-Configured via the Settings screen (`s`) or directly in `config/settings.yaml`:
-
-| Provider | How it works |
-|----------|-------------|
-| `api_key` | Anthropic API key → `AIClient._chat_anthropic()` via `AsyncAnthropic` |
-| `local`   | OpenAI-compatible endpoint → `AIClient._chat_local()` via `httpx`; tools translated with `_to_oai_tool()`; degrades gracefully if model doesn't support function calling |
-| `login`   | Claude.ai account login — browser OAuth, not yet supported in terminal UI |
-
-`is_ai_configured(cfg=None) -> bool` in `config_manager.py` is the single source of truth for whether AI is usable — use it instead of checking for an API key directly. It handles both providers: `api_key` requires a key or `ANTHROPIC_API_KEY` env var; `local` requires both `local_endpoint` and `local_model`.
-
-## Mycelium — Inter-Module Communication
-
-`nexus/core/mycelium.py` — singleton `bus`, registers active project instances and routes payloads between modules.
-`nexus/ai/flow_handlers.py` — implements the five default flows; `register_flow_handlers()` is called at app startup.
-
-### Default flows
-| Source | Target | Action |
-|--------|--------|--------|
-| `research` | `codex` | `research_to_codex` — distill findings into a knowledge entry |
-| `git` | `journal` | `git_to_journal` — summarise recent commits |
-| `research` | `org` | `research_to_org` — turn notes into a plan |
-| `codex` | `journal` | `codex_to_journal` — reflect on a topic |
-| `org` | `journal` | `org_to_journal` — log completed tasks |
-
-**Status:** all five flows are fully implemented in `nexus/ai/flow_handlers.py` and registered at startup via `register_flow_handlers()`. Each handler reads source data, calls `_ai_synthesize()` (which respects the active AI provider), and writes output in the target module's native file format. Invoke via the `run_flow` global skill.
-
-## AI Skills System
-
-Skills are native Python tool functions registered inside the Nexus process and exposed to any AI model — external (Claude API) or local (Ollama / LM Studio). Unlike MCP servers, which are external processes that need configuration, skills run in-process, require no setup, and have direct access to project config and module helpers.
-
-### Architecture
-
-```
-nexus/ai/skill_registry.py  — SkillRegistry: register, list, and call skills
-modules/<id>/skills.py      — module-specific skill definitions (one file per module)
-nexus/app.py                — registers global skills + module skills at startup
-nexus/ai/client.py          — merges skill tools + MCP tools; dispatches tool_use responses
-```
-
-### Skill definition
-
-Each skill is a dict + async handler pair registered on the `SkillRegistry` singleton:
-
-```python
-from nexus.ai.skill_registry import registry
-
-registry.register(
-    scope       = "git",          # "global" or a module id
-    name        = "git_pull",
-    description = "Pull the latest commits for a named repository.",
-    schema      = {
-        "type": "object",
-        "properties": {
-            "repo": {"type": "string", "description": "Repository directory name"}
-        },
-        "required": ["repo"],
-    },
-    handler     = my_async_pull_fn,   # async (args: dict) -> str
-)
-```
-
-The handler receives the parsed arguments dict and must return a plain string, which is sent back to the model as a `tool_result`.
-
-### SkillRegistry API
-
-| Method | Description |
-|--------|-------------|
-| `registry.register(scope, name, description, schema, handler)` | Register one skill |
-| `registry.get_tools(scopes)` | Return Anthropic-format tool dicts for the given scope list |
-| `registry.call(name, args)` | Await the handler registered under `name` |
-| `registry.all_scopes()` | Return all distinct registered scopes |
-
-### Integration with AIClient
-
-`AIClient.chat()` accepts an optional `skill_scopes` list. When provided, it calls `registry.get_tools(skill_scopes)`, merges the result with MCP tools, and passes the combined list to the model. On a `tool_use` response the client tries the skill registry first; if the tool name is not found there it falls through to `MCPClient.call_tool()`.
-
-```python
-reply = await ai_client.chat(
-    messages      = conversation,
-    system_prompt = project_system_prompt,
-    skill_scopes  = ["global", project.module],
-)
-```
-
-### Scope conventions
-
-| Scope | When loaded |
-|-------|-------------|
-| `"global"` | Always — in every project and on the main screen |
-| `"<module_id>"` | When a project of that module type is the active context |
-
-Module skills files live at `modules/<id>/skills.py` and call `registry.register()` at import time. `nexus/app.py` imports each skills module at startup so that all skills are available before the first AI call.
-
-### Global skills
-
-| Skill | Inputs | Description |
-|-------|--------|-------------|
-| `list_projects` | — | Return all project names, module types, and descriptions |
-| `run_flow` | `action`, `payload` | Trigger a Mycelium cross-module flow (e.g. `research_to_codex`, `git_to_journal`) |
-| `search_logs` | `query?`, `n=50` | Return the last `n` log lines, optionally filtered by query |
-
-### Module skills
-
-All module skills require `project_slug` (the Nexus project slug) plus the additional inputs listed. Handlers load config via `load_project_config(slug)` and return a JSON string.
-
-| Module | Skill | Additional inputs |
-|--------|-------|-------------------|
-| **git** | `git_status` | `repo` |
-| | `git_pull` | `repo` |
-| | `git_push` | `repo` |
-| | `git_commit` | `repo`, `message` |
-| | `git_log` | `repo`, `n=10` |
-| | `git_clone` | `url`, `name?` |
-| | `git_diff` | `repo`, `staged=False` |
-| | `git_stash` | `repo`, `action` (`push`/`pop`) |
-| **localai** | `localai_run_inference` | `prompt`, `negative_prompt?` |
-| **web** | `web_list_scripts` | — |
-| | `web_run_script` | `script` |
-| **research** | `research_list_notes` | — |
-| | `research_new_note` | `filename`, `content` |
-| | `research_search` | `query` |
-| | `research_get_note` | `filename` |
-| | `research_delete_note` | `filename` |
-| **codex** | `codex_list` | — |
-| | `codex_new_entry` | `title`, `content?` |
-| | `codex_search` | `query` |
-| | `codex_get_entry` | `filename` |
-| **journal** | `journal_list_entries` | — |
-| | `journal_new_entry` | `content?` |
-| | `journal_compile` | — |
-| **game** | `game_scene_list` | — |
-| | `game_launch_editor` | — |
-| | `game_run` | — |
-| **org** | `org_list_plans` | — |
-| | `org_new_plan` | `name`, `tasks?` |
-| | `org_new_diagram` | `name`, `mermaid_content?` |
-| | `org_new_schedule` | `name` |
-| | `org_get_plan` | `filename` |
-| **home** | `home_ping` | — |
-| | `home_api_call` | `endpoint`, `method?` |
-| **streaming** | `streaming_list_scenes` | — |
-| | `streaming_launch_obs` | — |
-| | `streaming_check_logs` | — |
-| **vtube** | `vtube_launch_runtime` | — |
-| | `vtube_start_tracker` | — |
-| **emulator** | `emulator_list_systems` | — |
-| | `emulator_launch` | `system`, `rom?` |
-| **vault** | `vault_list_gpg_keys` | — |
-| | `vault_age_key_status` | — |
-| | `vault_encrypt_file` | `path` |
-| | `vault_decrypt_file` | `path`, `engine` (`age`/`gpg`) |
-| **backup** | `backup_run_backup` | — |
-| | `backup_list_snapshots` | — |
-| | `backup_check` | — |
-| | `backup_restore` | `snapshot?`, `target` |
-| | `backup_forget` | `keep_last=10` |
-| **server** | `server_list_services` | — |
-| | `server_status` | `service` |
-| | `server_start` | `service` |
-| | `server_stop` | `service` |
-| | `server_restart` | `service` |
-| | `server_logs` | `service`, `n=50` |
-| **custom** | `custom_run_command` | `label` |
-| | `custom_ask` | `question` |
-| **promptopt** | `promptopt_optimize` | `prompt`, `mode` (`text`/`instruct`/`image`) |
-
-### Skills vs MCP servers
-
-| | Skills | MCP servers |
-|--|--------|-------------|
-| Location | In-process Python | External process (npx, Python, etc.) |
-| Configuration | None — registered at startup | Requires command + env vars in settings.yaml |
-| Access | Direct: project config, git_ops, Path | Via stdio protocol |
-| Scope | Global or module-specific | Global (per-project overrides possible) |
-| Use case | Nexus-native actions (pull repo, new note) | External integrations (GitHub API, web search) |
-
-## Security Notes
-
-- GitHub tokens are injected into HTTPS clone URLs at clone time only; they are never written to log files (`display_url` is kept separate from the injected URL in `git_ops.py`).
-- SSH clone URLs bypass token injection entirely — authentication is handled by the system SSH agent.
-- `config/settings.yaml` and `projects/` are git-ignored — credentials and personal data never leave the local machine via git.
-- All user-supplied paths are resolved via `Path.expanduser()` before use.
-- Stream keys and other secrets should be stored in the Vault module, not in plain-text project files.
-- **LocalAI shell injection prevention**: user prompt values (`{prompt}`, `{negative_prompt}`) are replaced with `$NEXUS_PROMPT` / `$NEXUS_NEGATIVE_PROMPT` in the command string and passed via the subprocess `env=` dict — never interpolated directly into shell strings. Existing configs with `{prompt}` are auto-converted at runtime.
-- **Home Assistant token**: the HA long-lived access token is passed to the API via Python `httpx` headers — it never appears in subprocess arguments visible in `ps aux`.
-- **Vault public key extraction**: `age-keygen -y <keyfile>` is used to extract the public key from an age identity file; the previous approach of parsing the last comment line was fragile and has been removed.
-- **Backup skill init safety**: the `backup_run_backup` skill calls `restic_ensure_initialized()` before every backup, matching the UI behaviour — AI-triggered backups on uninitialised repos initialise automatically instead of failing silently.
-- **Backup paths**: all restic paths go through `_p()` (`os.path.abspath(os.path.expanduser(path))`) in `modules/backup/backup_ops.py` before subprocess calls. `restic_ensure_initialized()` auto-creates the repo directory and runs `restic init` on first use, treating "already initialized" as success.
-- **Cross-platform open**: all "open file/URL" actions go through `nexus.core.platform.open_path()` which selects `xdg-open` / `open` / `start` per platform — avoids hard-coding `xdg-open` everywhere.
-- **Vault path containment**: `VaultProjectScreen._validate_file_in_vault()` resolves both the vault directory and the user-supplied path with `Path.resolve()` and checks `startswith(vault_dir + "/")` before passing either to `age` or `gpg` — prevents `../../../../etc/shadow`-style traversal attacks.
-- **SDForge `launch_args`**: the user-editable `launch_args` field is split with `shlex.split()` and passed as individual arguments to `asyncio.create_subprocess_exec` rather than interpolated into a shell string via `create_subprocess_shell` — eliminates shell injection from config-file metacharacters.
-- **Docker daemon check**: `docker_ops.is_available()` is async and runs `docker ps` to confirm the daemon is reachable, not merely that the `docker` binary exists on PATH.
-- **`~/.ollama` mount safety**: `LocalAIProjectScreen._open_docker()` checks `is_symlink()` and refuses to mount symlinked paths into Docker, then calls `mkdir(parents=True, exist_ok=True)` to ensure the directory is created by the user (not as root by Docker).
-
-## Robustness Patterns
-
-These patterns are enforced throughout the codebase. Follow them in all new async workers and subprocess calls.
-
-### Worker-after-dismiss guard
-
-Textual `run_worker()` workers continue executing after the screen that launched them is dismissed. Any `query_one()` call in an async worker will raise `NoMatches` once the screen is gone. Always wrap the initial lookup and every subsequent UI write:
-
-```python
-async def _my_worker(self) -> None:
-    try:
-        ui_log = self.query_one("#output-log", Log)
-    except Exception:
-        return  # screen already dismissed
-    ...
-    async for line in stream:
-        try:
-            ui_log.write_line(line)
-        except Exception:
-            break  # screen dismissed mid-stream
-```
-
-`BaseProjectScreen._run_cmd` already applies this pattern — it is the canonical implementation. For screens with their own workers (LocalAI, SDForge, Vault, model browser), guard each `query_one` individually.
-
-### Explicit stdout check (replaces `assert proc.stdout`)
-
-`assert proc.stdout` is silently disabled under `python -O` and its `AssertionError` is swallowed by outer `except Exception` handlers. Always use an explicit check:
-
-```python
-proc = await asyncio.create_subprocess_exec(...)
-if proc.stdout is None:
-    log.error("stdout unavailable for %s", cmd)
-    return  # or raise DockerError(...)
-async for raw in proc.stdout:
-    ...
-```
-
-### asyncio.Event for shared ready flags
-
-Use `asyncio.Event` rather than a plain `bool` to signal readiness between coroutines. A plain bool can be read stale by a concurrent coroutine that ran before the write. Example from SDForge:
-
-```python
-self._server_ready = asyncio.Event()
-# In _stream_server_output when URL detected:
-self._server_ready.set()
-# In _stop_server:
-self._server_ready.clear()
-# In _generate before sending request:
-if not self._server_ready.is_set():
-    ...
-```
-
-### Frozen snapshot for concurrent set reads
-
-When a mutable set is reassigned by one worker while another worker iterates it, pass a `frozenset` snapshot as an argument rather than reading `self._field` inside the second worker:
-
-```python
-# Caller (before spawning worker):
-snapshot = frozenset(self._installed)
-self.run_worker(self._rebuild_catalog(models, snapshot))
-
-# Worker signature:
-async def _rebuild_catalog(self, models, installed: frozenset | None = None) -> None:
-    if installed is None:
-        installed = frozenset(self._installed)
-    ...
-```
-
-### Docker container lifecycle
-
-`NexusApp._docker_containers: set[str]` tracks all containers opened by `DockerManagerScreen`. Screens register on `on_mount` and deregister on `on_dismiss`. `NexusApp.on_unmount` calls `subprocess.run(["docker", "stop", "--time=5", name])` synchronously for each tracked name (blocking stdlib call is correct here — asyncio event loop may already be shutting down).
-
-`docker_ops.stop_container` ignores "No such container" errors so stopping an already-removed container is idempotent and never raises.
+- `dual-ui.md` — dual-UI protocol: change types, GUI coverage levels, checklists (active when editing `modules/**` or `nexus/ui/**`)
+- `ui-tui.md` — Textual patterns, async workers, robustness guards (active when editing TUI files)
+- `ui-gui.md` — PySide6 patterns, QThread bridge (active when editing GUI files)
+- `ai.md` — AIClient, skill system, MCP, Mycelium (active when editing `nexus/ai/**`)
+- `modules.md` — full module table, skill inventory (active when editing `modules/**`)
+- `security.md` — security invariants, injection prevention (active when editing any code)

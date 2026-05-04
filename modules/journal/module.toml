@@ -1,0 +1,7 @@
+[module]
+id = "journal"
+label = "Journal"
+description = "Write and read a personal journal, formatted with LaTeX."
+tags = ["writing"]
+system = false
+prefix = "jnl"

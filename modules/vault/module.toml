@@ -1,0 +1,7 @@
+[module]
+id = "vault"
+label = "Vault"
+description = "Encrypted file storage and secrets management — GPG, VeraCrypt, KeePassXC."
+tags = ["security", "crypto"]
+system = false
+prefix = "vlt"

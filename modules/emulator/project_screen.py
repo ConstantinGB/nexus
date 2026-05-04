@@ -9,7 +9,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.platform import open_path, check_binary
-from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 
 class _RomPickerModal(ModalScreen):
@@ -66,7 +66,7 @@ def _count_roms(system_dir: Path) -> int:
         return 0
 
 
-class EmulatorProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "emulator"
     MODULE_LABEL      = "EMULATOR"
     REQUIRED_BINARIES = [("retroarch", "RetroArch")]

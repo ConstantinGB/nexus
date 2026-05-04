@@ -1,5 +1,13 @@
 from __future__ import annotations
+import importlib
+import importlib.util
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
+
+# Root of the modules/ directory, resolved relative to this file.
+_MODULES_ROOT   = Path(__file__).parent.parent.parent / "modules"
+_PROJECTS_ROOT  = Path(__file__).parent.parent.parent / "projects"
 
 
 @dataclass
@@ -11,53 +19,40 @@ class ModuleInfo:
     system: bool = False
 
 
-_REGISTRY: list[ModuleInfo] = [
-    ModuleInfo("git",      "Git",      "Manage Git repositories — GitHub, self-hosted, or local.",             ["dev", "vcs"]),
-    ModuleInfo("web",      "Web",      "Set up a web development environment with browser testing.",           ["dev", "web"]),
-    ModuleInfo("research", "Research", "AI-assisted research: web scraping, search engines, Wikipedia.",       ["ai", "research"]),
-    ModuleInfo("codex",    "Codex",    "Persistent knowledge base — store and categorize what you've learned.",["ai", "knowledge"]),
-    ModuleInfo("journal",  "Journal",  "Write and read a personal journal, formatted with LaTeX.",             ["writing"]),
-    ModuleInfo("server",   "Server",   "Spin up local servers: Minecraft, web server, mail server, and more.",["server", "hosting"]),
-    ModuleInfo("home",     "Home",     "Home Assistant setup and automation management.",                      ["iot", "home"]),
-    ModuleInfo("game",     "Game",     "Godot game development environment.",                                  ["dev", "game"]),
-    ModuleInfo("org",      "Org",      "Organize with timetables, diagrams, and workflows.",                   ["planning"]),
-    ModuleInfo("custom",    "Custom",    "A blank project. Write your own description for the AI to work from.",          []),
-    ModuleInfo("localai",   "LocalAI",   "Set up and run local AI models — LLMs, diffusion, audio, and more.",           ["ai", "local"],    system=True),
-    ModuleInfo("sdforge",   "SDForge",   "Stable Diffusion Forge — local image generation via A1111-compatible API.",     ["ai", "image", "local"], system=True),
-    ModuleInfo("streaming", "Streaming", "OBS-based live streaming and recording setup.",                                 ["media", "obs"]),
-    ModuleInfo("vtube",     "VTube",     "Virtual avatar setup — face tracking, Live2D/VRM models, OBS integration.",    ["media", "avatar"]),
-    ModuleInfo("emulator",  "Emulator",  "Retro console emulation — RetroArch, Dolphin, PCSX2, RPCS3, and more.",       ["gaming", "retro"]),
-    ModuleInfo("vault",     "Vault",     "Encrypted file storage and secrets management — GPG, VeraCrypt, KeePassXC.",   ["security", "crypto"]),
-    ModuleInfo("backup",    "Backup",    "Encrypted, deduplicated backups via restic — local, NAS (SFTP), or NFS.",      ["system", "backup"], system=True),
-    ModuleInfo("security",  "Security",  "Firewall, VPN, DNS privacy and system hardening.",                              ["security", "privacy", "network"]),
-    ModuleInfo("promptopt", "Prompt Opt", "Optimize and rewrite prompts for AI clarity, instructions, or image generation.", ["ai", "tools"]),
-    ModuleInfo("youtube",   "YouTube",    "Download videos, audio and transcripts from YouTube.",                            ["media", "download"]),
-]
+def _load_registry() -> tuple[list[ModuleInfo], dict[str, str], dict[str, dict]]:
+    """Scan modules/*/module.toml and build registry, prefix map, and raw meta map."""
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore[no-reattr]
 
+    registry: list[ModuleInfo] = []
+    prefix_map: dict[str, str] = {}
+    meta_map: dict[str, dict] = {}
+
+    for toml_path in sorted(_MODULES_ROOT.glob("*/module.toml")):
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        mod = data["module"]
+        info = ModuleInfo(
+            id=mod["id"],
+            name=mod["label"],
+            description=mod["description"],
+            tags=mod.get("tags", []),
+            system=mod.get("system", False),
+        )
+        registry.append(info)
+        prefix_map[mod["id"]] = mod["prefix"]
+        meta_map[mod["id"]] = data  # full toml, including [setup] if present
+
+    return registry, prefix_map, meta_map
+
+
+_REGISTRY, MODULE_PREFIX, _META = _load_registry()
 _REGISTRY_BY_ID: dict[str, ModuleInfo] = {m.id: m for m in _REGISTRY}
-
-MODULE_PREFIX: dict[str, str] = {
-    "research": "res",
-    "journal":  "jnl",
-    "codex":    "cod",
-    "git":      "git",
-    "localai":  "loc",
-    "web":      "web",
-    "game":     "gam",
-    "org":      "org",
-    "home":     "hom",
-    "streaming":"str",
-    "vtube":    "vtu",
-    "emulator": "emu",
-    "vault":    "vlt",
-    "server":   "srv",
-    "custom":   "cst",
-    "backup":   "bak",
-    "sdforge":  "sdf",
-    "security": "sec",
-    "promptopt": "pro",
-    "youtube":   "ytb",
-}
 
 
 def list_modules() -> list[ModuleInfo]:
@@ -72,107 +67,72 @@ def get_module(module_id: str) -> ModuleInfo | None:
     return _REGISTRY_BY_ID.get(module_id)
 
 
+def _resolve_config_key(cfg: dict, dot_path: str) -> object:
+    """Follow a dot-separated path into a nested dict, returning None if missing."""
+    parts = dot_path.split(".")
+    val: object = cfg
+    for part in parts:
+        if not isinstance(val, dict):
+            return None
+        val = val.get(part)
+    return val
+
+
 def needs_setup(project) -> bool:
     """Return True if the project hasn't been configured yet."""
+    setup = _META.get(project.module, {}).get("setup", {})
+    config_check = setup.get("config_check")
+    if not config_check:
+        return False
     from nexus.core.config_manager import load_project_config
-    if project.module == "git":
-        cfg = load_project_config(project.slug)
-        return "git" not in cfg or not cfg.get("git", {}).get("type")
-    if project.module == "localai":
-        cfg = load_project_config(project.slug)
-        return not cfg.get("localai", {}).get("setup_done", False)
-    if project.module == "backup":
-        cfg = load_project_config(project.slug)
-        return not cfg.get("backup", {}).get("setup_done", False)
-    if project.module == "sdforge":
-        cfg = load_project_config(project.slug)
-        return not cfg.get("sdforge", {}).get("setup_done", False)
-    if project.module == "youtube":
-        cfg = load_project_config(project.slug)
-        return not cfg.get("youtube", {}).get("configured", False)
-    return False
+    cfg = load_project_config(project.slug)
+    return not bool(_resolve_config_key(cfg, config_check))
 
 
 def get_setup_screen(project):
-    """Return the setup Screen instance for a project's module, or None."""
-    if project.module == "git":
-        from modules.git.setup_screen import GitSetupScreen
-        return GitSetupScreen(project)
-    if project.module == "localai":
-        from modules.localai.setup_screen import LocalAISetupScreen
-        return LocalAISetupScreen(project)
-    if project.module == "backup":
-        from modules.backup.setup_screen import BackupSetupScreen
-        return BackupSetupScreen(project)
-    if project.module == "sdforge":
-        from modules.sdforge.setup_screen import SDForgeSetupScreen
-        return SDForgeSetupScreen(project)
-    if project.module == "youtube":
-        from modules.youtube.project_screen import YouTubeProjectScreen
-        return YouTubeProjectScreen(project)
+    """Return the setup Screen instance for a project, or None."""
+    setup = _META.get(project.module, {}).get("setup", {})
+
+    if setup.get("has_setup_screen"):
+        mod = importlib.import_module(f"modules.{project.module}.setup_screen")
+        return mod.SetupScreen(project)
+
+    if setup.get("use_project_screen"):
+        mod = importlib.import_module(f"modules.{project.module}.project_screen")
+        return mod.ProjectScreen(project)
+
     return None
 
 
 def get_project_screen(project):
-    """Return the main Screen instance for an already-configured project, or None."""
-    if project.module == "git":
-        from modules.git.project_screen import GitProjectScreen
-        return GitProjectScreen(project)
-    if project.module == "localai":
-        from modules.localai.project_screen import LocalAIProjectScreen
-        return LocalAIProjectScreen(project)
-    if project.module == "web":
-        from modules.web.project_screen import WebProjectScreen
-        return WebProjectScreen(project)
-    if project.module == "research":
-        from modules.research.project_screen import ResearchProjectScreen
-        return ResearchProjectScreen(project)
-    if project.module == "codex":
-        from modules.codex.project_screen import CodexProjectScreen
-        return CodexProjectScreen(project)
-    if project.module == "journal":
-        from modules.journal.project_screen import JournalProjectScreen
-        return JournalProjectScreen(project)
-    if project.module == "game":
-        from modules.game.project_screen import GameProjectScreen
-        return GameProjectScreen(project)
-    if project.module == "org":
-        from modules.org.project_screen import OrgProjectScreen
-        return OrgProjectScreen(project)
-    if project.module == "home":
-        from modules.home.project_screen import HomeProjectScreen
-        return HomeProjectScreen(project)
-    if project.module == "streaming":
-        from modules.streaming.project_screen import StreamingProjectScreen
-        return StreamingProjectScreen(project)
-    if project.module == "vtube":
-        from modules.vtube.project_screen import VTubeProjectScreen
-        return VTubeProjectScreen(project)
-    if project.module == "emulator":
-        from modules.emulator.project_screen import EmulatorProjectScreen
-        return EmulatorProjectScreen(project)
-    if project.module == "vault":
-        from modules.vault.project_screen import VaultProjectScreen
-        return VaultProjectScreen(project)
-    if project.module == "server":
-        from modules.server.project_screen import ServerProjectScreen
-        return ServerProjectScreen(project)
-    if project.module == "backup":
-        from modules.backup.project_screen import BackupProjectScreen
-        return BackupProjectScreen(project)
-    if project.module == "sdforge":
-        from modules.sdforge.project_screen import SDForgeProjectScreen
-        return SDForgeProjectScreen(project)
-    if project.module == "custom":
-        from modules.custom.project_screen import CustomProjectScreen
-        return CustomProjectScreen(project)
-    if project.module == "security":
-        from modules.security.project_screen import SecurityProjectScreen
-        return SecurityProjectScreen(project)
-    if project.module == "promptopt":
-        from modules.promptopt.project_screen import PromptOptProjectScreen
-        return PromptOptProjectScreen(project)
-    if project.module == "youtube":
-        from modules.youtube.project_screen import YouTubeProjectScreen
-        return YouTubeProjectScreen(project)
-    return None
+    """Return the main Screen instance for an already-configured project, or None.
+
+    Checks projects/<slug>/screen.py first — if it exists and defines ProjectScreen,
+    that per-project override is used instead of the module default.
+    """
+    local = _PROJECTS_ROOT / project.slug / "screen.py"
+    if local.exists():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"_project_screen_{project.slug}", local
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            cls = getattr(mod, "ProjectScreen", None)
+            if cls is not None:
+                return cls(project)
+        except Exception:
+            import logging
+            logging.getLogger("nexus.module_manager").exception(
+                "Failed to load per-project screen for %s — falling back to module default",
+                project.slug,
+            )
+
+    try:
+        mod = importlib.import_module(f"modules.{project.module}.project_screen")
+    except ModuleNotFoundError:
+        return None
+    cls = getattr(mod, "ProjectScreen", None)
+    if cls is None:
+        return None
+    return cls(project)

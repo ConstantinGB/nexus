@@ -153,7 +153,7 @@ class ProjectPickerModal(ModalScreen[ProjectInfo | None]):
             self.dismiss(None)
         elif bid == "ppm-add-new":
             self.dismiss(None)
-            from nexus.ui.add_project_screen import AddProjectScreen
+            from nexus.ui.tui.add_project_screen import AddProjectScreen
             self.app.push_screen(AddProjectScreen())
         elif bid.startswith("ppm-proj-"):
             try:

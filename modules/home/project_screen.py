@@ -8,12 +8,12 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.platform import open_path
-from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("home.project_screen")
 
 
-class HomeProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY   = "home"
     MODULE_LABEL = "HOME ASSISTANT"
     SETUP_FIELDS = [

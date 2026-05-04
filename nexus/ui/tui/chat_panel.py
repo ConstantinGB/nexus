@@ -6,7 +6,7 @@ from textual.app import ComposeResult
 from textual.css.query import NoMatches
 from textual.events import Key
 from textual.message import Message
-from textual.widgets import Label, Button, RichLog, TextArea
+from textual.widgets import Label, Button, TextArea
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
@@ -44,7 +44,8 @@ class ChatPanel(Vertical):
         color: #00FF88; text-style: bold; height: 1;
         background: #2D1B4E; padding: 0 1;
     }
-    ChatPanel #chat-log   { height: 1fr; background: #0A0518; }
+    ChatPanel #chat-log         { height: 1fr; }
+    ChatPanel #chat-log > .text-area--cursor { display: none; }
     ChatPanel #chat-input { height: 5; border: solid #3A2260; }
     ChatPanel #chat-btns  { height: 3; padding: 0 1; }
     ChatPanel #chat-btns Button { min-width: 8; margin-right: 1; }
@@ -63,12 +64,13 @@ class ChatPanel(Vertical):
         self._scopes      = skill_scopes
         self._messages:   list[dict] = []
         self._busy        = False
+        self._log_text:   str = ""
 
     # ── Compose ───────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
         yield Label("💬 AI Chat", classes="pane-title")
-        yield RichLog(id="chat-log", auto_scroll=True, wrap=True, markup=False)
+        yield TextArea("", id="chat-log", read_only=True)
         yield _ChatTextArea("", id="chat-input")
         with Horizontal(id="chat-btns"):
             yield Button("Send",  id="chat-send", variant="primary")
@@ -85,11 +87,28 @@ class ChatPanel(Vertical):
         self._scopes     = skill_scopes
         self._messages   = []
         self._busy       = False
+        self._log_text   = ""
+        self._clear_log()
+        self._load_history()
+
+    # ── Log helpers ───────────────────────────────────────────────────────────
+
+    def _append_to_log(self, text: str) -> None:
+        self._log_text += text + "\n\n"
         try:
-            self.query_one("#chat-log", RichLog).clear()
+            chat_log = self.query_one("#chat-log", TextArea)
+            chat_log.load_text(self._log_text)
+            lines = self._log_text.splitlines()
+            chat_log.cursor_location = (max(0, len(lines) - 1), 0)
         except Exception:
             pass
-        self._load_history()
+
+    def _clear_log(self) -> None:
+        self._log_text = ""
+        try:
+            self.query_one("#chat-log", TextArea).load_text("")
+        except Exception:
+            pass
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
@@ -101,13 +120,12 @@ class ChatPanel(Vertical):
             data = json.loads(self._history_path().read_text())
             if isinstance(data, list):
                 self._messages = data
-                chat_log = self.query_one("#chat-log", RichLog)
                 for msg in self._messages:
                     role    = msg.get("role", "")
                     content = msg.get("content", "")
                     if isinstance(content, str) and role in ("user", "assistant"):
                         prefix = "You" if role == "user" else "AI"
-                        chat_log.write(f"[{prefix}] {content}")
+                        self._append_to_log(f"[{prefix}] {content}")
         except (FileNotFoundError, json.JSONDecodeError, Exception):
             self._messages = []
 
@@ -149,23 +167,25 @@ class ChatPanel(Vertical):
         if not text:
             return
 
-        chat_log = self.query_one("#chat-log", RichLog)
         ta.load_text("")
-        chat_log.write(f"[You] {text}")
+        self._append_to_log(f"[You] {text}")
         self._messages.append({"role": "user", "content": text})
 
         from nexus.core.config_manager import is_ai_configured
         if not is_ai_configured():
-            chat_log.write(
-                "[info] AI not configured — open Settings (s) to add a key or local model."
-            )
+            self._append_to_log("[info] AI not configured — open Settings (s) to add a key or local model.")
             self._messages.pop()
             return
 
         self._busy = True
-        self.query_one("#chat-send", Button).disabled = True
+        try:
+            self.query_one("#chat-send", Button).disabled = True
+        except NoMatches:
+            pass
 
         system_prompt = self._read_claude_md()
+        from nexus.ai.intent_router import classify
+        intent = classify(text, self._module_key)
         reply: str | None = None
         try:
             from nexus.ai.client import AIClient
@@ -174,13 +194,11 @@ class ChatPanel(Vertical):
                 messages      = self._messages,
                 system_prompt = system_prompt,
                 skill_scopes  = self._scopes,
+                intent        = intent,
             )
         except Exception:
             log.exception("Chat send failed for %s", self._slug)
-            try:
-                chat_log.write("[error] AI request failed — see log.")
-            except Exception:
-                pass
+            self._append_to_log("[error] AI request failed — see log.")
             self._messages.pop()
         finally:
             self._busy = False
@@ -190,17 +208,14 @@ class ChatPanel(Vertical):
                 pass
 
         if reply is not None and reply.strip():
-            try:
-                chat_log.write(f"[AI] {reply}")
-            except Exception:
-                pass
+            self._append_to_log(f"[AI] {reply}")
             self._messages.append({"role": "assistant", "content": reply})
             self._save_history()
 
     # ── /init ─────────────────────────────────────────────────────────────────
 
     def _start_init(self) -> None:
-        from nexus.ui.base_project_screen import InputModal
+        from nexus.ui.tui.base_project_screen import InputModal
         self.app.push_screen(
             InputModal(
                 "/init — Personalize AI context",
@@ -216,19 +231,12 @@ class ChatPanel(Vertical):
         self.run_worker(self._do_init(description))
 
     async def _do_init(self, description: str) -> None:
-        try:
-            chat_log = self.query_one("#chat-log", RichLog)
-        except NoMatches:
-            return
-
         from nexus.core.config_manager import is_ai_configured
         if not is_ai_configured():
-            chat_log.write(
-                "[info] AI not configured — open Settings (s) to add a key or local model."
-            )
+            self._append_to_log("[info] AI not configured — open Settings (s) to add a key or local model.")
             return
 
-        chat_log.write("[/init] Reading project context…")
+        self._append_to_log("[/init] Reading project context…")
 
         current_md    = self._read_claude_md()
         template      = self._read_template()
@@ -258,7 +266,7 @@ class ChatPanel(Vertical):
             "Write the new CLAUDE.md for this project."
         )
 
-        chat_log.write("[/init] Generating personalized context…")
+        self._append_to_log("[/init] Generating personalized context…")
         try:
             from nexus.ai.client import AIClient
             client = AIClient()
@@ -269,7 +277,7 @@ class ChatPanel(Vertical):
             )
         except Exception:
             log.exception("/init AI call failed for %s", self._slug)
-            chat_log.write("[error] /init failed — see log.")
+            self._append_to_log("[error] /init failed — see log.")
             return
 
         claude_md_path = _PROJECTS_DIR / self._slug / "CLAUDE.md"
@@ -277,16 +285,16 @@ class ChatPanel(Vertical):
             claude_md_path.write_text(new_md, encoding="utf-8")
         except Exception:
             log.exception("Failed to write CLAUDE.md for %s", self._slug)
-            chat_log.write("[error] Could not write CLAUDE.md — see log.")
+            self._append_to_log("[error] Could not write CLAUDE.md — see log.")
             return
 
-        chat_log.write("[/init] ✓ CLAUDE.md rewritten with personalized context.")
+        self._append_to_log("[/init] ✓ CLAUDE.md rewritten with personalized context.")
         self.app.notify("CLAUDE.md rewritten — this project's AI context is now personalized.")
 
     # ── Clear ─────────────────────────────────────────────────────────────────
 
     def _confirm_clear(self) -> None:
-        from nexus.ui.tiles import ConfirmDeleteModal
+        from nexus.ui.tui.tiles import ConfirmDeleteModal
         self.app.push_screen(
             ConfirmDeleteModal(
                 "chat history",
@@ -305,12 +313,8 @@ class ChatPanel(Vertical):
             self._history_path().unlink(missing_ok=True)
         except Exception:
             pass
-        try:
-            chat_log = self.query_one("#chat-log", RichLog)
-        except NoMatches:
-            return
-        chat_log.clear()
-        chat_log.write("[info] Chat history cleared.")
+        self._clear_log()
+        self._append_to_log("[info] Chat history cleared.")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

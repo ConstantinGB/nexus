@@ -1,0 +1,7 @@
+[module]
+id = "streaming"
+label = "Streaming"
+description = "OBS-based live streaming and recording setup."
+tags = ["media", "obs"]
+system = false
+prefix = "str"

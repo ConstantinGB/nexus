@@ -4,11 +4,11 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
-from textual.widgets import Label, Button, Log, Select
-from textual.containers import Vertical, Horizontal
+from textual.widgets import Label, Button, Log, Select, Input
+from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.logger import get
-from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 from modules.backup.backup_ops import (
     restic_ensure_initialized, restic_backup,
@@ -16,6 +16,90 @@ from modules.backup.backup_ops import (
 )
 
 log = get("backup.project_screen")
+
+
+class BackupSettingsModal(ModalScreen):
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    DEFAULT_CSS = """
+    BackupSettingsModal { align: center middle; }
+    #bs-dialog {
+        background: #2D1B4E; border: solid #00B4FF;
+        width: 82; height: 36;
+    }
+    #bs-title   { color: #00B4FF; text-style: bold; height: 2; padding: 0 2; }
+    #bs-warning { color: #FF8800; height: 2; padding: 0 2; }
+    #bs-scroll  { height: 1fr; border-bottom: solid #3A2260; }
+    .bs-label   { color: #8888AA; height: 1; margin-top: 1; }
+    BackupSettingsModal ScrollableContainer Input  { margin-bottom: 1; }
+    BackupSettingsModal ScrollableContainer Select { margin-bottom: 1; }
+    #bs-btns    { height: 3; padding: 0 2; }
+    #bs-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self, cfg: dict) -> None:
+        super().__init__()
+        self._cfg = cfg
+
+    def compose(self) -> ComposeResult:
+        m = self._cfg
+        paths_str    = ", ".join(m.get("paths", []))
+        excludes_str = ", ".join(m.get("excludes", []))
+        schedule_val = m.get("schedule", "manual")
+        if schedule_val not in ("manual", "daily", "weekly"):
+            schedule_val = "manual"
+        with Vertical(id="bs-dialog"):
+            yield Label("Backup Settings", id="bs-title")
+            yield Label("⚠  Changing the repository path requires re-initialisation.", id="bs-warning")
+            with ScrollableContainer(id="bs-scroll"):
+                yield Label("Repository path / SFTP target:", classes="bs-label")
+                yield Input(m.get("repo", ""), id="bs-repo",
+                            placeholder="/path/to/repo or sftp:user@host:/path")
+                yield Label("Paths to back up (comma-separated):", classes="bs-label")
+                yield Input(paths_str, id="bs-paths",
+                            placeholder="~/projects, ~/documents")
+                yield Label("Excludes (comma-separated glob patterns):", classes="bs-label")
+                yield Input(excludes_str, id="bs-excludes",
+                            placeholder="*.tmp, .git, node_modules")
+                yield Label("Schedule:", classes="bs-label")
+                yield Select(
+                    [("Manual", "manual"), ("Daily", "daily"), ("Weekly", "weekly")],
+                    value=schedule_val, id="bs-schedule", allow_blank=False,
+                )
+                yield Label("Keep daily snapshots:", classes="bs-label")
+                yield Input(str(m.get("keep_daily", 7)),  id="bs-keep-daily",
+                            placeholder="7", type="integer")
+                yield Label("Keep weekly snapshots:", classes="bs-label")
+                yield Input(str(m.get("keep_weekly", 4)), id="bs-keep-weekly",
+                            placeholder="4", type="integer")
+            with Horizontal(id="bs-btns"):
+                yield Button("Save", id="bs-save", variant="primary")
+                yield Button("Cancel", id="bs-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "bs-cancel":
+            self.dismiss(None)
+            return
+        if event.button.id == "bs-save":
+            try:
+                keep_daily  = max(1, int(self.query_one("#bs-keep-daily",  Input).value or "7"))
+                keep_weekly = max(1, int(self.query_one("#bs-keep-weekly", Input).value or "4"))
+            except ValueError:
+                keep_daily, keep_weekly = 7, 4
+            paths_raw    = self.query_one("#bs-paths",    Input).value
+            excludes_raw = self.query_one("#bs-excludes", Input).value
+            result = {
+                "repo":         self.query_one("#bs-repo", Input).value.strip(),
+                "paths":        [p.strip() for p in paths_raw.split(",")    if p.strip()],
+                "excludes":     [p.strip() for p in excludes_raw.split(",") if p.strip()],
+                "schedule":     str(self.query_one("#bs-schedule", Select).value),
+                "keep_daily":   keep_daily,
+                "keep_weekly":  keep_weekly,
+            }
+            self.dismiss(result)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class SnapshotPickerModal(ModalScreen):
@@ -60,7 +144,7 @@ class SnapshotPickerModal(ModalScreen):
             self.dismiss(None)
 
 
-class BackupProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "backup"
     MODULE_LABEL      = "BACKUP"
     REQUIRED_BINARIES = [("restic", "restic")]
@@ -87,6 +171,7 @@ class BackupProjectScreen(BaseProjectScreen):
             Button("Check",          id="btn-check"),
             Button("Forget + Prune", id="btn-forget"),
             Button("Restore…",       id="btn-restore"),
+            Button("Settings…",      id="btn-settings"),
         ]
 
     # ── Main content ──────────────────────────────────────────────────────────
@@ -166,6 +251,27 @@ class BackupProjectScreen(BaseProjectScreen):
             self.run_worker(self._do_forget())
         elif bid == "btn-restore":
             self.run_worker(self._pick_and_restore())
+        elif bid == "btn-settings":
+            self._open_settings()
+
+    # ── Settings ──────────────────────────────────────────────────────────────
+
+    def _open_settings(self) -> None:
+        self.app.push_screen(
+            BackupSettingsModal(dict(self._mod)),
+            self._on_settings_saved,
+        )
+
+    def _on_settings_saved(self, result: dict | None) -> None:
+        if not result:
+            return
+        from nexus.core.config_manager import load_project_config, save_project_config
+        cfg = load_project_config(self.project.slug)
+        cfg.setdefault("backup", {}).update(result)
+        save_project_config(self.project.slug, cfg)
+        self._mod = cfg["backup"]
+        self.run_worker(self._populate_content())
+        self.app.notify("Backup settings saved.", severity="information")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.platform import open_path
-from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("youtube.project_screen")
 
@@ -59,7 +59,7 @@ def _try_youtube_captions(video_id: str | None) -> list[str] | None:
         return None
 
 
-class YouTubeProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "youtube"
     MODULE_LABEL      = "YOUTUBE"
     REQUIRED_BINARIES = [("yt-dlp", "yt-dlp"), ("ffmpeg", "ffmpeg")]

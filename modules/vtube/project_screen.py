@@ -7,7 +7,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.platform import open_path, check_binary
-from nexus.ui.base_project_screen import BaseProjectScreen, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, _screen_css
 
 log = get("vtube.project_screen")
 
@@ -29,7 +29,7 @@ _MODEL_FORMAT = {
 }
 
 
-class VTubeProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY   = "vtube"
     MODULE_LABEL = "VTUBE"
     SETUP_FIELDS = [

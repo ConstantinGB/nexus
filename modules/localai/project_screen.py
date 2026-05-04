@@ -13,14 +13,14 @@ from textual.containers import Vertical, Horizontal
 from nexus.core.logger import get
 from nexus.core.platform import open_path
 from nexus.core.project_manager import ProjectInfo
-from nexus.ui.chat_panel import ChatPanel
+from nexus.ui.tui.chat_panel import ChatPanel
 
 log = get("localai.project_screen")
 
 _PROJECTS_DIR = Path(__file__).parent.parent.parent / "projects"
 
 
-class LocalAIProjectScreen(Screen):
+class ProjectScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Back")]
 
     DEFAULT_CSS = """
@@ -119,7 +119,7 @@ class LocalAIProjectScreen(Screen):
         meta    = f"{model}" + (f" · {purpose}" if purpose else "")
         hw      = load_hardware_json(self.project.slug)
 
-        from nexus.ui.project_tabs import ProjectTabBar
+        from nexus.ui.tui.project_tabs import ProjectTabBar
         yield Header()
         yield ProjectTabBar()
         with Horizontal(id="top-bar"):
@@ -195,7 +195,7 @@ class LocalAIProjectScreen(Screen):
 
     def action_dismiss(self, result=None) -> None:
         try:
-            from nexus.ui.terminal_widget import Terminal
+            from nexus.ui.tui.terminal_widget import Terminal
             self.query_one("#claude-terminal", Terminal).stop()
         except NoMatches:
             pass
@@ -227,7 +227,7 @@ class LocalAIProjectScreen(Screen):
 
     async def _launch_claude(self) -> None:
         import shutil
-        from nexus.ui.terminal_widget import Terminal
+        from nexus.ui.tui.terminal_widget import Terminal
         if not shutil.which("claude"):
             self.app.notify(
                 "'claude' not found on PATH — install Claude Code first.",
@@ -335,7 +335,7 @@ class LocalAIProjectScreen(Screen):
 
     def _open_docker(self) -> None:
         from pathlib import Path
-        from nexus.ui.docker_screen import DockerManagerScreen, DockerContainerConfig
+        from nexus.ui.tui.docker_screen import DockerManagerScreen, DockerContainerConfig
         slug           = self.project.slug
         image          = self._localai_cfg.get("docker_image", "ollama/ollama")
         restart_policy = self._localai_cfg.get("docker_restart_policy", "no")

@@ -1,0 +1,7 @@
+[module]
+id = "web"
+label = "Web"
+description = "Set up a web development environment with browser testing."
+tags = ["dev", "web"]
+system = false
+prefix = "web"

@@ -1,6 +1,9 @@
 from __future__ import annotations
 import json
+import logging
 from typing import Callable, Awaitable
+
+log = logging.getLogger("nexus.skills")
 
 
 def require_project(slug: str) -> dict:
@@ -39,27 +42,46 @@ class SkillRegistry:
             "handler":     handler,
         }
 
-    def get_tools(self, scopes: list[str]) -> list[dict]:
-        """Return Anthropic-format tool dicts for tools whose scope is in *scopes*."""
+    def get_tools(self, scopes: list[str], hints: list[str] | None = None) -> list[dict]:
+        """Return Anthropic-format tool dicts for tools whose scope is in *scopes*.
+
+        If *hints* is non-empty, further narrow to tools whose name contains any hint
+        substring, always keeping global-scope tools.  Falls back to the full list if
+        narrowing would produce an empty result.
+        """
+        candidates = [
+            (name, t) for name, t in self._tools.items()
+            if t["scope"] in scopes
+        ]
+        if hints:
+            narrowed = [
+                (name, t) for name, t in candidates
+                if t["scope"] == "global" or any(h in name for h in hints)
+            ]
+            if narrowed:
+                candidates = narrowed
         return [
             {
                 "name":         name,
                 "description":  t["description"],
                 "input_schema": t["schema"],
             }
-            for name, t in self._tools.items()
-            if t["scope"] in scopes
+            for name, t in candidates
         ]
 
     async def call(self, name: str, args: dict) -> str:
+        from nexus.ai.validator import validate_args, ValidationError
         entry = self._tools.get(name)
         if entry is None:
             return json.dumps({"error": f"Unknown skill: {name!r}"})
         try:
+            validate_args(name, args, entry["schema"])
             return await entry["handler"](args)
+        except ValidationError as exc:
+            log.warning("Skill %s arg validation failed: %s", name, exc.errors)
+            return json.dumps({"validation_error": exc.errors, "tool": name, "schema": entry["schema"]})
         except Exception as exc:
-            import logging
-            logging.getLogger("nexus.skills").exception("Skill %r raised an exception", name)
+            log.exception("Skill %r raised an exception", name)
             return json.dumps({"error": str(exc)})
 
     def has(self, name: str) -> bool:

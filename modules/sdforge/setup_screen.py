@@ -66,7 +66,7 @@ echo "   Start command: cd \\"$INSTALL_DIR\\" && ./webui.sh {launch_args}"
 """
 
 
-class SDForgeSetupScreen(Screen):
+class SetupScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Cancel")]
 
     DEFAULT_CSS = """

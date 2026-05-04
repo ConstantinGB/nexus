@@ -1,0 +1,7 @@
+[module]
+id = "research"
+label = "Research"
+description = "AI-assisted research: web scraping, search engines, Wikipedia."
+tags = ["ai", "research"]
+system = false
+prefix = "res"

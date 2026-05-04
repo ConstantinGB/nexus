@@ -9,7 +9,7 @@ from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
 from nexus.core.platform import open_path
-from nexus.ui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, InputModal, _screen_css
 
 log = get("org.project_screen")
 
@@ -59,7 +59,7 @@ def _slugify(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "plan"
 
 
-class OrgProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY   = "org"
     MODULE_LABEL = "ORG"
     SETUP_FIELDS = [

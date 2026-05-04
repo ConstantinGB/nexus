@@ -9,7 +9,7 @@ from textual.widgets import Label, Button, Log, Checkbox
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from nexus.core.logger import get
-from nexus.ui.base_project_screen import BaseProjectScreen, ConfirmModal, _screen_css
+from nexus.ui.tui.base_project_screen import BaseProjectScreen, ConfirmModal, _screen_css
 
 log = get("journal.project_screen")
 
@@ -117,7 +117,7 @@ class CompileSelectModal(ModalScreen[list | None]):
             self.dismiss(None)
 
 
-class JournalProjectScreen(BaseProjectScreen):
+class ProjectScreen(BaseProjectScreen):
     MODULE_KEY        = "journal"
     MODULE_LABEL      = "JOURNAL"
     REQUIRED_BINARIES = [("pdflatex", "pdflatex (texlive-latex-base)")]

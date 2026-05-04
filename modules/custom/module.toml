@@ -1,0 +1,7 @@
+[module]
+id = "custom"
+label = "Custom"
+description = "A blank project. Write your own description for the AI to work from."
+tags = []
+system = false
+prefix = "cst"
