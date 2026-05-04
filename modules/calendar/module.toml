@@ -1,0 +1,7 @@
+[module]
+id = "calendar"
+label = "Calendar"
+description = "Schedule and track events."
+tags = ["productivity"]
+system = false
+prefix = "cal"

@@ -1,0 +1,7 @@
+[module]
+id = "notes"
+label = "Notes"
+description = "Create and search markdown notes."
+tags = ["productivity"]
+system = false
+prefix = "nts"

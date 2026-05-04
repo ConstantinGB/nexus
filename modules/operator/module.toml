@@ -1,7 +1,0 @@
-[module]
-id = "operator"
-label = "Operator"
-description = "AI daily assistant — calendar, notes, and tasks, powered by native tool use."
-tags = ["ai", "assistant", "productivity"]
-system = false
-prefix = "ops"

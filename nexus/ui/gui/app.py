@@ -1,26 +1,20 @@
 from __future__ import annotations
-import importlib
-import importlib.util
 import sys
-from pathlib import Path
-
-_PROJECTS_ROOT = Path(__file__).parent.parent.parent.parent / "projects"
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeyEvent
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QDialog, QDialogButtonBox,
-    QFormLayout, QLineEdit, QComboBox, QLabel, QVBoxLayout,
+    QFormLayout, QLineEdit, QLabel, QVBoxLayout,
     QWidget, QToolBar, QMessageBox, QTabWidget, QToolButton,
     QSizePolicy, QTabBar,
 )
 
 from nexus.core.logger import get
-from nexus.core.module_manager import _REGISTRY
+from nexus.core.module_manager import list_feature_modules, list_system_modules
 from nexus.core.project_manager import create_project, ProjectInfo
 from nexus.ui.gui.theme import get_gui_theme, DEFAULT_GUI_THEME, ACCENT_G
 from nexus.ui.gui.tile_grid import TileGrid
-from nexus.ui.gui.base_project_window import BaseProjectWindow
 
 log = get("ui.gui.app")
 
@@ -29,7 +23,10 @@ class _AddProjectDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("New Project")
-        self.setMinimumWidth(360)
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(500)
+
+        from PySide6.QtWidgets import QListWidget, QListWidgetItem, QAbstractItemView
 
         layout = QVBoxLayout(self)
 
@@ -40,26 +37,50 @@ class _AddProjectDialog(QDialog):
         self._name.setPlaceholderText("e.g. Daily Driver")
         form.addRow("Name:", self._name)
 
-        self._module = QComboBox()
-        for m in sorted(_REGISTRY, key=lambda x: x.name):
-            self._module.addItem(f"{m.name}  —  {m.description[:50]}", userData=m.id)
-        form.addRow("Type:", self._module)
-
         self._desc = QLineEdit()
         self._desc.setPlaceholderText("Optional description")
         form.addRow("Description:", self._desc)
 
         layout.addLayout(form)
 
+        # Feature modules list
+        feat_lbl = QLabel("Feature modules (select one or more):")
+        layout.addWidget(feat_lbl)
+        self._feat_list = QListWidget()
+        self._feat_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self._feat_list.setMaximumHeight(180)
+        for m in list_feature_modules():
+            item = QListWidgetItem(f"{m.name}  —  {m.description[:50]}")
+            item.setData(Qt.UserRole, m.id)
+            self._feat_list.addItem(item)
+        layout.addWidget(self._feat_list)
+
+        # System tools list
+        sys_lbl = QLabel("System tools (optional):")
+        layout.addWidget(sys_lbl)
+        self._sys_list = QListWidget()
+        self._sys_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self._sys_list.setMaximumHeight(120)
+        for m in list_system_modules():
+            item = QListWidgetItem(f"{m.name}  —  {m.description[:50]}")
+            item.setData(Qt.UserRole, m.id)
+            self._sys_list.addItem(item)
+        layout.addWidget(self._sys_list)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def get_result(self) -> tuple[str, str, str]:
+    def get_result(self) -> tuple[str, list[str], str]:
+        modules: list[str] = []
+        for item in self._feat_list.selectedItems():
+            modules.append(item.data(Qt.UserRole))
+        for item in self._sys_list.selectedItems():
+            modules.append(item.data(Qt.UserRole))
         return (
             self._name.text().strip(),
-            self._module.currentData(),
+            modules,
             self._desc.text().strip(),
         )
 
@@ -185,52 +206,12 @@ class NexusGuiApp(QMainWindow):
             self._tabs.setCurrentIndex(self._open_slugs[project.slug])
             return
 
-        widget = None
-
-        # Per-project GUI screen override: projects/<slug>/gui_screen.py takes
-        # priority over the module default, letting each project define its own
-        # full PySide6 interface without touching any shared module files.
-        local_gui = _PROJECTS_ROOT / project.slug / "gui_screen.py"
-        if local_gui.exists():
-            try:
-                spec = importlib.util.spec_from_file_location(
-                    f"_gui_screen_{project.slug}", local_gui
-                )
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                cls = getattr(mod, "GuiScreen", None)
-                if cls is not None:
-                    widget = cls(project, parent=None)
-            except Exception:
-                log.exception(
-                    "Failed to load per-project gui_screen for %s — falling back",
-                    project.slug,
-                )
-
-        if widget is None:
-            try:
-                mod    = importlib.import_module(f"modules.{project.module}.gui_screen")
-                widget = mod.GuiScreen(project, parent=None)
-            except (ImportError, AttributeError):
-                log.info("No gui_screen for %s, using base window", project.module)
-                widget = BaseProjectWindow(project, parent=None)
-
-        # Embed the widget as a tab (not a separate window)
-        # BaseProjectWindow is a QMainWindow — wrap it in a container widget
-        if isinstance(widget, QMainWindow):
-            container = QWidget()
-            layout = QVBoxLayout(container)
-            layout.setContentsMargins(0, 0, 0, 0)
-            widget.setParent(container)
-            widget.setWindowFlags(Qt.Widget)
-            layout.addWidget(widget)
-            tab_widget = container
-        else:
-            tab_widget = widget
+        from nexus.ui.gui.project_hub_widget import ProjectHubWidget
+        hub = ProjectHubWidget(project, parent=None)
 
         from nexus.ui.gui.tile_grid import _display_name
         label = _display_name(project)
-        idx = self._tabs.addTab(tab_widget, f"{project.module.upper()[:3]}  {label}")
+        idx = self._tabs.addTab(hub, f"  {label}")
         self._open_slugs[project.slug] = idx
         self._tabs.setCurrentIndex(idx)
 
@@ -269,17 +250,17 @@ class NexusGuiApp(QMainWindow):
         if dialog.exec() != QDialog.Accepted:
             return
 
-        name, module, desc = dialog.get_result()
+        name, modules, desc = dialog.get_result()
         if not name:
             QMessageBox.warning(self, "Invalid name", "Project name cannot be empty.")
             return
-        if not module:
-            QMessageBox.warning(self, "No module", "Please select a module type.")
+        if not modules:
+            QMessageBox.warning(self, "No modules", "Please select at least one module.")
             return
 
         try:
-            create_project(name, module, desc)
-            log.info("Created project: %s (%s)", name, module)
+            create_project(name, modules, desc)
+            log.info("Created project: %s (modules: %s)", name, modules)
         except ValueError as exc:
             QMessageBox.critical(self, "Error", str(exc))
             return

@@ -21,7 +21,9 @@ def _display_name(project: ProjectInfo) -> str:
 
 
 _MODULE_COLOURS: dict[str, str] = {
-    "operator":  ACCENT_G,
+    "calendar":  ACCENT_G,
+    "notes":     ACCENT_G,
+    "tasks":     ACCENT_G,
     "git":       ACCENT_B,
     "research":  ACCENT_P,
     "journal":   "#FFD700",

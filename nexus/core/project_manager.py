@@ -1,6 +1,6 @@
 from __future__ import annotations
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +19,9 @@ _DEFAULT_SUBDIRS: dict[str, list[str]] = {
     "journal":  ["journal"],
     "org":      ["plans"],
     "emulator": ["roms"],
+    "calendar": ["data/calendar"],
+    "notes":    ["data/notes"],
+    "tasks":    ["data/todo"],
 }
 
 
@@ -26,10 +29,14 @@ _DEFAULT_SUBDIRS: dict[str, list[str]] = {
 class ProjectInfo:
     name: str
     slug: str
-    module: str
+    modules: list[str]   # canonical — replaces module
     description: str
     created_at: str
     path: Path
+
+    @property
+    def module(self) -> str:
+        return self.modules[0] if self.modules else ""
 
 
 def _slugify(name: str) -> str:
@@ -57,10 +64,12 @@ def list_projects() -> list[ProjectInfo]:
         except Exception:
             log.exception("Failed to read config for project dir: %s", d.name)
             continue
+        # Handle both 'modules' (new) and 'module' (old) config keys
+        raw_modules = cfg.get("modules") or ([cfg["module"]] if cfg.get("module") else [])
         projects.append(ProjectInfo(
             name=cfg.get("name", d.name),
             slug=d.name,
-            module=cfg.get("module", ""),
+            modules=raw_modules,
             description=cfg.get("description", ""),
             created_at=cfg.get("created_at", ""),
             path=d,
@@ -69,9 +78,9 @@ def list_projects() -> list[ProjectInfo]:
     return projects
 
 
-def create_project(name: str, module: str, description: str = "") -> ProjectInfo:
+def create_project(name: str, modules: list[str], description: str = "") -> ProjectInfo:
     slug = _slugify(name)
-    log.info("Creating project: name=%r module=%r slug=%r", name, module, slug)
+    log.info("Creating project: name=%r modules=%r slug=%r", name, modules, slug)
     if not slug:
         raise ValueError("Project name cannot be empty.")
 
@@ -82,10 +91,9 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
         raise ValueError(f"A project named '{slug}' already exists.")
 
     try:
-
         cfg = {
             "name": name,
-            "module": module,
+            "modules": modules,
             "description": description,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "mcp": {"servers": {}, "disabled": []},
@@ -93,16 +101,25 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
         with (project_dir / "config.yaml").open("w") as f:
             yaml.safe_dump(cfg, f, default_flow_style=False, allow_unicode=True)
 
-        template = _MODULES_DIR / module / "CLAUDE.template.md"
-        claude_md = project_dir / "CLAUDE.md"
-        if template.exists() and template.stat().st_size > 0:
-            claude_md.write_text(template.read_text())
-        else:
-            log.debug("No template found for module %r, writing default CLAUDE.md", module)
-            claude_md.write_text(f"# {name}\n\nA {module} project managed by Nexus.\n")
+        # Copy CLAUDE.template.md from the first module that has one
+        claude_written = False
+        for module in modules:
+            template = _MODULES_DIR / module / "CLAUDE.template.md"
+            if template.exists() and template.stat().st_size > 0:
+                (project_dir / "CLAUDE.md").write_text(template.read_text())
+                claude_written = True
+                break
+        if not claude_written:
+            first_module = modules[0] if modules else "custom"
+            log.debug("No template found for modules %r, writing default CLAUDE.md", modules)
+            (project_dir / "CLAUDE.md").write_text(
+                f"# {name}\n\nA project managed by Nexus.\n"
+            )
 
-        for subdir in _DEFAULT_SUBDIRS.get(module, []):
-            (project_dir / subdir).mkdir(exist_ok=True)
+        # Create subdirs for ALL modules in the list
+        for module in modules:
+            for subdir in _DEFAULT_SUBDIRS.get(module, []):
+                (project_dir / subdir).mkdir(parents=True, exist_ok=True)
 
         log.info("Project created: %s", slug)
     except Exception:
@@ -114,7 +131,7 @@ def create_project(name: str, module: str, description: str = "") -> ProjectInfo
     return ProjectInfo(
         name=name,
         slug=slug,
-        module=module,
+        modules=modules,
         description=description,
         created_at=cfg["created_at"],
         path=project_dir,

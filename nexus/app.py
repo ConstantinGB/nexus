@@ -156,15 +156,9 @@ class NexusApp(App):
 
     def open_project_tab(self, project) -> None:
         """Open a project as a tab (called from tiles and tab picker)."""
-        from nexus.core.module_manager import needs_setup, get_setup_screen, get_project_screen
+        from nexus.ui.tui.project_hub_screen import ProjectHubScreen
 
         self._going_home_for_new_tab = False
-
-        if needs_setup(project):
-            screen = get_setup_screen(project)
-            if screen:
-                self.push_screen(screen)
-            return
 
         existing = next((i for i, t in enumerate(self._tabs) if t.slug == project.slug), None)
         if existing is None:
@@ -173,11 +167,7 @@ class NexusApp(App):
         else:
             self._active_tab_idx = existing
 
-        screen = get_project_screen(project)
-        if screen:
-            self.push_screen(screen)
-        else:
-            self.notify(f"No view implemented for '{project.module}' yet.")
+        self.push_screen(ProjectHubScreen(project))
 
     def close_project_tab(self, slug: str) -> None:
         """Remove a project from the tab list (called on screen dismiss)."""
@@ -189,6 +179,8 @@ class NexusApp(App):
 
     def switch_to_tab(self, project) -> None:
         """Switch to a different open tab without closing the current tab entry."""
+        from nexus.ui.tui.project_hub_screen import ProjectHubScreen
+
         idx = next((i for i, t in enumerate(self._tabs) if t.slug == project.slug), None)
         if idx is None:
             self._tabs.append(project)
@@ -217,13 +209,7 @@ class NexusApp(App):
         if len(self.screen_stack) > 1:
             self.pop_screen()
 
-        from nexus.core.module_manager import needs_setup, get_setup_screen, get_project_screen
-        if needs_setup(project):
-            screen = get_setup_screen(project)
-        else:
-            screen = get_project_screen(project)
-        if screen:
-            self.push_screen(screen)
+        self.push_screen(ProjectHubScreen(project))
 
 
 def _register_skills() -> None:
@@ -248,7 +234,9 @@ def _register_skills() -> None:
     import modules.security.skills     # noqa: F401
     import modules.promptopt.skills    # noqa: F401
     import modules.youtube.skills      # noqa: F401
-    import modules.operator.skills    # noqa: F401
+    import modules.calendar.skills     # noqa: F401
+    import modules.notes.skills        # noqa: F401
+    import modules.tasks.skills        # noqa: F401
     from nexus.ai.flow_handlers import register_flow_handlers
     register_flow_handlers()
     from nexus.ai.skill_registry import registry
