@@ -5,14 +5,13 @@ from typing import Callable
 
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTextEdit, QFormLayout,
     QMessageBox, QFrame,
 )
 
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config
-from nexus.ui.gui.base_project_window import BaseProjectWindow
 
 log = __import__("nexus.core.logger", fromlist=["get"]).get("ui.gui.module_base")
 
@@ -50,22 +49,25 @@ class _CmdWorker(QThread):
             self.finished_rc.emit(1)
 
 
-class ModuleGuiBase(BaseProjectWindow):
+class ModuleGuiBase(QWidget):
     """Shared layout scaffold for module GUI screens.
 
     Subclass contract:
-    - Set SKILL_SCOPES (list[str]) to enable a right-side ChatPanel.
     - Override _build_toolbar() and call _add_btn() to populate the action bar.
     - Override _build_extra() to insert widgets between the info panel and log.
     - Call _set_info([(key, val), ...]) to populate the key/value info panel.
     - Call _append(text) to write to the output log.
     - Call _run_cmd([...], cwd=...) to run a subprocess streamed to the log.
+
+    The chat/input panel lives at the ProjectHubWidget level, not per-module.
+    SKILL_SCOPES is retained as documentation for each module's AI scope.
     """
 
     SKILL_SCOPES: list[str] | None = None
 
     def __init__(self, project: ProjectInfo, parent: QWidget | None = None) -> None:
-        super().__init__(project, parent)
+        super().__init__(parent)
+        self.project  = project
         self._cfg     = load_project_config(project.slug)
         self._workers: list[_CmdWorker] = []
         self._build_base_ui()
@@ -73,8 +75,7 @@ class ModuleGuiBase(BaseProjectWindow):
     # ── Base layout ───────────────────────────────────────────────────────────
 
     def _build_base_ui(self) -> None:
-        root = QWidget()
-        vbox = QVBoxLayout(root)
+        vbox = QVBoxLayout(self)
         vbox.setSpacing(6)
         vbox.setContentsMargins(8, 8, 8, 8)
 
@@ -85,59 +86,35 @@ class ModuleGuiBase(BaseProjectWindow):
         self._toolbar_layout.addStretch()
         vbox.addLayout(self._toolbar_layout)
 
-        # ── Splitter ─────────────────────────────────────────────────────────
-        splitter = QSplitter(Qt.Horizontal)
-
-        left = QWidget()
-        left_vbox = QVBoxLayout(left)
-        left_vbox.setContentsMargins(0, 0, 0, 0)
-        left_vbox.setSpacing(6)
-
-        # Info panel
+        # ── Info panel ───────────────────────────────────────────────────────
         self._info_widget = QWidget()
         self._info_form   = QFormLayout(self._info_widget)
         self._info_form.setSpacing(4)
         self._info_form.setContentsMargins(4, 4, 4, 4)
-        left_vbox.addWidget(self._info_widget)
+        vbox.addWidget(self._info_widget)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setFrameShadow(QFrame.Sunken)
-        left_vbox.addWidget(sep)
+        vbox.addWidget(sep)
 
-        # Extra content area
+        # ── Extra content area ───────────────────────────────────────────────
         self._extra_widget = QWidget()
         self._extra_layout = QVBoxLayout(self._extra_widget)
         self._extra_layout.setContentsMargins(0, 0, 0, 0)
         self._build_extra()
         if self._extra_layout.count():
-            left_vbox.addWidget(self._extra_widget)
+            vbox.addWidget(self._extra_widget)
 
-        # Output log
+        # ── Output log ───────────────────────────────────────────────────────
         log_lbl = QLabel("Output")
         log_lbl.setObjectName("subtitle")
-        left_vbox.addWidget(log_lbl)
+        vbox.addWidget(log_lbl)
 
         self._output = QTextEdit()
         self._output.setReadOnly(True)
         self._output.setMinimumHeight(100)
-        left_vbox.addWidget(self._output)
-
-        splitter.addWidget(left)
-
-        if self.SKILL_SCOPES is not None:
-            from nexus.ui.gui.chat_panel import ChatPanel
-            self._chat = ChatPanel(
-                slug         = self.project.slug,
-                module_key   = self.project.module,
-                skill_scopes = self.SKILL_SCOPES,
-                parent       = self,
-            )
-            splitter.addWidget(self._chat)
-            splitter.setSizes([640, 400])
-
-        vbox.addWidget(splitter)
-        self.setCentralWidget(root)
+        vbox.addWidget(self._output)
 
     # ── Overridable hooks ─────────────────────────────────────────────────────
 
@@ -188,3 +165,5 @@ class ModuleGuiBase(BaseProjectWindow):
             "Use the TUI:  uv run nexus",
         )
 
+    def closeEvent(self, event) -> None:
+        super().closeEvent(event)

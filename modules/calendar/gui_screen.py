@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTextEdit, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QDialog, QFormLayout,
     QLineEdit, QDialogButtonBox, QDateEdit, QTimeEdit,
@@ -14,7 +14,6 @@ from PySide6.QtCore import QDate
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config
 from nexus.ui.gui.base_project_window import BaseProjectWindow
-from nexus.ui.gui.chat_panel import ChatPanel
 
 log = __import__("nexus.core.logger", fromlist=["get"]).get("calendar.gui_screen")
 
@@ -95,27 +94,16 @@ class GuiScreen(BaseProjectWindow):
         layout.addLayout(toolbar)
 
         # Content
-        splitter = QSplitter(Qt.Horizontal)
-
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
         self._tree = QTreeWidget()
         self._tree.setHeaderLabels(["Date", "Time", "Title", "Description"])
         self._tree.setColumnWidth(0, 110)
         self._tree.setColumnWidth(1, 60)
         self._tree.setColumnWidth(2, 200)
-        left_layout.addWidget(self._tree)
-        splitter.addWidget(left)
-
-        self._chat = ChatPanel(
-            self.project.slug,
-            "calendar",
-            ["global", "calendar"],
-            parent=self,
-        )
-        splitter.addWidget(self._chat)
-        splitter.setSizes([600, 400])
-        layout.addWidget(splitter, 1)
+        content_layout.addWidget(self._tree)
+        layout.addWidget(content, 1)
 
         self.setCentralWidget(root)
         self.refresh()
@@ -173,7 +161,3 @@ class GuiScreen(BaseProjectWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
 
-    def closeEvent(self, event) -> None:
-        if hasattr(self, "_chat"):
-            self._chat.closeEvent(event)
-        super().closeEvent(event)

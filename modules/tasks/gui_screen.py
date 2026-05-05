@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTextEdit, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QDialog, QFormLayout,
     QLineEdit, QComboBox, QDialogButtonBox,
@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config
 from nexus.ui.gui.base_project_window import BaseProjectWindow
-from nexus.ui.gui.chat_panel import ChatPanel
 from nexus.ui.gui.theme import ACCENT_G, ACCENT_M, TEXT_DIM
 
 log = __import__("nexus.core.logger", fromlist=["get"]).get("tasks.gui_screen")
@@ -91,26 +90,15 @@ class GuiScreen(BaseProjectWindow):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        splitter = QSplitter(Qt.Horizontal)
-
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
         self._tree = QTreeWidget()
         self._tree.setHeaderLabels(["Task", "Priority", "Deadline"])
         self._tree.setColumnWidth(0, 320)
         self._tree.setColumnWidth(1, 80)
-        left_layout.addWidget(self._tree)
-        splitter.addWidget(left)
-
-        self._chat = ChatPanel(
-            self.project.slug,
-            "tasks",
-            ["global", "tasks"],
-            parent=self,
-        )
-        splitter.addWidget(self._chat)
-        splitter.setSizes([600, 400])
-        layout.addWidget(splitter, 1)
+        content_layout.addWidget(self._tree)
+        layout.addWidget(content, 1)
 
         self.setCentralWidget(root)
         self.refresh()
@@ -205,7 +193,3 @@ class GuiScreen(BaseProjectWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
 
-    def closeEvent(self, event) -> None:
-        if hasattr(self, "_chat"):
-            self._chat.closeEvent(event)
-        super().closeEvent(event)

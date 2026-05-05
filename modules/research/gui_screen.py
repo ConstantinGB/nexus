@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config
 from nexus.ui.gui.base_project_window import BaseProjectWindow
-from nexus.ui.gui.chat_panel import ChatPanel
 
 
 def _note_title(path: Path) -> str:
@@ -63,11 +62,9 @@ class GuiScreen(BaseProjectWindow):
         ll.addWidget(self._list, 1)
         splitter.addWidget(left)
 
-        # Right: content editor + chat
-        right = QSplitter(Qt.Vertical)
-
-        editor_pane = QWidget()
-        el = QVBoxLayout(editor_pane)
+        # Right: content editor
+        right = QWidget()
+        el = QVBoxLayout(right)
         el.setContentsMargins(4, 8, 8, 4)
         save_btn = QPushButton("Save")
         save_btn.clicked.connect(self._save_note)
@@ -75,18 +72,9 @@ class GuiScreen(BaseProjectWindow):
         self._editor = QTextEdit()
         self._editor.setPlaceholderText("Note content (Markdown)")
         el.addWidget(self._editor, 1)
-        right.addWidget(editor_pane)
-
-        self._chat = ChatPanel(
-            slug         = project.slug,
-            module_key   = "research",
-            skill_scopes = ["global", "research"],
-        )
-        right.addWidget(self._chat)
-        right.setSizes([400, 260])
 
         splitter.addWidget(right)
-        splitter.setSizes([240, 720])
+        splitter.setSizes([240, 760])
 
         self._load_notes()
 

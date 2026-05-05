@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config
 from nexus.ui.gui.base_project_window import BaseProjectWindow
-from nexus.ui.gui.chat_panel import ChatPanel
 
 log = __import__("nexus.core.logger", fromlist=["get"]).get("notes.gui_screen")
 
@@ -72,18 +71,7 @@ class GuiScreen(BaseProjectWindow):
         splitter.addWidget(right)
 
         splitter.setSizes([260, 600])
-
-        chat_split = QSplitter(Qt.Horizontal)
-        chat_split.addWidget(splitter)
-        self._chat = ChatPanel(
-            self.project.slug,
-            "notes",
-            ["global", "notes"],
-            parent=self,
-        )
-        chat_split.addWidget(self._chat)
-        chat_split.setSizes([800, 400])
-        layout.addWidget(chat_split, 1)
+        layout.addWidget(splitter, 1)
 
         self.setCentralWidget(root)
         self.refresh()
@@ -160,7 +148,3 @@ class GuiScreen(BaseProjectWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
 
-    def closeEvent(self, event) -> None:
-        if hasattr(self, "_chat"):
-            self._chat.closeEvent(event)
-        super().closeEvent(event)

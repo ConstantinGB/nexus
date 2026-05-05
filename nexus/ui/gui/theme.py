@@ -67,6 +67,34 @@ QToolButton:hover {{
     background: {surface2};
     color: {accent_m};
 }}
+QToolButton#modBtn {{
+    background-color: {surface};
+    color: {accent2};
+    border: 1px solid {accent_p};
+    border-radius: 4px;
+    font-size: 11px;
+}}
+QToolButton#modBtn:hover {{
+    border-color: {accent_m};
+    color: {accent_m};
+}}
+QToolButton#modBtn:pressed {{
+    background-color: {surface2};
+}}
+QToolButton#modBtnLg {{
+    background-color: {surface};
+    color: {accent2};
+    border: 1px solid {accent_p};
+    border-radius: 4px;
+    font-size: 13px;
+}}
+QToolButton#modBtnLg:hover {{
+    border-color: {accent_m};
+    color: {accent_m};
+}}
+QToolButton#modBtnLg:pressed {{
+    background-color: {surface2};
+}}
 QPushButton {{
     background-color: {surface};
     color: {accent2};
@@ -142,6 +170,9 @@ QTabBar::tab:selected {{
 }}
 QTabBar::tab:hover:!selected {{
     color: {accent_p};
+}}
+QTabBar::tab:first {{
+    min-width: 100px;
 }}
 QTreeWidget, QListWidget, QTableWidget {{
     background-color: {input_bg};
