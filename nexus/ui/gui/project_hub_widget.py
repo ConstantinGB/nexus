@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
 )
 
 from nexus.core.project_manager import (
-    ProjectInfo, ensure_module_dirs, update_project_meta,
-    update_project_path, move_project_files,
+    ProjectInfo, ensure_module_dirs, auto_configure_module,
+    update_project_meta, update_project_path, move_project_files,
 )
 from nexus.core.logger import get
 
@@ -201,6 +201,7 @@ class ProjectHubWidget(QWidget):
             self._project.modules[:] = new_modules
             for mid in new_set - old_set:
                 ensure_module_dirs(self._project.path, mid)
+                auto_configure_module(self._project.slug, mid, self._project.path)
             # Invalidate cached widgets for removed modules
             for mid in old_set - new_set:
                 self._module_widgets.pop(mid, None)

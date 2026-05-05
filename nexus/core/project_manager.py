@@ -24,11 +24,73 @@ _DEFAULT_SUBDIRS: dict[str, list[str]] = {
     "tasks":    ["data/todo"],
 }
 
+# Config key that holds the primary directory path for each module.
+_MODULE_DIR_CONFIG_KEY: dict[str, str] = {
+    "journal":  "journal_dir",
+    "research": "notes_dir",
+    "org":      "output_dir",
+}
+
+# Extra defaults written on auto-configure (in addition to the dir key above).
+_MODULE_EXTRA_DEFAULTS: dict[str, dict] = {
+    "journal":  {"format": "latex", "author": ""},
+    "research": {"format": "markdown", "topic": ""},
+}
+
+# Modules that can be fully pre-configured using only project-local paths.
+# Modules NOT here require manual setup (git, backup, home, sdforge, web, game …).
+_AUTO_CONFIGURABLE: frozenset[str] = frozenset({
+    "journal", "research", "org",
+    "notes", "calendar", "tasks",
+    "promptopt", "codex",
+})
+
 
 def ensure_module_dirs(project_path: Path, module_id: str) -> None:
     """Create the standard subdirectories for *module_id* under *project_path*."""
     for subdir in _DEFAULT_SUBDIRS.get(module_id, []):
         (project_path / subdir).mkdir(parents=True, exist_ok=True)
+
+
+def auto_configure_module(slug: str, module_id: str, project_path: Path) -> None:
+    """Write default config values for *module_id* so it skips the setup form.
+
+    Only runs for modules in _AUTO_CONFIGURABLE and only if the module is not
+    already marked configured. Existing keys are never overwritten.
+    """
+    if module_id not in _AUTO_CONFIGURABLE:
+        return
+    cfg_path = _PROJECTS_DIR / slug / "config.yaml"
+    try:
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f) or {}
+    except OSError:
+        log.exception("Cannot read config for auto_configure_module slug=%r", slug)
+        return
+
+    mod_cfg = cfg.setdefault(module_id, {})
+    if mod_cfg.get("configured"):
+        return  # already configured, leave it alone
+
+    # Primary directory key
+    dir_key = _MODULE_DIR_CONFIG_KEY.get(module_id)
+    if dir_key and dir_key not in mod_cfg:
+        subdirs = _DEFAULT_SUBDIRS.get(module_id, [])
+        if subdirs:
+            mod_cfg[dir_key] = str(project_path / subdirs[0])
+
+    # Extra defaults (format, author, topic …)
+    for k, v in _MODULE_EXTRA_DEFAULTS.get(module_id, {}).items():
+        mod_cfg.setdefault(k, v)
+
+    mod_cfg["configured"] = True
+
+    try:
+        with open(cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True)
+        log.debug("Auto-configured module %r for slug=%r", module_id, slug)
+    except OSError:
+        log.exception("Failed to save auto-config for slug=%r module=%r", slug, module_id)
 
 
 @dataclass
@@ -124,9 +186,10 @@ def create_project(name: str, modules: list[str], description: str = "") -> Proj
                 f"# {name}\n\nA project managed by Nexus.\n"
             )
 
-        # Create subdirs for ALL modules in the list
+        # Create subdirs and write default config for auto-configurable modules
         for module in modules:
             ensure_module_dirs(project_dir, module)
+            auto_configure_module(slug, module, project_dir)
 
         log.info("Project created: %s", slug)
     except Exception:
