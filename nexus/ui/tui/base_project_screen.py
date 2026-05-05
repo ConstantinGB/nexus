@@ -9,7 +9,9 @@ from textual.widgets import Header, Footer, Label, Button, Log, Input
 from textual.containers import Vertical, Horizontal
 
 from nexus.core.logger import get
-from nexus.core.project_manager import ProjectInfo, update_project_meta
+from nexus.core.project_manager import (
+    ProjectInfo, update_project_meta, update_project_path, move_project_files,
+)
 from nexus.core.config_manager import load_project_config, save_project_config
 from nexus.core.platform import open_path
 from nexus.ui.tui.chat_panel import ChatPanel
@@ -119,17 +121,21 @@ class EditProjectModal(ModalScreen):
     EditProjectModal { align: center middle; }
     #ep-dialog {
         background: $theme-surface; border: solid $theme-border;
-        padding: 1 2; width: 60; height: auto;
+        padding: 1 2; width: 70; height: auto;
     }
     #ep-title  { color: $theme-border; text-style: bold; height: 2; }
     #ep-btns   { height: 3; margin-top: 1; }
     #ep-btns Button { margin-right: 1; }
+    .ep-path-row { height: 3; }
+    .ep-path-row Input { width: 1fr; }
+    .ep-path-row Button { width: 12; margin-left: 1; }
     """
 
-    def __init__(self, name: str, description: str) -> None:
+    def __init__(self, name: str, description: str, current_path: str = "") -> None:
         super().__init__()
         self._name = name
         self._description = description
+        self._current_path = current_path
 
     def compose(self) -> ComposeResult:
         with Vertical(id="ep-dialog"):
@@ -138,32 +144,50 @@ class EditProjectModal(ModalScreen):
             yield Input(value=self._name, id="ep-name")
             yield Label("Description:", classes="field-label")
             yield Input(value=self._description, id="ep-desc")
+            yield Label("Path (leave blank for default):", classes="field-label")
+            with Horizontal(classes="ep-path-row"):
+                yield Input(value=self._current_path, id="ep-path",
+                            placeholder="~/my-project-folder")
+                yield Button("Browse…", id="ep-browse")
             with Horizontal(id="ep-btns"):
                 yield Button("Save", id="ep-save", variant="primary")
                 yield Button("Cancel", id="ep-cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "ep-save":
+        event.stop()
+        bid = event.button.id
+        if bid == "ep-browse":
+            current = self.query_one("#ep-path", Input).value or None
+            self.app.push_screen(DirPickerModal(start=current), self._set_path)
+        elif bid == "ep-save":
             name = self.query_one("#ep-name", Input).value.strip()
             if name:
                 self.dismiss({
                     "name": name,
                     "description": self.query_one("#ep-desc", Input).value.strip(),
+                    "path": self.query_one("#ep-path", Input).value.strip(),
                 })
             else:
                 self.app.notify("Name cannot be empty.", severity="error")
         else:
             self.dismiss(None)
 
+    def _set_path(self, path: str | None) -> None:
+        if path:
+            self.query_one("#ep-path", Input).value = path
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "ep-name":
             self.query_one("#ep-desc", Input).focus()
         elif event.input.id == "ep-desc":
+            self.query_one("#ep-path", Input).focus()
+        elif event.input.id == "ep-path":
             name = self.query_one("#ep-name", Input).value.strip()
             if name:
                 self.dismiss({
                     "name": name,
                     "description": self.query_one("#ep-desc", Input).value.strip(),
+                    "path": self.query_one("#ep-path", Input).value.strip(),
                 })
             else:
                 self.app.notify("Name cannot be empty.", severity="error")
@@ -533,8 +557,10 @@ class BaseProjectScreen(Screen):
             elif bid == "btn-open-folder":
                 self._open_primary_folder()
             elif bid == "btn-edit-project":
+                current_path = str(self.project.path) if self.project.path else ""
                 self.app.push_screen(
-                    EditProjectModal(self.project.name, self.project.description),
+                    EditProjectModal(self.project.name, self.project.description,
+                                     current_path),
                     self._apply_project_edit,
                 )
             else:
@@ -548,6 +574,8 @@ class BaseProjectScreen(Screen):
             return
         new_name = result["name"]
         new_desc = result["description"]
+        new_path_str = result.get("path", "").strip()
+
         update_project_meta(self.project.slug, new_name, new_desc)
         self.project.name = new_name
         self.project.description = new_desc
@@ -557,6 +585,36 @@ class BaseProjectScreen(Screen):
             self.query_one("#project-meta", Label).update(meta)
         except Exception:
             pass
+
+        if new_path_str:
+            new_path = Path(new_path_str).expanduser()
+            try:
+                if new_path.resolve() != self.project.path.resolve():
+                    def _on_move_confirm(do_move: bool) -> None:
+                        try:
+                            if do_move:
+                                move_project_files(self.project.slug, new_path)
+                                self.app.notify(f"Files moved to {new_path}", severity="information")
+                            else:
+                                update_project_path(self.project.slug, new_path)
+                                self.app.notify("Path updated (files not moved).", severity="information")
+                            self.project.path = new_path
+                        except Exception:
+                            log.exception("Failed to apply path change for %s", self.project.slug)
+                            self.app.notify("Path change failed — see log.", severity="error")
+                    self.app.push_screen(
+                        ConfirmModal(
+                            "Move Project Files?",
+                            f"Move all project files to:\n{new_path}",
+                            hint="Choose 'Move' to relocate files, or cancel to update path only.",
+                            confirm_label="Move",
+                        ),
+                        _on_move_confirm,
+                    )
+                    return
+            except Exception:
+                pass
+
         self.app.notify("Project updated.", severity="information")
 
     def _apply_panel_default(self) -> None:

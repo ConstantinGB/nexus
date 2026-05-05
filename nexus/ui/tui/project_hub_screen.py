@@ -8,7 +8,7 @@ from textual.widget import Widget
 from textual.widgets import Header, Footer, Label, Button
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
-from nexus.core.project_manager import ProjectInfo
+from nexus.core.project_manager import ProjectInfo, ensure_module_dirs
 from nexus.core.logger import get
 from nexus.ui.tui.base_project_screen import InputModeModal
 
@@ -262,10 +262,14 @@ class ProjectHubScreen(Screen):
         if modules is None:
             return
         from nexus.core.config_manager import load_project_config, save_project_config
+        old_set = set(self.project.modules)
+        new_set = set(modules)
         cfg = load_project_config(self.project.slug)
         cfg["modules"] = modules
         save_project_config(self.project.slug, cfg)
         self.project.modules[:] = modules
+        for mid in new_set - old_set:
+            ensure_module_dirs(self.project.path, mid)
         self.refresh(recompose=True)
 
     def _on_input_mode(self, mode: str | None) -> None:

@@ -15,7 +15,7 @@ _MODULES_DIR  = Path(__file__).parent.parent.parent / "modules"
 
 _DEFAULT_SUBDIRS: dict[str, list[str]] = {
     "research": ["notes"],
-    "codex":    ["vault"],
+    "codex":    ["codex"],
     "journal":  ["journal"],
     "org":      ["plans"],
     "emulator": ["roms"],
@@ -23,6 +23,12 @@ _DEFAULT_SUBDIRS: dict[str, list[str]] = {
     "notes":    ["data/notes"],
     "tasks":    ["data/todo"],
 }
+
+
+def ensure_module_dirs(project_path: Path, module_id: str) -> None:
+    """Create the standard subdirectories for *module_id* under *project_path*."""
+    for subdir in _DEFAULT_SUBDIRS.get(module_id, []):
+        (project_path / subdir).mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
@@ -66,13 +72,15 @@ def list_projects() -> list[ProjectInfo]:
             continue
         # Handle both 'modules' (new) and 'module' (old) config keys
         raw_modules = cfg.get("modules") or ([cfg["module"]] if cfg.get("module") else [])
+        custom_path_str = cfg.get("custom_path", "")
+        effective_path = Path(custom_path_str).expanduser() if custom_path_str else d
         projects.append(ProjectInfo(
             name=cfg.get("name", d.name),
             slug=d.name,
             modules=raw_modules,
             description=cfg.get("description", ""),
             created_at=cfg.get("created_at", ""),
-            path=d,
+            path=effective_path,
         ))
     log.debug("Found %d projects", len(projects))
     return projects
@@ -118,8 +126,7 @@ def create_project(name: str, modules: list[str], description: str = "") -> Proj
 
         # Create subdirs for ALL modules in the list
         for module in modules:
-            for subdir in _DEFAULT_SUBDIRS.get(module, []):
-                (project_dir / subdir).mkdir(parents=True, exist_ok=True)
+            ensure_module_dirs(project_dir, module)
 
         log.info("Project created: %s", slug)
     except Exception:
@@ -150,6 +157,77 @@ def update_project_meta(slug: str, name: str, description: str) -> None:
         log.info("Updated project meta: slug=%r name=%r", slug, name)
     except OSError:
         log.exception("Failed to update project meta for slug=%r", slug)
+        raise
+
+
+def update_project_modules(slug: str, modules: list[str]) -> None:
+    cfg_path = _PROJECTS_DIR / slug / "config.yaml"
+    try:
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg["modules"] = modules
+        with open(cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True)
+        log.info("Updated project modules: slug=%r modules=%r", slug, modules)
+    except OSError:
+        log.exception("Failed to update modules for slug=%r", slug)
+        raise
+
+
+def update_project_path(slug: str, new_path: Path) -> None:
+    """Record *new_path* as custom_path in config without moving any files."""
+    cfg_path = _PROJECTS_DIR / slug / "config.yaml"
+    try:
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        if new_path:
+            cfg["custom_path"] = str(new_path.expanduser())
+        else:
+            cfg.pop("custom_path", None)
+        with open(cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True)
+        log.info("Updated custom_path for slug=%r → %s", slug, new_path)
+    except OSError:
+        log.exception("Failed to update custom_path for slug=%r", slug)
+        raise
+
+
+def move_project_files(slug: str, new_path: Path) -> None:
+    """Move the project's data directory to *new_path* and update config."""
+    cfg_path = _PROJECTS_DIR / slug / "config.yaml"
+    try:
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f) or {}
+    except OSError:
+        log.exception("Cannot read config for slug=%r", slug)
+        raise
+
+    old_custom = cfg.get("custom_path", "")
+    old_data = Path(old_custom).expanduser() if old_custom else _PROJECTS_DIR / slug
+    new_data = new_path.expanduser()
+
+    if old_data.resolve() == new_data.resolve():
+        return
+
+    new_data.mkdir(parents=True, exist_ok=True)
+    try:
+        for item in old_data.iterdir():
+            # config.yaml stays in projects/<slug>/ when moving from the default location
+            if old_data == _PROJECTS_DIR / slug and item.name == "config.yaml":
+                continue
+            dest = new_data / item.name
+            shutil.move(str(item), str(dest))
+    except Exception:
+        log.exception("Failed to move project files from %s to %s", old_data, new_data)
+        raise
+
+    try:
+        cfg["custom_path"] = str(new_data)
+        with open(cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True)
+        log.info("Moved project %r from %s to %s", slug, old_data, new_data)
+    except OSError:
+        log.exception("Moved files but failed to update config for slug=%r", slug)
         raise
 
 

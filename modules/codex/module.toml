@@ -1,7 +1,7 @@
 [module]
 id = "codex"
 label = "Codex"
-description = "Persistent knowledge base — store and categorize what you've learned."
-tags = ["ai", "knowledge"]
+description = "Document explorer and PDF compiler — gather Journal, Notes, Research, Org and YouTube transcripts into a single PDF."
+tags = ["ai", "knowledge", "export"]
 system = false
 prefix = "cod"
