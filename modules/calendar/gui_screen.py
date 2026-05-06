@@ -1,15 +1,14 @@
 from __future__ import annotations
-from datetime import date
-from pathlib import Path
+from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QDate, QDateTime, QTime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTextEdit, QMessageBox,
-    QTreeWidget, QTreeWidgetItem, QDialog, QFormLayout,
+    QListWidget, QListWidgetItem, QDialog, QFormLayout,
     QLineEdit, QDialogButtonBox, QDateEdit, QTimeEdit,
+    QComboBox, QCheckBox, QCalendarWidget, QSplitter,
 )
-from PySide6.QtCore import QDate
 
 from nexus.core.project_manager import ProjectInfo
 from nexus.core.config_manager import load_project_config
@@ -17,36 +16,93 @@ from nexus.ui.gui.base_project_window import BaseProjectWindow
 
 log = __import__("nexus.core.logger", fromlist=["get"]).get("calendar.gui_screen")
 
-_PROJECTS_ROOT = Path(__file__).parent.parent.parent / "projects"
+
+def _get_calendar(project: ProjectInfo):
+    from nexus.core.config_manager import get_module_mode
+    from nexus.core.data.calendar import get_global_calendar, get_project_calendar
+    mode = get_module_mode(load_project_config(project.slug), "calendar")
+    return get_global_calendar() if mode == "integrated" else get_project_calendar(project.slug)
 
 
-def _data_dir(slug: str) -> Path:
-    return _PROJECTS_ROOT / slug / "data" / "calendar"
+# ── Event dialog ──────────────────────────────────────────────────────────────
 
-
-class _AddEventDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None) -> None:
+class _EventDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None, event: dict | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Add Event")
-        self.setMinimumWidth(340)
+        self._event = event
+        self.setWindowTitle("Edit Event" if event else "Add Event")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        self._build()
+
+    def _build(self) -> None:
         layout = QVBoxLayout(self)
-        form = QFormLayout()
+        form   = QFormLayout()
 
         self._title = QLineEdit()
         self._title.setPlaceholderText("Team sync")
+        if self._event:
+            self._title.setText(self._event.get("title", ""))
         form.addRow("Title:", self._title)
 
-        self._date = QDateEdit(QDate.currentDate())
-        self._date.setCalendarPopup(True)
-        self._date.setDisplayFormat("yyyy-MM-dd")
-        form.addRow("Date:", self._date)
+        self._start_date = QDateEdit(QDate.currentDate())
+        self._start_date.setCalendarPopup(True)
+        self._start_date.setDisplayFormat("yyyy-MM-dd")
+        if self._event:
+            dt = QDateTime.fromString(self._event["start"], Qt.ISODate)
+            if dt.isValid():
+                self._start_date.setDate(dt.date())
+        form.addRow("Start date:", self._start_date)
 
-        self._time = QTimeEdit()
-        self._time.setDisplayFormat("HH:mm")
-        form.addRow("Time:", self._time)
+        self._start_time = QTimeEdit(QTime(9, 0))
+        self._start_time.setDisplayFormat("HH:mm")
+        if self._event:
+            dt = QDateTime.fromString(self._event["start"], Qt.ISODate)
+            if dt.isValid():
+                self._start_time.setTime(dt.time())
+        form.addRow("Start time:", self._start_time)
 
-        self._desc = QLineEdit()
-        self._desc.setPlaceholderText("Optional description")
+        self._has_end = QCheckBox("Set end time")
+        if self._event and self._event.get("end") and self._event["end"] != self._event["start"]:
+            self._has_end.setChecked(True)
+        self._has_end.toggled.connect(self._toggle_end)
+        form.addRow("", self._has_end)
+
+        self._end_date_lbl = QLabel("End date:")
+        self._end_date     = QDateEdit(QDate.currentDate())
+        self._end_date.setCalendarPopup(True)
+        self._end_date.setDisplayFormat("yyyy-MM-dd")
+        self._end_time_lbl = QLabel("End time:")
+        self._end_time     = QTimeEdit(QTime(10, 0))
+        self._end_time.setDisplayFormat("HH:mm")
+        if self._event and self._event.get("end"):
+            edt = QDateTime.fromString(self._event["end"], Qt.ISODate)
+            if edt.isValid():
+                self._end_date.setDate(edt.date())
+                self._end_time.setTime(edt.time())
+        form.addRow(self._end_date_lbl, self._end_date)
+        form.addRow(self._end_time_lbl, self._end_time)
+
+        self._recurrence = QComboBox()
+        self._recurrence.addItems(["None", "Daily", "Weekly", "Monthly", "Yearly"])
+        if self._event and self._event.get("recurrence"):
+            rec_type = self._event["recurrence"].get("type", "").capitalize()
+            idx = self._recurrence.findText(rec_type)
+            if idx >= 0:
+                self._recurrence.setCurrentIndex(idx)
+        form.addRow("Recurrence:", self._recurrence)
+
+        self._location = QLineEdit()
+        self._location.setPlaceholderText("optional")
+        if self._event:
+            self._location.setText(self._event.get("location", ""))
+        form.addRow("Location:", self._location)
+
+        self._desc = QTextEdit()
+        self._desc.setMaximumHeight(80)
+        self._desc.setPlaceholderText("optional description")
+        if self._event:
+            self._desc.setPlainText(self._event.get("description", ""))
         form.addRow("Description:", self._desc)
 
         layout.addLayout(form)
@@ -55,109 +111,197 @@ class _AddEventDialog(QDialog):
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
 
+        self._toggle_end(self._has_end.isChecked())
+
+    def _toggle_end(self, visible: bool) -> None:
+        for w in (self._end_date_lbl, self._end_date, self._end_time_lbl, self._end_time):
+            w.setVisible(visible)
+
     def get_result(self) -> dict:
-        d = self._date.date()
-        t = self._time.time()
+        start_dt = QDateTime(self._start_date.date(), self._start_time.time())
+        end_str  = None
+        if self._has_end.isChecked():
+            end_dt  = QDateTime(self._end_date.date(), self._end_time.time())
+            end_str = end_dt.toString(Qt.ISODate)
+        recurrence = None
+        rec_text   = self._recurrence.currentText()
+        if rec_text != "None":
+            recurrence = {"type": rec_text.lower(), "interval": 1, "until": None}
         return {
             "title":       self._title.text().strip(),
-            "date":        f"{d.year():04d}-{d.month():02d}-{d.day():02d}",
-            "time":        f"{t.hour():02d}:{t.minute():02d}",
-            "description": self._desc.text().strip(),
+            "start":       start_dt.toString(Qt.ISODate),
+            "end":         end_str,
+            "location":    self._location.text().strip(),
+            "description": self._desc.toPlainText().strip(),
+            "recurrence":  recurrence,
         }
 
+
+# ── Main GUI screen ───────────────────────────────────────────────────────────
 
 class GuiScreen(BaseProjectWindow):
     def __init__(self, project: ProjectInfo, parent=None) -> None:
         super().__init__(project, parent)
         self.setWindowTitle(f"Calendar — {project.name}")
-        self._cfg = load_project_config(project.slug)
+        self._selected_event_id: str | None = None
         self._build_ui()
+        self._refresh_for_date(self._cal_widget.selectedDate())
 
     def _build_ui(self) -> None:
-        root = QWidget()
+        root   = QWidget()
         layout = QVBoxLayout(root)
         layout.setSpacing(6)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        # Toolbar
-        toolbar = QHBoxLayout()
-        btn_add = QPushButton("+ Add Event")
-        btn_add.clicked.connect(self._add_event)
-        toolbar.addWidget(btn_add)
-        btn_del = QPushButton("Delete Event")
-        btn_del.clicked.connect(self._delete_event)
-        toolbar.addWidget(btn_del)
-        btn_refresh = QPushButton("Refresh")
-        btn_refresh.clicked.connect(self.refresh)
-        toolbar.addWidget(btn_refresh)
+        # Mode indicator
+        from nexus.core.config_manager import get_module_mode
+        mode   = get_module_mode(load_project_config(self.project.slug), "calendar")
+        source = "Global calendar (Integrated)" if mode == "integrated" \
+            else f"Project calendar (Standalone — {self.project.slug})"
+        mode_lbl = QLabel(f"  {source}")
+        mode_lbl.setObjectName("dim")
+        layout.addWidget(mode_lbl)
+
+        # Action toolbar
+        toolbar      = QHBoxLayout()
+        add_btn      = QPushButton("+ Add Event")
+        edit_btn     = QPushButton("Edit Selected")
+        del_btn      = QPushButton("Delete Selected")
+        upcoming_btn = QPushButton("Next 7 Days")
+        add_btn.clicked.connect(self._add_event)
+        edit_btn.clicked.connect(self._edit_event)
+        del_btn.clicked.connect(self._delete_event)
+        upcoming_btn.clicked.connect(self._show_upcoming)
+        for b in (add_btn, edit_btn, del_btn, upcoming_btn):
+            toolbar.addWidget(b)
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # Content
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        self._tree = QTreeWidget()
-        self._tree.setHeaderLabels(["Date", "Time", "Title", "Description"])
-        self._tree.setColumnWidth(0, 110)
-        self._tree.setColumnWidth(1, 60)
-        self._tree.setColumnWidth(2, 200)
-        content_layout.addWidget(self._tree)
-        layout.addWidget(content, 1)
+        # Calendar + event list
+        splitter = QSplitter(Qt.Vertical)
+        self._cal_widget = QCalendarWidget()
+        self._cal_widget.clicked.connect(self._refresh_for_date)
+        splitter.addWidget(self._cal_widget)
+
+        self._event_list = QListWidget()
+        self._event_list.itemClicked.connect(self._on_item_clicked)
+        splitter.addWidget(self._event_list)
+        splitter.setSizes([320, 200])
+        layout.addWidget(splitter)
 
         self.setCentralWidget(root)
-        self.refresh()
 
-    def refresh(self) -> None:
-        self._tree.clear()
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _fmt_dt(iso: str) -> str:
         try:
-            from nexus.core.data.calendar import CalendarData
-            cal = CalendarData(_data_dir(self.project.slug))
-            events = cal.get_upcoming(days=30)
-            for e in sorted(events, key=lambda x: x["start"]):
-                start = e["start"]
-                d_str = start[:10]
-                t_str = start[11:16] if len(start) > 10 else ""
-                item = QTreeWidgetItem([d_str, t_str, e["title"], e.get("description", "")])
-                item.setData(0, Qt.UserRole, e["id"])
-                self._tree.addTopLevelItem(item)
+            return datetime.fromisoformat(iso).strftime("%d %b  %H:%M")
+        except Exception:
+            return iso
+
+    def _refresh_for_date(self, qdate: QDate) -> None:
+        self._event_list.clear()
+        self._selected_event_id = None
+        date_str = qdate.toString("yyyy-MM-dd")
+        try:
+            cal    = _get_calendar(self.project)
+            events = cal.get_events_for_date(qdate.toPython())
         except Exception as exc:
-            log.exception("Failed to refresh calendar")
-            self._tree.addTopLevelItem(QTreeWidgetItem(["Error", "", str(exc), ""]))
+            self._event_list.addItem(f"Error: {exc}")
+            return
+
+        if not events:
+            item = QListWidgetItem(f"No events on {date_str}")
+            item.setFlags(Qt.NoItemFlags)
+            self._event_list.addItem(item)
+            return
+
+        for e in sorted(events, key=lambda x: x["start"]):
+            rec_tag  = " ↻" if e.get("recurrence") else ""
+            end_part = f"  →  {self._fmt_dt(e['end'])}" if e.get("end") and e["end"] != e["start"] else ""
+            loc_part = f"  📍 {e['location']}" if e.get("location") else ""
+            item     = QListWidgetItem(
+                f"{self._fmt_dt(e['start'])}{end_part}{rec_tag}\n  {e['title']}{loc_part}"
+            )
+            item.setData(Qt.UserRole, e["id"])
+            self._event_list.addItem(item)
+
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        self._selected_event_id = item.data(Qt.UserRole)
+
+    # ── CRUD actions ──────────────────────────────────────────────────────────
 
     def _add_event(self) -> None:
-        from nexus.ui.gui.theme import RETROWAVE_THEME
-        dialog = _AddEventDialog(self)
-        dialog.setStyleSheet(RETROWAVE_THEME)
-        if dialog.exec() != QDialog.Accepted:
+        dlg = _EventDialog(self)
+        if not dlg.exec():
             return
-        result = dialog.get_result()
-        if not result["title"]:
+        data = dlg.get_result()
+        if not data["title"]:
+            QMessageBox.warning(self, "Missing title", "Please enter an event title.")
             return
         try:
-            from nexus.core.data.calendar import CalendarData
-            cal = CalendarData(_data_dir(self.project.slug))
-            cal.add_event(
-                title=result["title"],
-                start=f"{result['date']}T{result['time']}:00",
-                description=result["description"],
-            )
-            self.refresh()
+            _get_calendar(self.project).add_event(**data)
+            self._refresh_for_date(self._cal_widget.selectedDate())
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
+            log.exception("add_event failed")
+
+    def _edit_event(self) -> None:
+        if not self._selected_event_id:
+            QMessageBox.information(self, "No selection", "Click an event to select it first.")
+            return
+        try:
+            cal   = _get_calendar(self.project)
+            event = next((e for e in cal.events if e["id"] == self._selected_event_id), None)
+            if event is None:
+                QMessageBox.warning(self, "Not found", "Event not found.")
+                return
+            dlg = _EventDialog(self, event)
+            if not dlg.exec():
+                return
+            data = dlg.get_result()
+            cal.update_event(self._selected_event_id, **data)
+            self._refresh_for_date(self._cal_widget.selectedDate())
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+            log.exception("edit_event failed")
 
     def _delete_event(self) -> None:
-        item = self._tree.currentItem()
-        if not item:
+        if not self._selected_event_id:
+            QMessageBox.information(self, "No selection", "Click an event to select it first.")
             return
-        event_id = item.data(0, Qt.UserRole)
-        if not event_id:
+        reply = QMessageBox.question(
+            self, "Delete event", "Delete the selected event?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
             return
         try:
-            from nexus.core.data.calendar import CalendarData
-            cal = CalendarData(_data_dir(self.project.slug))
-            cal.delete_event(event_id)
-            self.refresh()
+            _get_calendar(self.project).delete_event(self._selected_event_id)
+            self._selected_event_id = None
+            self._refresh_for_date(self._cal_widget.selectedDate())
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
+            log.exception("delete_event failed")
 
+    def _show_upcoming(self) -> None:
+        self._event_list.clear()
+        self._selected_event_id = None
+        try:
+            events = _get_calendar(self.project).get_upcoming(days=7)
+        except Exception as exc:
+            self._event_list.addItem(f"Error: {exc}")
+            return
+        if not events:
+            item = QListWidgetItem("No events in the next 7 days.")
+            item.setFlags(Qt.NoItemFlags)
+            self._event_list.addItem(item)
+            return
+        for e in sorted(events, key=lambda x: x["start"]):
+            rec_tag = " ↻" if e.get("recurrence") else ""
+            item    = QListWidgetItem(
+                f"{self._fmt_dt(e['start'])}{rec_tag}\n  {e['title']}"
+            )
+            item.setData(Qt.UserRole, e["id"])
+            self._event_list.addItem(item)

@@ -3,5 +3,6 @@ id = "calendar"
 label = "Calendar"
 description = "Schedule and track events."
 tags = ["productivity"]
-system = false
+system = true
+mode_aware = true
 prefix = "cal"

@@ -23,9 +23,19 @@ def _to_oai_tool(tool: dict) -> dict:
 
 _MAX_TOOL_ITERATIONS = 10
 
+# Providers that use the OpenAI-compatible chat endpoint
+_OAI_COMPAT_PROVIDERS = {"local", "openwebui", "openai_compat"}
+
 
 class AIClient:
-    """Claude API client with MCP tool-use and native Skills support."""
+    """Multi-provider AI client with MCP tool-use and native Skills support.
+
+    Providers:
+      anthropic    — Anthropic API (Claude models)
+      openwebui    — OpenWebUI instance (OpenAI-compat at /api/v1/)
+      openai_compat — any OpenAI-compatible endpoint
+      local        — Ollama or similar (no auth header)
+    """
 
     MODEL = "claude-sonnet-4-6"
 
@@ -36,15 +46,53 @@ class AIClient:
         force_provider: str = "",
     ) -> None:
         cfg = load_global_config().get("ai", {})
-        self._provider = force_provider or cfg.get("provider", "api_key")
-        if self._provider == "local":
-            self._local_endpoint = cfg.get("local_endpoint", "http://localhost:11434").rstrip("/")
-            self._local_model    = cfg.get("local_model", "")
-            self._anthropic      = None
-        else:
-            key = api_key or cfg.get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-            self._anthropic = anthropic.AsyncAnthropic(api_key=key)
-        self._mcp = mcp
+        provider = force_provider or cfg.get("provider", "anthropic")
+        # Normalise legacy alias
+        if provider == "api_key":
+            provider = "anthropic"
+        self._provider = provider
+        self._mcp      = mcp
+
+        providers_cfg = cfg.get("providers", {})
+
+        if provider in _OAI_COMPAT_PROVIDERS:
+            self._anthropic        = None
+            self._local_auth_header: dict[str, str] = {}
+
+            if provider == "openwebui":
+                p = providers_cfg.get("openwebui", {})
+                base = p.get("base_url", "http://localhost:3000").rstrip("/")
+                # OpenWebUI exposes the OpenAI-compat API at /api
+                self._local_endpoint = base + "/api"
+                key = p.get("api_key", "")
+                if key:
+                    self._local_auth_header = {"Authorization": f"Bearer {key}"}
+                self._local_model = p.get("model", "")
+
+            elif provider == "openai_compat":
+                p = providers_cfg.get("openai_compat", {})
+                self._local_endpoint = p.get("base_url", "").rstrip("/")
+                key = p.get("api_key", "")
+                if key:
+                    self._local_auth_header = {"Authorization": f"Bearer {key}"}
+                self._local_model = p.get("model", "")
+
+            else:  # local (Ollama)
+                p = providers_cfg.get("local", {})
+                self._local_endpoint = (
+                    p.get("endpoint") or cfg.get("local_endpoint", "http://localhost:11434")
+                ).rstrip("/")
+                self._local_model = p.get("model") or cfg.get("local_model", "")
+
+        else:  # anthropic
+            p = providers_cfg.get("anthropic", {})
+            resolved_key = (
+                api_key
+                or p.get("api_key", "")
+                or cfg.get("api_key", "")
+                or os.environ.get("ANTHROPIC_API_KEY", "")
+            )
+            self._anthropic = anthropic.AsyncAnthropic(api_key=resolved_key)
 
     async def chat(
         self,
@@ -53,7 +101,7 @@ class AIClient:
         skill_scopes: list[str] | None = None,
         intent: dict | None = None,
     ) -> str:
-        if self._provider == "local":
+        if self._provider in _OAI_COMPAT_PROVIDERS:
             return await self._chat_local(messages, system_prompt, skill_scopes, intent)
         return await self._chat_anthropic(messages, system_prompt, skill_scopes, intent)
 
@@ -98,7 +146,6 @@ class AIClient:
                         except Exception as exc:
                             result = json.dumps({"error": str(exc)})
                             is_error = True
-                        # Give the model structured feedback on validation failures
                         try:
                             result_dict = json.loads(result)
                             if "validation_error" in result_dict:
@@ -149,12 +196,13 @@ class AIClient:
             oai_msgs.append({"role": "system", "content": system_prompt})
         oai_msgs.extend(messages)
 
+        headers = dict(self._local_auth_header)
+
         async with httpx.AsyncClient(timeout=120.0) as http:
             for _iteration in range(_MAX_TOOL_ITERATIONS):
-                body: dict[str, Any] = {
-                    "model":    self._local_model,
-                    "messages": oai_msgs,
-                }
+                body: dict[str, Any] = {"messages": oai_msgs}
+                if self._local_model:
+                    body["model"] = self._local_model
                 if oai_tools:
                     body["tools"] = oai_tools
 
@@ -162,6 +210,7 @@ class AIClient:
                     r = await http.post(
                         f"{self._local_endpoint}/v1/chat/completions",
                         json=body,
+                        headers=headers,
                     )
                     r.raise_for_status()
                 except httpx.HTTPStatusError as exc:
@@ -209,7 +258,6 @@ class AIClient:
                             result = json.dumps({"error": f"Unknown tool: {name}"})
                     except Exception as exc:
                         result = json.dumps({"error": str(exc)})
-                    # Give the model structured feedback on validation failures
                     try:
                         result_dict = json.loads(result)
                         if "validation_error" in result_dict:

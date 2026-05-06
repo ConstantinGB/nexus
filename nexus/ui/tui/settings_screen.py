@@ -20,7 +20,7 @@ from nexus.ui.tui.base_project_screen import SudoModal
 
 log = get("ui.settings_screen")
 
-_PROVIDERS = ["login", "api_key", "local"]
+_PROVIDERS = ["anthropic", "openwebui", "openai_compat", "local"]
 
 _CAPABILITIES = [
     "reasoning",
@@ -43,9 +43,10 @@ _CAP_LABELS = {
 }
 
 _PROVIDER_BTN = {
-    "login":   "btn-provider-login",
-    "api_key": "btn-provider-api-key",
-    "local":   "btn-provider-local",
+    "anthropic":    "btn-provider-anthropic",
+    "openwebui":    "btn-provider-openwebui",
+    "openai_compat":"btn-provider-openai-compat",
+    "local":        "btn-provider-local",
 }
 
 def _detect_pm() -> str:
@@ -95,7 +96,7 @@ _MODULE_DEPS: list[_DepSpec] = [
     _DepSpec("web",      "npm",             "npm",                      apt="npm",                dnf="npm",                pacman="npm"),
     _DepSpec("research", "rg",              "ripgrep (search)",         apt="ripgrep",            dnf="ripgrep",            pacman="ripgrep"),
     _DepSpec("research", "pandoc",          "pandoc (PDF export)",      apt="pandoc",             dnf="pandoc",             pacman="pandoc"),
-    _DepSpec("research", "xelatex",          "xelatex (pandoc PDF engine)", apt="texlive-xetex",             dnf="texlive-xetex",   pacman="texlive-xetex"),
+    _DepSpec("research", "xelatex",         "xelatex (pandoc PDF engine)", apt="texlive-xetex",  dnf="texlive-xetex",      pacman="texlive-xetex"),
     _DepSpec("codex",    "rg",              "ripgrep (search)",         apt="ripgrep",            dnf="ripgrep",            pacman="ripgrep"),
     _DepSpec("journal",  "pdflatex",        "pdflatex",                 apt="texlive-latex-base", dnf="texlive-latex",      pacman="texlive-core"),
     _DepSpec("game",     "godot",           "Godot Engine",             apt=None,                 dnf=None,                 pacman=None),
@@ -150,6 +151,80 @@ class _ResticRequiredModal(ModalScreen[bool]):
         self.dismiss(True)
 
 
+class _OllamaSetupModal(ModalScreen[bool]):
+    DEFAULT_CSS = """
+    _OllamaSetupModal { align: center middle; }
+    _OllamaSetupModal > Vertical {
+        width: 70; height: auto; padding: 2 3;
+        background: $theme-surface; border: solid $theme-border;
+    }
+    _OllamaSetupModal Label { height: auto; margin-bottom: 1; }
+    #ollama-log { height: 4; color: $theme-text-dim; }
+    #ollama-btns { height: 3; margin-top: 1; }
+    #ollama-btns Button { margin-right: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        import platform as _platform
+        arch = _platform.machine()
+        with Vertical():
+            yield Label("Ollama Setup", classes="section-title")
+            yield Label(f"Detected architecture: {arch}", classes="hint")
+            yield Label("Install command:", classes="field-label")
+            yield Label("curl -fsSL https://ollama.com/install.sh | sh", classes="hint")
+            yield Label("", id="ollama-log")
+            with Horizontal(id="ollama-btns"):
+                yield Button("Run Install", id="btn-ollama-install", variant="primary")
+                yield Button("Cancel",      id="btn-ollama-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        bid = event.button.id
+        if bid == "btn-ollama-cancel":
+            self.dismiss(False)
+        elif bid == "btn-ollama-install":
+            event.button.disabled = True
+            self.run_worker(self._do_install())
+
+    async def _do_install(self) -> None:
+        try:
+            log_lbl = self.query_one("#ollama-log", Label)
+        except Exception:
+            return
+        log_lbl.update("Installing Ollama…")
+        cmd = "curl -fsSL https://ollama.com/install.sh | sh"
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            stdout, _ = await proc.communicate()
+            output = stdout.decode(errors="replace").strip()
+            if proc.returncode == 0:
+                try:
+                    self.query_one("#ollama-log", Label).update("✓ Ollama installed.")
+                except Exception:
+                    pass
+                self.app.notify(
+                    "Ollama installed. Set the endpoint in AI Config → Local.",
+                    severity="information",
+                )
+                self.dismiss(True)
+            else:
+                try:
+                    self.query_one("#ollama-log", Label).update(
+                        f"✗ Failed (exit {proc.returncode})\n{output[-160:]}"
+                    )
+                except Exception:
+                    pass
+        except Exception as exc:
+            try:
+                self.query_one("#ollama-log", Label).update(f"✗ Error: {exc}")
+            except Exception:
+                pass
+
+
 class SettingsScreen(Screen):
     BINDINGS = [("escape", "dismiss", "Close")]
 
@@ -182,7 +257,7 @@ class SettingsScreen(Screen):
     #provider-bar   { height: 3; margin-bottom: 1; }
 
     .provider-btn {
-        width: 12;
+        width: 14;
         margin-right: 1;
         background: $theme-surface;
         color: $theme-text-dim;
@@ -210,11 +285,15 @@ class SettingsScreen(Screen):
     #mode-toggle-spacer { width: 1fr; }
 
     /* Provider detail sections */
-    #api-key-section  { height: auto; }
-    #local-section    { height: auto; }
-    #login-section    { height: auto; }
-    #verify-bar       { height: 3; }
-    #local-test-bar   { height: 3; }
+    #api-key-section       { height: auto; }
+    #openwebui-section     { height: auto; }
+    #openai-compat-section { height: auto; }
+    #local-section         { height: auto; }
+    #verify-bar            { height: 3; }
+    #local-test-bar        { height: 3; }
+    #openwebui-test-bar    { height: 3; }
+    #openai-compat-test-bar { height: 3; }
+    #ollama-btn-bar        { height: 3; margin-top: 1; }
 
     /* Model section */
     #model-section   { height: auto; background: $theme-surface; border: solid $theme-border-dim;
@@ -227,7 +306,6 @@ class SettingsScreen(Screen):
     .model-cap-label      { width: 18; color: $theme-text; content-align: left middle; height: 3; }
     .model-row Input      { width: 1fr; }
 
-    /* Square checkboxes: solid border so it looks like a box, not a pill */
     .model-row Checkbox {
         width: 5;
         height: 3;
@@ -236,18 +314,10 @@ class SettingsScreen(Screen):
         padding: 0;
         color: $theme-text-dim;
     }
-    .model-row Checkbox > .toggle--button {
-        background: transparent;
-    }
-    .model-row Checkbox.-on {
-        border: solid $theme-border;
-        color: $theme-border;
-    }
-    .model-row Checkbox.-on > .toggle--button {
-        background: transparent;
-    }
+    .model-row Checkbox > .toggle--button { background: transparent; }
+    .model-row Checkbox.-on { border: solid $theme-border; color: $theme-border; }
+    .model-row Checkbox.-on > .toggle--button { background: transparent; }
 
-    /* Dim model input when its capability is disabled */
     .model-row Input:disabled {
         color: $theme-border-dim;
         background: $theme-bg;
@@ -264,8 +334,7 @@ class SettingsScreen(Screen):
     #general-save-bar    { height: 3; margin-top: 1; }
     #appearance-save-bar { height: 3; margin-top: 1; }
 
-    /* System Modules tab */
-    .sysmod-card { height: auto; }
+    /* Shared system-module tab styles */
     .sysmod-card Checkbox {
         height: 3;
         border: solid $theme-border-dim;
@@ -274,11 +343,14 @@ class SettingsScreen(Screen):
     }
     .sysmod-card Checkbox > .toggle--button { background: transparent; }
     .sysmod-card Checkbox.-on { border: solid $theme-border; color: $theme-border; }
-    #sysmod-save-bar { height: 3; margin-top: 1; }
-    #sysmod-save-bar Button { margin-right: 1; }
-    #sysmod-backup-schedule-row { height: 3; margin-top: 1; }
-    #sysmod-backup-schedule-row Select { width: 1fr; }
-    #sysmod-backup-schedule-row Button { width: 14; margin-left: 1; height: 3; }
+
+    .tab-save-bar { height: 3; margin-top: 1; }
+    .tab-save-bar Button { margin-right: 1; }
+    .tab-save-status { height: 1; }
+
+    #backup-schedule-row { height: 3; margin-top: 1; }
+    #backup-schedule-row Select { width: 1fr; }
+    #backup-schedule-row Button { width: 14; margin-left: 1; height: 3; }
 
     /* Setup tab */
     #setup-mode-bar      { height: 3; margin-bottom: 1; }
@@ -313,31 +385,50 @@ class SettingsScreen(Screen):
     def __init__(self, initial_tab: str | None = None):
         super().__init__()
         self._cfg: dict = {}
-        self._provider      = "api_key"
+        self._provider      = "anthropic"
         self._model_mode    = "basic"
         self._install_mode  = "direct"
         self._initial_tab   = initial_tab
 
     # ── Compose ───────────────────────────────────────────────────────────────
 
-    def compose(self) -> ComposeResult:
+    def compose(self) -> ComposeResult:  # noqa: C901
         self._cfg = load_global_config()
         ai = self._cfg.get("ai", {})
-        self._provider = ai.get("provider", "api_key")
+
+        self._provider = ai.get("provider", "anthropic")
+        if self._provider == "api_key":
+            self._provider = "anthropic"
         if self._provider not in _PROVIDERS:
-            self._provider = "api_key"
+            self._provider = "anthropic"
+
         self._model_mode = ai.get("model_mode", "basic")
         if self._model_mode not in ("basic", "advanced"):
             self._model_mode = "basic"
 
-        api_key        = ai.get("api_key", "")
-        local_endpoint = ai.get("local_endpoint", "http://localhost:11434")
-        local_model    = ai.get("local_model", "")
-        basic_model    = ai.get("model", "")
-        models         = ai.get("models", {})
+        providers_cfg       = ai.get("providers", {})
+        api_key             = providers_cfg.get("anthropic", {}).get("api_key") or ai.get("api_key", "")
+        local_endpoint      = providers_cfg.get("local", {}).get("endpoint") or ai.get("local_endpoint", "http://localhost:11434")
+        local_model         = providers_cfg.get("local", {}).get("model") or ai.get("local_model", "")
+        openwebui_url       = providers_cfg.get("openwebui", {}).get("base_url", "http://localhost:3000")
+        openwebui_key       = providers_cfg.get("openwebui", {}).get("api_key", "")
+        openwebui_model     = providers_cfg.get("openwebui", {}).get("model", "")
+        openai_url          = providers_cfg.get("openai_compat", {}).get("base_url", "")
+        openai_key          = providers_cfg.get("openai_compat", {}).get("api_key", "")
+        openai_model        = providers_cfg.get("openai_compat", {}).get("model", "")
+        basic_model         = ai.get("model", "")
+        models              = ai.get("models", {})
+
+        sys_cfg     = self._cfg.get("system_modules", {})
+        backup_cfg  = sys_cfg.get("backup",   {})
+        git_cfg     = sys_cfg.get("git",      {})
+        cal_cfg     = sys_cfg.get("calendar", {})
+        sdforge_cfg = sys_cfg.get("sdforge",  {})
+        server_cfg  = sys_cfg.get("server",   {})
 
         yield Header()
         with TabbedContent():
+
             # ── General tab ───────────────────────────────────────────────
             with TabPane("General", id="tab_general"):
                 with ScrollableContainer():
@@ -353,17 +444,18 @@ class SettingsScreen(Screen):
                         yield Label("logs/nexus.log", classes="general-value")
                     with Horizontal(classes="general-row"):
                         yield Label("MCP servers", classes="general-label")
-                        yield Label("Managed via MCP screen (press m)", classes="general-value")
+                        yield Label("See the MCP tab or press m at home screen", classes="general-value")
                     with Horizontal(classes="general-row"):
-                        yield Label("Default AI panel", classes="general-label")
-                        _panel_opts = [("Chat (built-in)", "chat"),
-                                       ("Local AI", "local"),
-                                       ("Claude Code CLI", "claude_code"),
-                                       ("None", "none")]
-                        _panel_val = self._cfg.get("ai", {}).get("default_panel", "chat")
+                        yield Label("Default Input Panel", classes="general-label")
+                        _panel_opts = [
+                            ("Local AI",        "local"),
+                            ("Claude Code CLI", "claude_code"),
+                            ("Shell",           "shell"),
+                        ]
+                        _panel_val = ai.get("default_panel", "none")
                         _valid = {v for _, v in _panel_opts}
                         if _panel_val not in _valid:
-                            _panel_val = "chat"
+                            _panel_val = "local"
                         yield Select(
                             _panel_opts,
                             value=_panel_val,
@@ -412,7 +504,6 @@ class SettingsScreen(Screen):
                                      id="btn-setup-download",
                                      classes="setup-mode-btn")
 
-                    # Group deps by module
                     seen_modules: set[str] = set()
                     for dep in _MODULE_DEPS:
                         if dep.module not in seen_modules:
@@ -423,8 +514,8 @@ class SettingsScreen(Screen):
                             present = importlib.util.find_spec(dep.pip_pkg) is not None
                         else:
                             present = shutil.which(dep.binary) is not None
-                        status_cls  = "dep-status-ok"   if present else "dep-status-miss"
-                        status_text = "✓ installed"     if present else "✗ missing"
+                        status_cls  = "dep-status-ok"  if present else "dep-status-miss"
+                        status_text = "✓ installed"    if present else "✗ missing"
                         btn_id = f"btn-install-{dep.binary.replace('-', '_')}"
                         with Horizontal(classes="dep-row"):
                             yield Label(dep.label, classes="dep-name")
@@ -439,108 +530,140 @@ class SettingsScreen(Screen):
 
                     yield Label("", id="setup-log")
 
-            # ── System Modules tab ────────────────────────────────────────
-            with TabPane("System Modules", id="tab_system"):
-                sys_cfg = self._cfg.get("system_modules", {})
-                localai_cfg = sys_cfg.get("localai", {})
-                backup_cfg  = sys_cfg.get("backup", {})
+            # ── Git tab ───────────────────────────────────────────────────
+            with TabPane("Git", id="tab_git"):
+                with ScrollableContainer():
+                    yield Label("Global Git identity used by Integrated-mode projects.", classes="hint")
+                    yield Label("User name:", classes="field-label")
+                    yield Input(
+                        value=git_cfg.get("user_name", ""),
+                        placeholder="Your Name",
+                        id="git-user-name",
+                    )
+                    yield Label("User email:", classes="field-label")
+                    yield Input(
+                        value=git_cfg.get("user_email", ""),
+                        placeholder="you@example.com",
+                        id="git-user-email",
+                    )
+                    yield Label("Default remote type:", classes="field-label")
+                    yield Select(
+                        [("HTTPS", "https"), ("SSH", "ssh")],
+                        value=git_cfg.get("default_remote", "https"),
+                        id="git-remote-type",
+                        allow_blank=False,
+                    )
+                    yield Label("Personal access token (for HTTPS):", classes="field-label")
+                    yield Input(
+                        value=git_cfg.get("token", ""),
+                        placeholder="ghp_…",
+                        password=True,
+                        id="git-token",
+                    )
+                    yield Label("SSH key path (for SSH):", classes="field-label")
+                    yield Input(
+                        value=git_cfg.get("ssh_key_path", ""),
+                        placeholder="~/.ssh/id_ed25519",
+                        id="git-ssh-key",
+                    )
+                    with Horizontal(classes="tab-save-bar"):
+                        yield Button("Save", id="btn-git-save", variant="primary")
+                        yield Label("", id="git-save-status", classes="tab-save-status status-pending")
+
+            # ── Backup tab ────────────────────────────────────────────────
+            with TabPane("Backup", id="tab_backup"):
                 with ScrollableContainer():
                     yield Label(
-                        "Configure services that Nexus uses internally. "
-                        "These are separate from personal project instances.",
+                        "Automated backup for Nexus projects and data via restic.",
                         classes="hint",
                     )
+                    yield Checkbox(
+                        "Enable automated backups",
+                        id="backup-enabled",
+                        value=backup_cfg.get("enabled", False),
+                    )
+                    _last = backup_cfg.get("last_run")
+                    _last_str = _last[:16].replace("T", " ") if _last else "Never"
+                    yield Label(f"Last backup: {_last_str}", id="backup-last-run", classes="hint")
+                    yield Label("Backend (local / sftp / nfs):", classes="field-label")
+                    yield Input(
+                        value=backup_cfg.get("backend", "local"),
+                        placeholder="local",
+                        id="backup-backend",
+                    )
+                    yield Label("Repository path:", classes="field-label")
+                    yield Input(
+                        value=backup_cfg.get("repo_path", ""),
+                        placeholder="/path/to/backup/repo",
+                        id="backup-repo",
+                    )
+                    yield Label("Password (encryption key):", classes="field-label")
+                    yield Input(
+                        value=backup_cfg.get("password", ""),
+                        placeholder="strong-passphrase",
+                        password=True,
+                        id="backup-password",
+                    )
+                    yield Label("Paths to back up (comma-separated):", classes="field-label")
+                    yield Input(
+                        value=backup_cfg.get("paths", ""),
+                        placeholder="~/nexus/projects, ~/documents",
+                        id="backup-paths",
+                    )
+                    yield Label("Schedule:", classes="field-label")
+                    with Horizontal(id="backup-schedule-row"):
+                        yield Select(
+                            [("Manual", "manual"), ("Daily", "daily"), ("Weekly", "weekly")],
+                            value=backup_cfg.get("schedule", "manual"),
+                            id="backup-schedule",
+                            allow_blank=False,
+                        )
+                        yield Button("Backup Now", id="btn-backup-now")
+                    with Horizontal(classes="tab-save-bar"):
+                        yield Button("Save", id="btn-backup-save", variant="primary")
+                        yield Label("", id="backup-save-status", classes="tab-save-status status-pending")
 
-                    # LocalAI card
-                    with Vertical(id="sysmod-localai",
-                                  classes="setting-section sysmod-card"):
-                        yield Label("LocalAI", classes="section-title")
-                        yield Label(
-                            "Local inference endpoint used by Nexus for AI features.",
-                            classes="hint",
-                        )
-                        yield Checkbox(
-                            "Enable as system AI provider",
-                            id="sysmod-localai-enabled",
-                            value=localai_cfg.get("enabled", False),
-                        )
-                        yield Label("Endpoint URL:", classes="field-label")
-                        yield Input(
-                            value=localai_cfg.get("endpoint",
-                                                   "http://localhost:11434"),
-                            placeholder="http://localhost:11434",
-                            id="sysmod-localai-endpoint",
-                        )
-                        yield Label("Model name:", classes="field-label")
-                        yield Input(
-                            value=localai_cfg.get("model", ""),
-                            placeholder="llama3.2",
-                            id="sysmod-localai-model",
-                        )
-
-                    # Backup card
-                    with Vertical(id="sysmod-backup",
-                                  classes="setting-section sysmod-card"):
-                        yield Label("Backup", classes="section-title")
-                        yield Label(
-                            "Automated backup for Nexus projects and data via restic.",
-                            classes="hint",
-                        )
-                        yield Checkbox(
-                            "Enable automated backups",
-                            id="sysmod-backup-enabled",
-                            value=backup_cfg.get("enabled", False),
-                        )
-                        _last = backup_cfg.get("last_run")
-                        _last_str = _last[:16].replace("T", " ") if _last else "Never"
-                        yield Label(f"Last backup: {_last_str}",
-                                    id="sysmod-backup-last-run", classes="hint")
-                        yield Label("Backend (local / sftp / nfs):",
-                                    classes="field-label")
-                        yield Input(
-                            value=backup_cfg.get("backend", "local"),
-                            placeholder="local",
-                            id="sysmod-backup-backend",
-                        )
-                        yield Label("Repository path:", classes="field-label")
-                        yield Input(
-                            value=backup_cfg.get("repo_path", ""),
-                            placeholder="/path/to/backup/repo",
-                            id="sysmod-backup-repo",
-                        )
-                        yield Label("Password (encryption key):",
-                                    classes="field-label")
-                        yield Input(
-                            value=backup_cfg.get("password", ""),
-                            placeholder="strong-passphrase",
-                            password=True,
-                            id="sysmod-backup-password",
-                        )
-                        yield Label("Paths to back up (comma-separated):",
-                                    classes="field-label")
-                        yield Input(
-                            value=backup_cfg.get("paths", ""),
-                            placeholder="~/nexus/projects, ~/documents",
-                            id="sysmod-backup-paths",
-                        )
-                        yield Label("Schedule:", classes="field-label")
-                        with Horizontal(id="sysmod-backup-schedule-row"):
-                            yield Select(
-                                [("Manual", "manual"),
-                                 ("Daily", "daily"),
-                                 ("Weekly", "weekly")],
-                                value=backup_cfg.get("schedule", "manual"),
-                                id="sysmod-backup-schedule",
-                                allow_blank=False,
-                            )
-                            yield Button("Backup Now",
-                                         id="btn-sysmod-backup-now")
-
-                    with Horizontal(id="sysmod-save-bar"):
-                        yield Button("Save",  id="btn-sysmod-save",
-                                     variant="primary")
-                        yield Label("", id="sysmod-save-status",
-                                    classes="status-pending")
+            # ── Calendar tab ──────────────────────────────────────────────
+            with TabPane("Calendar", id="tab_calendar"):
+                with ScrollableContainer():
+                    yield Label(
+                        "Global calendar shared by all Integrated-mode calendar modules.",
+                        classes="hint",
+                    )
+                    yield Label("Data directory (blank = <nexus>/config/calendar/):", classes="field-label")
+                    yield Input(
+                        value=cal_cfg.get("data_path", ""),
+                        placeholder="~/my-calendars",
+                        id="cal-data-path",
+                    )
+                    yield Checkbox(
+                        "Enable CalDAV sync",
+                        id="cal-caldav-enabled",
+                        value=cal_cfg.get("caldav_enabled", False),
+                    )
+                    yield Label("CalDAV server URL:", classes="field-label")
+                    yield Input(
+                        value=cal_cfg.get("caldav_url", "http://localhost:5232/"),
+                        placeholder="http://localhost:5232/",
+                        id="cal-caldav-url",
+                    )
+                    yield Label("Username:", classes="field-label")
+                    yield Input(
+                        value=cal_cfg.get("caldav_user", ""),
+                        placeholder="username",
+                        id="cal-caldav-user",
+                    )
+                    yield Label("Password:", classes="field-label")
+                    yield Input(
+                        value=cal_cfg.get("caldav_password", ""),
+                        placeholder="password",
+                        password=True,
+                        id="cal-caldav-password",
+                    )
+                    with Horizontal(classes="tab-save-bar"):
+                        yield Button("Save", id="btn-calendar-save", variant="primary")
+                        yield Button("Sync Now", id="btn-calendar-sync")
+                        yield Label("", id="cal-save-status", classes="tab-save-status status-pending")
 
             # ── AI Config tab ──────────────────────────────────────────────
             with TabPane("AI Config", id="tab_ai"):
@@ -548,29 +671,16 @@ class SettingsScreen(Screen):
 
                     # Provider selector + mode toggle
                     with Horizontal(id="provider-bar"):
-                        yield Button("API Key", id="btn-provider-api-key",
-                                     classes="provider-btn")
-                        yield Button("Local",   id="btn-provider-local",
-                                     classes="provider-btn")
-                        yield Button("Login",   id="btn-provider-login",
-                                     classes="provider-btn")
+                        yield Button("Anthropic",    id="btn-provider-anthropic",    classes="provider-btn")
+                        yield Button("OpenWebUI",    id="btn-provider-openwebui",    classes="provider-btn")
+                        yield Button("OpenAI-compat",id="btn-provider-openai-compat",classes="provider-btn")
+                        yield Button("Local",        id="btn-provider-local",        classes="provider-btn")
                         yield Label("", id="mode-toggle-spacer")
                         toggle_label = "Advanced" if self._model_mode == "basic" else "Basic"
-                        toggle_cls = "mode-toggle-btn mode-toggle-red" if self._model_mode == "basic" else "mode-toggle-btn mode-toggle-blue"
-                        yield Button(toggle_label, id="btn-mode-toggle",
-                                     classes=toggle_cls)
+                        toggle_cls   = "mode-toggle-btn mode-toggle-red" if self._model_mode == "basic" else "mode-toggle-btn mode-toggle-blue"
+                        yield Button(toggle_label, id="btn-mode-toggle", classes=toggle_cls)
 
-                    # ── Login section ─────────────────────────────────────
-                    with Vertical(id="login-section", classes="setting-section"):
-                        yield Label("Claude.ai Login", classes="section-title")
-                        yield Label(
-                            "Sign in at claude.ai to use your subscription.\n"
-                            "Browser-based OAuth login is not yet supported in the terminal UI.\n"
-                            "Use an API key in the meantime.",
-                            classes="section-desc",
-                        )
-
-                    # ── API key section ───────────────────────────────────
+                    # ── Anthropic section ─────────────────────────────────
                     with Vertical(id="api-key-section", classes="setting-section"):
                         yield Label("Anthropic API Key", classes="section-title")
                         yield Label("API key from console.anthropic.com", classes="hint")
@@ -588,17 +698,70 @@ class SettingsScreen(Screen):
                             classes="hint",
                         )
 
-                    # ── Local section ─────────────────────────────────────
+                    # ── OpenWebUI section ─────────────────────────────────
+                    with Vertical(id="openwebui-section", classes="setting-section"):
+                        yield Label("OpenWebUI", classes="section-title")
+                        yield Label("Connect to a local OpenWebUI instance.", classes="hint")
+                        yield Label("OpenWebUI base URL:", classes="field-label")
+                        yield Input(
+                            value=openwebui_url,
+                            placeholder="http://localhost:3000",
+                            id="input-openwebui-url",
+                        )
+                        yield Label("API key (issued by OpenWebUI):", classes="field-label")
+                        yield Input(
+                            value=openwebui_key,
+                            placeholder="sk-…",
+                            password=True,
+                            id="input-openwebui-key",
+                        )
+                        yield Label("Model name (blank = OpenWebUI default):", classes="field-label")
+                        yield Input(
+                            value=openwebui_model,
+                            placeholder="llama3.2",
+                            id="input-openwebui-model",
+                        )
+                        with Horizontal(id="openwebui-test-bar"):
+                            yield Button("Test", id="btn-openwebui-test")
+                            yield Label("", id="openwebui-test-status", classes="status-pending")
+
+                    # ── OpenAI-compat section ─────────────────────────────
+                    with Vertical(id="openai-compat-section", classes="setting-section"):
+                        yield Label("OpenAI-compatible Endpoint", classes="section-title")
+                        yield Label("Any OpenAI-compatible API (LiteLLM, vLLM, etc.).", classes="hint")
+                        yield Label("Base URL:", classes="field-label")
+                        yield Input(
+                            value=openai_url,
+                            placeholder="http://localhost:8000",
+                            id="input-openai-compat-url",
+                        )
+                        yield Label("API key:", classes="field-label")
+                        yield Input(
+                            value=openai_key,
+                            placeholder="sk-…",
+                            password=True,
+                            id="input-openai-compat-key",
+                        )
+                        yield Label("Model name:", classes="field-label")
+                        yield Input(
+                            value=openai_model,
+                            placeholder="gpt-4o",
+                            id="input-openai-compat-model",
+                        )
+                        with Horizontal(id="openai-compat-test-bar"):
+                            yield Button("Test", id="btn-openai-compat-test")
+                            yield Label("", id="openai-compat-test-status", classes="status-pending")
+
+                    # ── Local / Ollama section ────────────────────────────
                     with Vertical(id="local-section", classes="setting-section"):
-                        yield Label("Local Model", classes="section-title")
+                        yield Label("Local Model (Ollama / LM Studio / llama.cpp)", classes="section-title")
                         yield Label("Endpoint URL:", classes="field-label")
                         yield Input(
                             value=local_endpoint,
                             placeholder="http://localhost:11434",
                             id="input-local-endpoint",
                         )
-                        yield Label("Server model name (used in /v1/models):",
-                                    classes="field-label")
+                        yield Label("Server model name (used in /v1/models):", classes="field-label")
                         yield Input(
                             value=local_model,
                             placeholder="llama3.2",
@@ -607,8 +770,14 @@ class SettingsScreen(Screen):
                         with Horizontal(id="local-test-bar"):
                             yield Button("Test Connection", id="btn-local-test")
                             yield Label("", id="local-test-status", classes="status-pending")
+                        with Horizontal(id="ollama-btn-bar"):
+                            yield Button("Ollama Setup →", id="btn-ollama-setup")
+                            yield Label(
+                                "Install Ollama if not already present.",
+                                classes="hint",
+                            )
                         yield Label(
-                            "Compatible with any OpenAI-compatible endpoint (Ollama, LM Studio, …).",
+                            "Compatible with any OpenAI-compatible endpoint.",
                             classes="hint",
                         )
 
@@ -616,7 +785,6 @@ class SettingsScreen(Screen):
                     with Vertical(id="model-section", classes="setting-section"):
                         yield Label("Model", classes="section-title")
 
-                        # Basic: single model input
                         with Vertical(id="model-basic"):
                             yield Label("Model name:", classes="field-label")
                             yield Input(
@@ -625,7 +793,6 @@ class SettingsScreen(Screen):
                                 id="input-model",
                             )
 
-                        # Advanced: per-capability rows
                         with Vertical(id="model-advanced"):
                             for cap in _CAPABILITIES:
                                 cap_cfg = models.get(cap, {})
@@ -635,10 +802,7 @@ class SettingsScreen(Screen):
                                         id=f"cb-{cap}",
                                         value=cap_cfg.get("enabled", True),
                                     )
-                                    yield Label(
-                                        _CAP_LABELS[cap],
-                                        classes="model-cap-label",
-                                    )
+                                    yield Label(_CAP_LABELS[cap], classes="model-cap-label")
                                     yield Input(
                                         value=cap_cfg.get("model", ""),
                                         placeholder="model name…",
@@ -649,12 +813,79 @@ class SettingsScreen(Screen):
                         yield Button("Save",  id="btn-save",  variant="primary")
                         yield Button("Close", id="btn-close")
 
+            # ── MCP tab ───────────────────────────────────────────────────
+            with TabPane("MCP", id="tab_mcp"):
+                with ScrollableContainer():
+                    yield Label("MCP Servers", classes="section-title")
+                    yield Label(
+                        "MCP server management is available in two places:\n\n"
+                        "  • GUI: nexus --gui → Settings → MCP Servers tab\n"
+                        "  • TUI: press  m  at the home screen",
+                        classes="hint",
+                    )
+
+            # ── SDForge tab ───────────────────────────────────────────────
+            with TabPane("SDForge", id="tab_sdforge"):
+                with ScrollableContainer():
+                    yield Label("Global SDForge instance for Integrated-mode projects.", classes="hint")
+                    yield Label("Endpoint URL:", classes="field-label")
+                    yield Input(
+                        value=sdforge_cfg.get("endpoint", "http://127.0.0.1:7860"),
+                        placeholder="http://127.0.0.1:7860",
+                        id="sdforge-endpoint",
+                    )
+                    yield Label("API key (if required):", classes="field-label")
+                    yield Input(
+                        value=sdforge_cfg.get("api_key", ""),
+                        placeholder="optional",
+                        password=True,
+                        id="sdforge-api-key",
+                    )
+                    with Horizontal(classes="tab-save-bar"):
+                        yield Button("Save", id="btn-sdforge-save", variant="primary")
+                        yield Label("", id="sdforge-save-status", classes="tab-save-status status-pending")
+
+            # ── Security tab ──────────────────────────────────────────────
+            with TabPane("Security", id="tab_security"):
+                with ScrollableContainer():
+                    yield Label("Security", classes="section-title")
+                    yield Label(
+                        "Security tools are configured per-project.\n\n"
+                        "Add the Security system module to a project from the project hub\n"
+                        "to manage firewall, VPN, and auditing settings for that project.",
+                        classes="hint",
+                    )
+
+            # ── Server tab ────────────────────────────────────────────────
+            with TabPane("Server", id="tab_server"):
+                with ScrollableContainer():
+                    yield Label("Global web server for Integrated-mode projects.", classes="hint")
+                    yield Label("Web root path:", classes="field-label")
+                    yield Input(
+                        value=server_cfg.get("web_root", ""),
+                        placeholder="/var/www/html",
+                        id="server-web-root",
+                    )
+                    yield Label("HTTP port:", classes="field-label")
+                    yield Input(
+                        value=str(server_cfg.get("http_port", 80)),
+                        placeholder="80",
+                        id="server-http-port",
+                    )
+                    yield Label("HTTPS port:", classes="field-label")
+                    yield Input(
+                        value=str(server_cfg.get("https_port", 443)),
+                        placeholder="443",
+                        id="server-https-port",
+                    )
+                    with Horizontal(classes="tab-save-bar"):
+                        yield Button("Save", id="btn-server-save", variant="primary")
+                        yield Label("", id="server-save-status", classes="tab-save-status status-pending")
+
         yield Footer()
 
     def on_mount(self) -> None:
         self._refresh_provider_buttons()
-        # Defer visibility changes to after the first layout pass so that
-        # display=False actually collapses the hidden containers.
         self.call_after_refresh(self._apply_initial_visibility)
         if self._initial_tab:
             self.call_after_refresh(self._switch_to_initial_tab)
@@ -679,7 +910,7 @@ class SettingsScreen(Screen):
                 self.query_one(f"#model-{cap}", Input).disabled = not event.value
             except Exception:
                 pass
-        elif cb_id == "sysmod-backup-enabled" and event.value:
+        elif cb_id == "backup-enabled" and event.value:
             if shutil.which("restic") is None:
                 self.app.push_screen(
                     _ResticRequiredModal(),
@@ -713,9 +944,10 @@ class SettingsScreen(Screen):
 
     def _update_sections(self, provider: str) -> None:
         mapping = {
-            "login":   "#login-section",
-            "api_key": "#api-key-section",
-            "local":   "#local-section",
+            "anthropic":    "#api-key-section",
+            "openwebui":    "#openwebui-section",
+            "openai_compat":"#openai-compat-section",
+            "local":        "#local-section",
         }
         for p, sel in mapping.items():
             try:
@@ -732,9 +964,6 @@ class SettingsScreen(Screen):
     def _update_model_section(self) -> None:
         try:
             model_section = self.query_one("#model-section")
-            if self._provider == "login":
-                model_section.display = False
-                return
             model_section.display = True
             model_section.add_class("active-section")
 
@@ -761,18 +990,22 @@ class SettingsScreen(Screen):
 
     # ── Button handler ────────────────────────────────────────────────────────
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:  # noqa: C901
         event.stop()
         bid = event.button.id
         try:
-            if bid == "btn-provider-login":
-                self._provider = "login"
+            if bid == "btn-provider-anthropic":
+                self._provider = "anthropic"
                 self._refresh_provider_buttons()
-                self.call_after_refresh(lambda: self._update_sections("login"))
-            elif bid == "btn-provider-api-key":
-                self._provider = "api_key"
+                self.call_after_refresh(lambda: self._update_sections("anthropic"))
+            elif bid == "btn-provider-openwebui":
+                self._provider = "openwebui"
                 self._refresh_provider_buttons()
-                self.call_after_refresh(lambda: self._update_sections("api_key"))
+                self.call_after_refresh(lambda: self._update_sections("openwebui"))
+            elif bid == "btn-provider-openai-compat":
+                self._provider = "openai_compat"
+                self._refresh_provider_buttons()
+                self.call_after_refresh(lambda: self._update_sections("openai_compat"))
             elif bid == "btn-provider-local":
                 self._provider = "local"
                 self._refresh_provider_buttons()
@@ -784,6 +1017,15 @@ class SettingsScreen(Screen):
                 self.run_worker(self._verify_api_key())
             elif bid == "btn-local-test":
                 self.run_worker(self._test_local_connection())
+            elif bid == "btn-openwebui-test":
+                self.run_worker(self._test_openwebui_connection())
+            elif bid == "btn-openai-compat-test":
+                self.run_worker(self._test_openai_compat_connection())
+            elif bid == "btn-ollama-setup":
+                if shutil.which("ollama"):
+                    self.app.notify("Ollama is already installed.", severity="information")
+                else:
+                    self.app.push_screen(_OllamaSetupModal())
             elif bid == "btn-save":
                 self._save()
             elif bid == "btn-close":
@@ -792,9 +1034,11 @@ class SettingsScreen(Screen):
                 self._save_appearance()
             elif bid == "btn-general-save":
                 self._save_general()
-            elif bid == "btn-sysmod-save":
-                self._save_system_modules()
-            elif bid == "btn-sysmod-backup-now":
+            elif bid == "btn-git-save":
+                self._save_git()
+            elif bid == "btn-backup-save":
+                self._save_backup()
+            elif bid == "btn-backup-now":
                 if shutil.which("restic") is None:
                     self.app.push_screen(
                         _ResticRequiredModal(),
@@ -802,6 +1046,14 @@ class SettingsScreen(Screen):
                     )
                 else:
                     self.run_worker(self._do_system_backup())
+            elif bid == "btn-calendar-save":
+                self._save_calendar()
+            elif bid == "btn-calendar-sync":
+                self.app.notify("CalDAV sync not yet implemented.", severity="warning")
+            elif bid == "btn-sdforge-save":
+                self._save_sdforge()
+            elif bid == "btn-server-save":
+                self._save_server()
             elif bid in ("btn-setup-direct", "btn-setup-local", "btn-setup-download"):
                 mode_map = {
                     "btn-setup-direct":   "direct",
@@ -868,76 +1120,125 @@ class SettingsScreen(Screen):
             status.update("✗ Connection error")
             status.set_classes("status-err")
 
-    # ── Test local connection ─────────────────────────────────────────────────
+    # ── Test local / OpenWebUI / OpenAI-compat connections ───────────────────
 
     async def _test_local_connection(self) -> None:
         endpoint = self.query_one("#input-local-endpoint", Input).value.strip().rstrip("/")
         lbl = self.query_one("#local-test-status", Label)
         lbl.update("testing…")
         lbl.set_classes("status-pending")
-        log.debug("Testing local endpoint: %s", endpoint)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 r = await client.get(f"{endpoint}/v1/models")
             if r.status_code == 200:
                 models = r.json().get("data", [])
                 first  = models[0]["id"] if models else "no models"
-                log.info("Local endpoint reachable, first model: %s", first)
                 lbl.update(f"✓ Connected  ({first})")
                 lbl.set_classes("status-ok")
             else:
-                log.warning("Local endpoint returned HTTP %s", r.status_code)
                 lbl.update(f"✗ HTTP {r.status_code}")
                 lbl.set_classes("status-err")
         except Exception as exc:
-            log.exception("Local endpoint test failed")
             lbl.update(f"✗ {exc}")
             lbl.set_classes("status-err")
 
-    # ── Save ──────────────────────────────────────────────────────────────────
+    async def _test_openwebui_connection(self) -> None:
+        base = self.query_one("#input-openwebui-url", Input).value.strip().rstrip("/")
+        key  = self.query_one("#input-openwebui-key", Input).value.strip()
+        lbl  = self.query_one("#openwebui-test-status", Label)
+        lbl.update("testing…")
+        lbl.set_classes("status-pending")
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(f"{base}/api/v1/models", headers=headers)
+            if r.status_code == 200:
+                data = r.json().get("data", [])
+                first = data[0]["id"] if data else "no models"
+                lbl.update(f"✓ Connected  ({first})")
+                lbl.set_classes("status-ok")
+            else:
+                lbl.update(f"✗ HTTP {r.status_code}")
+                lbl.set_classes("status-err")
+        except Exception as exc:
+            lbl.update(f"✗ {exc}")
+            lbl.set_classes("status-err")
+
+    async def _test_openai_compat_connection(self) -> None:
+        base = self.query_one("#input-openai-compat-url", Input).value.strip().rstrip("/")
+        key  = self.query_one("#input-openai-compat-key", Input).value.strip()
+        lbl  = self.query_one("#openai-compat-test-status", Label)
+        lbl.update("testing…")
+        lbl.set_classes("status-pending")
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(f"{base}/v1/models", headers=headers)
+            if r.status_code == 200:
+                data = r.json().get("data", [])
+                first = data[0]["id"] if data else "no models"
+                lbl.update(f"✓ Connected  ({first})")
+                lbl.set_classes("status-ok")
+            else:
+                lbl.update(f"✗ HTTP {r.status_code}")
+                lbl.set_classes("status-err")
+        except Exception as exc:
+            lbl.update(f"✗ {exc}")
+            lbl.set_classes("status-err")
+
+    # ── Save — AI Config ──────────────────────────────────────────────────────
 
     def _save(self) -> None:
-        log.info("Saving settings, provider=%s, model_mode=%s",
-                 self._provider, self._model_mode)
+        log.info("Saving AI config, provider=%s, model_mode=%s", self._provider, self._model_mode)
         try:
             cfg = load_global_config()
-            cfg.setdefault("ai", {})
+            ai  = cfg.setdefault("ai", {})
 
-            cfg["ai"]["provider"]   = self._provider
-            cfg["ai"]["model_mode"] = self._model_mode
+            ai["provider"]   = self._provider
+            ai["model_mode"] = self._model_mode
+            providers = ai.setdefault("providers", {})
 
-            if self._provider == "api_key":
-                cfg["ai"]["api_key"] = self.query_one(
-                    "#input-api-key", Input
-                ).value.strip()
+            if self._provider == "anthropic":
+                providers.setdefault("anthropic", {})["api_key"] = (
+                    self.query_one("#input-api-key", Input).value.strip()
+                )
+            elif self._provider == "openwebui":
+                providers["openwebui"] = {
+                    "base_url": self.query_one("#input-openwebui-url",   Input).value.strip(),
+                    "api_key":  self.query_one("#input-openwebui-key",   Input).value.strip(),
+                    "model":    self.query_one("#input-openwebui-model", Input).value.strip(),
+                }
+            elif self._provider == "openai_compat":
+                providers["openai_compat"] = {
+                    "base_url": self.query_one("#input-openai-compat-url",   Input).value.strip(),
+                    "api_key":  self.query_one("#input-openai-compat-key",   Input).value.strip(),
+                    "model":    self.query_one("#input-openai-compat-model", Input).value.strip(),
+                }
             elif self._provider == "local":
-                cfg["ai"]["local_endpoint"] = self.query_one(
-                    "#input-local-endpoint", Input
-                ).value.strip()
-                cfg["ai"]["local_model"] = self.query_one(
-                    "#input-local-model", Input
-                ).value.strip()
+                providers["local"] = {
+                    "endpoint": self.query_one("#input-local-endpoint", Input).value.strip(),
+                    "model":    self.query_one("#input-local-model",    Input).value.strip(),
+                }
 
             if self._model_mode == "basic":
-                cfg["ai"]["model"] = self.query_one(
-                    "#input-model", Input
-                ).value.strip()
+                ai["model"] = self.query_one("#input-model", Input).value.strip()
             else:
-                cfg["ai"].setdefault("models", {})
+                ai.setdefault("models", {})
                 for cap in _CAPABILITIES:
                     enabled = self.query_one(f"#cb-{cap}", Checkbox).value
                     model   = self.query_one(f"#model-{cap}", Input).value.strip()
-                    cfg["ai"]["models"][cap] = {"enabled": enabled, "model": model}
+                    ai["models"][cap] = {"enabled": enabled, "model": model}
 
             save_global_config(cfg)
-            log.info("Settings saved")
+            log.info("AI config saved")
             self.app.notify("Settings saved.", severity="information")
         except Exception:
-            log.exception("Failed to save settings")
+            log.exception("Failed to save AI config")
             self.app.notify("Failed to save settings — see log.", severity="error")
 
+    # ── Save — Appearance ─────────────────────────────────────────────────────
+
     def _save_appearance(self) -> None:
-        log.info("Saving appearance settings")
         try:
             theme_name = str(self.query_one("#select-theme", Select).value)
             cfg = load_global_config()
@@ -949,12 +1250,12 @@ class SettingsScreen(Screen):
             log.exception("Failed to save appearance settings")
             self.app.notify("Failed to save — see log.", severity="error")
 
+    # ── Save — General ────────────────────────────────────────────────────────
+
     def _save_general(self) -> None:
-        log.info("Saving general settings")
         try:
             cfg = load_global_config()
-            cfg.setdefault("ai", {})
-            cfg["ai"]["default_panel"] = str(
+            cfg.setdefault("ai", {})["default_panel"] = str(
                 self.query_one("#select-default-panel", Select).value
             )
             save_global_config(cfg)
@@ -963,47 +1264,108 @@ class SettingsScreen(Screen):
             log.exception("Failed to save general settings")
             self.app.notify("Failed to save — see log.", severity="error")
 
-    # ── System Modules save ───────────────────────────────────────────────────
+    # ── Save — Git ────────────────────────────────────────────────────────────
 
-    def _save_system_modules(self) -> None:
-        log.info("Saving system module settings")
+    def _save_git(self) -> None:
         try:
             cfg = load_global_config()
-            cfg.setdefault("system_modules", {})
-
-            cfg["system_modules"]["localai"] = {
-                "enabled":  self.query_one("#sysmod-localai-enabled",
-                                           Checkbox).value,
-                "endpoint": self.query_one("#sysmod-localai-endpoint",
-                                           Input).value.strip(),
-                "model":    self.query_one("#sysmod-localai-model",
-                                           Input).value.strip(),
-            }
-            cfg["system_modules"]["backup"] = {
-                "enabled":   self.query_one("#sysmod-backup-enabled",
-                                            Checkbox).value,
-                "backend":   self.query_one("#sysmod-backup-backend",
-                                            Input).value.strip(),
-                "repo_path": self.query_one("#sysmod-backup-repo",
-                                            Input).value.strip(),
-                "password":  self.query_one("#sysmod-backup-password",
-                                            Input).value.strip(),
-                "paths":     self.query_one("#sysmod-backup-paths",
-                                            Input).value.strip(),
-                "schedule":  str(self.query_one("#sysmod-backup-schedule",
-                                                Select).value),
+            cfg.setdefault("system_modules", {})["git"] = {
+                "user_name":      self.query_one("#git-user-name",  Input).value.strip(),
+                "user_email":     self.query_one("#git-user-email", Input).value.strip(),
+                "default_remote": str(self.query_one("#git-remote-type", Select).value),
+                "token":          self.query_one("#git-token",     Input).value.strip(),
+                "ssh_key_path":   self.query_one("#git-ssh-key",   Input).value.strip(),
             }
             save_global_config(cfg)
-            log.info("System module settings saved")
-            try:
-                self.query_one("#sysmod-save-status", Label).update("✓ Saved")
-                self.query_one("#sysmod-save-status").set_classes("status-ok")
-            except Exception:
-                pass
-            self.app.notify("System module settings saved.", severity="information")
+            self._update_tab_status("git-save-status", "✓ Saved")
+            self.app.notify("Git settings saved.", severity="information")
         except Exception:
-            log.exception("Failed to save system module settings")
+            log.exception("Failed to save git settings")
             self.app.notify("Failed to save — see log.", severity="error")
+
+    # ── Save — Backup ─────────────────────────────────────────────────────────
+
+    def _save_backup(self) -> None:
+        try:
+            cfg = load_global_config()
+            cfg.setdefault("system_modules", {})["backup"] = {
+                "enabled":   self.query_one("#backup-enabled",   Checkbox).value,
+                "backend":   self.query_one("#backup-backend",   Input).value.strip(),
+                "repo_path": self.query_one("#backup-repo",      Input).value.strip(),
+                "password":  self.query_one("#backup-password",  Input).value.strip(),
+                "paths":     self.query_one("#backup-paths",     Input).value.strip(),
+                "schedule":  str(self.query_one("#backup-schedule", Select).value),
+            }
+            save_global_config(cfg)
+            self._update_tab_status("backup-save-status", "✓ Saved")
+            self.app.notify("Backup settings saved.", severity="information")
+        except Exception:
+            log.exception("Failed to save backup settings")
+            self.app.notify("Failed to save — see log.", severity="error")
+
+    # ── Save — Calendar ───────────────────────────────────────────────────────
+
+    def _save_calendar(self) -> None:
+        try:
+            cfg = load_global_config()
+            cfg.setdefault("system_modules", {})["calendar"] = {
+                "data_path":       self.query_one("#cal-data-path",      Input).value.strip(),
+                "caldav_enabled":  self.query_one("#cal-caldav-enabled", Checkbox).value,
+                "caldav_url":      self.query_one("#cal-caldav-url",     Input).value.strip(),
+                "caldav_user":     self.query_one("#cal-caldav-user",    Input).value.strip(),
+                "caldav_password": self.query_one("#cal-caldav-password",Input).value.strip(),
+            }
+            save_global_config(cfg)
+            self._update_tab_status("cal-save-status", "✓ Saved")
+            self.app.notify("Calendar settings saved.", severity="information")
+        except Exception:
+            log.exception("Failed to save calendar settings")
+            self.app.notify("Failed to save — see log.", severity="error")
+
+    # ── Save — SDForge ────────────────────────────────────────────────────────
+
+    def _save_sdforge(self) -> None:
+        try:
+            cfg = load_global_config()
+            cfg.setdefault("system_modules", {})["sdforge"] = {
+                "endpoint": self.query_one("#sdforge-endpoint", Input).value.strip(),
+                "api_key":  self.query_one("#sdforge-api-key",  Input).value.strip(),
+            }
+            save_global_config(cfg)
+            self._update_tab_status("sdforge-save-status", "✓ Saved")
+            self.app.notify("SDForge settings saved.", severity="information")
+        except Exception:
+            log.exception("Failed to save SDForge settings")
+            self.app.notify("Failed to save — see log.", severity="error")
+
+    # ── Save — Server ─────────────────────────────────────────────────────────
+
+    def _save_server(self) -> None:
+        try:
+            cfg = load_global_config()
+            http_port  = int(self.query_one("#server-http-port",  Input).value.strip() or "80")
+            https_port = int(self.query_one("#server-https-port", Input).value.strip() or "443")
+            cfg.setdefault("system_modules", {})["server"] = {
+                "web_root":   self.query_one("#server-web-root", Input).value.strip(),
+                "http_port":  http_port,
+                "https_port": https_port,
+            }
+            save_global_config(cfg)
+            self._update_tab_status("server-save-status", "✓ Saved")
+            self.app.notify("Server settings saved.", severity="information")
+        except Exception:
+            log.exception("Failed to save server settings")
+            self.app.notify("Failed to save — see log.", severity="error")
+
+    def _update_tab_status(self, label_id: str, text: str) -> None:
+        try:
+            lbl = self.query_one(f"#{label_id}", Label)
+            lbl.update(text)
+            lbl.set_classes("status-ok tab-save-status")
+        except Exception:
+            pass
+
+    # ── Backup Now ────────────────────────────────────────────────────────────
 
     def _on_restic_modal_dismissed(self, result: bool) -> None:
         if result:
@@ -1016,9 +1378,9 @@ class SettingsScreen(Screen):
         from modules.backup.backup_ops import restic_ensure_initialized, restic_backup
         import asyncio as _aio
 
-        repo      = self.query_one("#sysmod-backup-repo",    Input).value.strip()
-        pw        = self.query_one("#sysmod-backup-password", Input).value.strip()
-        paths_raw = self.query_one("#sysmod-backup-paths",   Input).value.strip()
+        repo      = self.query_one("#backup-repo",      Input).value.strip()
+        pw        = self.query_one("#backup-password",  Input).value.strip()
+        paths_raw = self.query_one("#backup-paths",     Input).value.strip()
         paths     = [p.strip() for p in paths_raw.split(",") if p.strip()]
 
         if not repo:
@@ -1030,18 +1392,14 @@ class SettingsScreen(Screen):
 
         self.app.notify("Initialising repository if needed…", severity="information")
         loop = _aio.get_event_loop()
-        ok, msg = await loop.run_in_executor(
-            None, restic_ensure_initialized, repo, pw
-        )
+        ok, msg = await loop.run_in_executor(None, restic_ensure_initialized, repo, pw)
         if not ok:
             self.app.notify(f"Init failed — {msg[:140]}", severity="error")
             log.error("restic_ensure_initialized failed: %s", msg)
             return
 
         self.app.notify("Backup running…", severity="information")
-        ok, out = await loop.run_in_executor(
-            None, restic_backup, repo, pw, paths
-        )
+        ok, out = await loop.run_in_executor(None, restic_backup, repo, pw, paths)
         if ok:
             self.app.notify("System backup completed.", severity="information")
         else:

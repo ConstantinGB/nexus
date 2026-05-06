@@ -1,21 +1,20 @@
 from __future__ import annotations
 import json
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 from nexus.ai.skill_registry import registry
 
-_PROJECTS_ROOT = Path(__file__).parent.parent.parent / "projects"
 
-
-def _data_dir(slug: str) -> Path:
-    return _PROJECTS_ROOT / slug / "data" / "calendar"
+def _get_cal(slug: str):
+    from nexus.core.config_manager import get_module_mode, load_project_config
+    from nexus.core.data.calendar import get_global_calendar, get_project_calendar
+    mode = get_module_mode(load_project_config(slug), "calendar")
+    return get_global_calendar() if mode == "integrated" else get_project_calendar(slug)
 
 
 async def _calendar_add(args: dict) -> str:
-    from nexus.core.data.calendar import CalendarData
     slug = args["project_slug"]
-    cal = CalendarData(_data_dir(slug))
+    cal  = _get_cal(slug)
 
     date_str = args["date"]
     time_str = args.get("time", "00:00")
@@ -37,9 +36,8 @@ async def _calendar_add(args: dict) -> str:
 
 
 async def _calendar_list(args: dict) -> str:
-    from nexus.core.data.calendar import CalendarData
     slug = args["project_slug"]
-    cal = CalendarData(_data_dir(slug))
+    cal  = _get_cal(slug)
 
     target = args.get("date")
     days = int(args.get("days", 1))
@@ -58,9 +56,8 @@ async def _calendar_list(args: dict) -> str:
 
 
 async def _calendar_delete(args: dict) -> str:
-    from nexus.core.data.calendar import CalendarData
     slug = args["project_slug"]
-    cal = CalendarData(_data_dir(slug))
+    cal  = _get_cal(slug)
     cal.delete_event(args["event_id"])
     return json.dumps({"ok": True})
 

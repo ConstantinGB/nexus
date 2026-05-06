@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from nexus.core.project_manager import (
-    ProjectInfo, ensure_module_dirs, auto_configure_module,
+    ProjectInfo, setup_module,
     update_project_meta, update_project_path, move_project_files,
 )
 from nexus.core.logger import get
@@ -195,13 +195,19 @@ class ProjectHubWidget(QWidget):
         new_set = set(new_modules)
         if old_set != new_set:
             from nexus.core.config_manager import load_project_config, save_project_config
+            from nexus.core.module_manager import is_mode_aware_module
             cfg = load_project_config(self._project.slug)
             cfg["modules"] = new_modules
             save_project_config(self._project.slug, cfg)
             self._project.modules[:] = new_modules
             for mid in new_set - old_set:
-                ensure_module_dirs(self._project.path, mid)
-                auto_configure_module(self._project.slug, mid, self._project.path)
+                setup_module(self._project.slug, mid, self._project.path)
+                if is_mode_aware_module(mid):
+                    mode = self._ask_system_module_mode(mid)
+                    if mode:
+                        cfg2 = load_project_config(self._project.slug)
+                        cfg2.setdefault("modules_config", {}).setdefault(mid, {})["mode"] = mode
+                        save_project_config(self._project.slug, cfg2)
             # Invalidate cached widgets for removed modules
             for mid in old_set - new_set:
                 self._module_widgets.pop(mid, None)
@@ -228,6 +234,28 @@ class ProjectHubWidget(QWidget):
             except Exception:
                 log.exception("Failed to apply path change for %s", self._project.slug)
                 QMessageBox.warning(self, "Error", "Path change failed — see nexus.log.")
+
+    def _ask_system_module_mode(self, module_id: str) -> str | None:
+        from nexus.core.module_manager import get_module
+        info = get_module(module_id)
+        name = info.name if info else module_id.title()
+        box = QMessageBox(self)
+        box.setWindowTitle(f"Configure {name}")
+        box.setText(
+            f"How should {name} data be stored for this project?\n\n"
+            "Integrated — share data across all projects (one global calendar)\n"
+            "Standalone — this project's own isolated data"
+        )
+        btn_int = box.addButton("Integrated", QMessageBox.AcceptRole)
+        btn_std = box.addButton("Standalone", QMessageBox.ActionRole)
+        box.addButton("Skip", QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is btn_int:
+            return "integrated"
+        if clicked is btn_std:
+            return "standalone"
+        return None
 
     def _rebuild_module_buttons(self) -> None:
         bar_layout = self._icon_bar.layout()

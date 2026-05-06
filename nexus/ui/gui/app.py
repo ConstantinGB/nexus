@@ -270,8 +270,20 @@ class NexusGuiApp(QMainWindow):
 
 
 def run_gui() -> None:
+    import os
     from nexus.core.logger import setup as setup_logging
+    from nexus.core.platform import is_wsl
     from nexus.app import _register_skills
+
+    if is_wsl() and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        print(
+            "Nexus GUI requires a display server.\n"
+            "  Windows 11 / WSLg: display is provided automatically.\n"
+            "  Windows 10 / WSL 2: install VcXsrv and set DISPLAY=:0\n"
+            "  WSL 1: upgrade to WSL 2 for GUI support (TUI works on WSL 1).\n"
+        )
+        sys.exit(1)
+
     setup_logging()
     _register_skills()
 

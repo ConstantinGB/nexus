@@ -8,7 +8,7 @@ from textual.widget import Widget
 from textual.widgets import Header, Footer, Label, Button
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
-from nexus.core.project_manager import ProjectInfo, ensure_module_dirs, auto_configure_module
+from nexus.core.project_manager import ProjectInfo, setup_module
 from nexus.core.logger import get
 from nexus.ui.tui.base_project_screen import InputModeModal
 
@@ -149,6 +149,48 @@ class ModuleSelectorModal(ModalScreen[list[str] | None]):
                 event.button.add_class("selected-yes")
 
 
+# ── Mode selector modal ───────────────────────────────────────────────────────
+
+class _ModeSelectModal(ModalScreen[str | None]):
+    """Ask whether a mode-aware module should use integrated or standalone data."""
+
+    DEFAULT_CSS = """
+    _ModeSelectModal { align: center middle; }
+    #msm2-dialog {
+        background: $theme-surface; border: solid $theme-border;
+        padding: 2 4; width: 60; height: auto;
+    }
+    #msm2-title { color: $theme-accent2; text-style: bold; height: 2; }
+    #msm2-desc  { color: $theme-text-dim; height: 3; }
+    #msm2-btns  { height: 3; margin-top: 1; }
+    #msm2-btns Button { margin-right: 1; }
+    """
+
+    def __init__(self, module_name: str) -> None:
+        super().__init__()
+        self._module_name = module_name
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="msm2-dialog"):
+            yield Label(f"Configure {self._module_name}", id="msm2-title")
+            yield Label(
+                "Integrated — share data across all projects (one global calendar)\n"
+                "Standalone — this project's own isolated data",
+                id="msm2-desc",
+            )
+            with Horizontal(id="msm2-btns"):
+                yield Button("Integrated", id="msm2-integrated", variant="primary")
+                yield Button("Standalone", id="msm2-standalone")
+                yield Button("Skip",       id="msm2-skip")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        bid = event.button.id or ""
+        if   bid == "msm2-integrated": self.dismiss("integrated")
+        elif bid == "msm2-standalone": self.dismiss("standalone")
+        else:                          self.dismiss(None)
+
+
 # ── Project hub screen ────────────────────────────────────────────────────────
 
 class ProjectHubScreen(Screen):
@@ -193,6 +235,7 @@ class ProjectHubScreen(Screen):
     def __init__(self, project: ProjectInfo) -> None:
         super().__init__()
         self.project = project
+        self._pending_mode_mods: list[str] = []
 
     def compose(self) -> ComposeResult:
         from nexus.ui.tui.project_tabs import ProjectTabBar
@@ -262,6 +305,7 @@ class ProjectHubScreen(Screen):
         if modules is None:
             return
         from nexus.core.config_manager import load_project_config, save_project_config
+        from nexus.core.module_manager import is_mode_aware_module
         old_set = set(self.project.modules)
         new_set = set(modules)
         cfg = load_project_config(self.project.slug)
@@ -269,9 +313,33 @@ class ProjectHubScreen(Screen):
         save_project_config(self.project.slug, cfg)
         self.project.modules[:] = modules
         for mid in new_set - old_set:
-            ensure_module_dirs(self.project.path, mid)
-            auto_configure_module(self.project.slug, mid, self.project.path)
+            setup_module(self.project.slug, mid, self.project.path)
+            if is_mode_aware_module(mid):
+                self._pending_mode_mods.append(mid)
         self.refresh(recompose=True)
+        if self._pending_mode_mods:
+            self._ask_next_mode()
+
+    def _ask_next_mode(self) -> None:
+        if not self._pending_mode_mods:
+            return
+        mid  = self._pending_mode_mods[0]
+        from nexus.core.module_manager import get_module
+        info = get_module(mid)
+        name = info.name if info else mid.title()
+        self.app.push_screen(_ModeSelectModal(name),
+                              lambda m, _mid=mid: self._on_mode_selected(_mid, m))
+
+    def _on_mode_selected(self, mid: str, mode: str | None) -> None:
+        if self._pending_mode_mods and self._pending_mode_mods[0] == mid:
+            self._pending_mode_mods.pop(0)
+        if mode:
+            from nexus.core.config_manager import load_project_config, save_project_config
+            cfg = load_project_config(self.project.slug)
+            cfg.setdefault("modules_config", {}).setdefault(mid, {})["mode"] = mode
+            save_project_config(self.project.slug, cfg)
+        if self._pending_mode_mods:
+            self._ask_next_mode()
 
     def _on_input_mode(self, mode: str | None) -> None:
         if mode and mode != "none":

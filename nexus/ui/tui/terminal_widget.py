@@ -291,7 +291,10 @@ class TerminalEmulator:
                     self.p_out.write(msg[1].encode())
                 elif msg[0] == "set_size":
                     winsize = struct.pack("HH", msg[1], msg[2])
-                    fcntl.ioctl(self.fd, termios.TIOCSWINSZ, winsize)
+                    try:
+                        fcntl.ioctl(self.fd, termios.TIOCSWINSZ, winsize)
+                    except OSError:
+                        pass  # WSL 1 / limited POSIX environments
         except asyncio.CancelledError:
             pass
 

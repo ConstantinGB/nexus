@@ -17,6 +17,7 @@ class ModuleInfo:
     description: str
     tags: list[str] = field(default_factory=list)
     system: bool = False
+    mode_aware: bool = False
 
 
 def _load_registry() -> tuple[list[ModuleInfo], dict[str, str], dict[str, dict]]:
@@ -43,6 +44,7 @@ def _load_registry() -> tuple[list[ModuleInfo], dict[str, str], dict[str, dict]]
             description=mod["description"],
             tags=mod.get("tags", []),
             system=mod.get("system", False),
+            mode_aware=mod.get("mode_aware", False),
         )
         registry.append(info)
         prefix_map[mod["id"]] = mod.get("prefix", mod["id"][:3])
@@ -70,6 +72,11 @@ def list_system_modules() -> list[ModuleInfo]:
 def is_system_module(module_id: str) -> bool:
     m = _REGISTRY_BY_ID.get(module_id)
     return bool(m and m.system)
+
+
+def is_mode_aware_module(module_id: str) -> bool:
+    m = _REGISTRY_BY_ID.get(module_id)
+    return bool(m and m.mode_aware)
 
 
 def get_module(module_id: str) -> ModuleInfo | None:

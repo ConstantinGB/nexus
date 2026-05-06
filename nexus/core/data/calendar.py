@@ -3,6 +3,18 @@ import json
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
+_NEXUS_ROOT = Path(__file__).parent.parent.parent.parent
+
+
+def get_global_calendar() -> "CalendarData":
+    """Return CalendarData pointing at the shared global calendar store."""
+    return CalendarData(_NEXUS_ROOT / "config" / "calendar")
+
+
+def get_project_calendar(slug: str) -> "CalendarData":
+    """Return CalendarData pointing at a project-specific calendar store."""
+    return CalendarData(_NEXUS_ROOT / "projects" / slug / "data" / "calendar")
+
 
 class CalendarData:
     """Calendar storage — ported from Thallid, PyQt6 removed."""

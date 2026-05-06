@@ -52,6 +52,15 @@ def ensure_module_dirs(project_path: Path, module_id: str) -> None:
         (project_path / subdir).mkdir(parents=True, exist_ok=True)
 
 
+def setup_module(slug: str, module_id: str, project_path: Path) -> None:
+    """Create dirs and write default config for a newly-added module.
+
+    Single entry point called by both TUI and GUI when a module is added.
+    """
+    ensure_module_dirs(project_path, module_id)
+    auto_configure_module(slug, module_id, project_path)
+
+
 def auto_configure_module(slug: str, module_id: str, project_path: Path) -> None:
     """Write default config values for *module_id* so it skips the setup form.
 
@@ -186,10 +195,9 @@ def create_project(name: str, modules: list[str], description: str = "") -> Proj
                 f"# {name}\n\nA project managed by Nexus.\n"
             )
 
-        # Create subdirs and write default config for auto-configurable modules
+        # Create dirs and write default config for auto-configurable modules
         for module in modules:
-            ensure_module_dirs(project_dir, module)
-            auto_configure_module(slug, module, project_dir)
+            setup_module(slug, module, project_dir)
 
         log.info("Project created: %s", slug)
     except Exception:

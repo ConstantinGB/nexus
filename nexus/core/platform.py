@@ -9,10 +9,26 @@ from pathlib import Path
 log = logging.getLogger("nexus.core.platform")
 
 
-def _is_wsl() -> bool:
+def is_wsl() -> bool:
     """True when running inside Windows Subsystem for Linux."""
     try:
         return "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        return False
+
+# Keep private alias so existing internal callers still work
+_is_wsl = is_wsl
+
+
+def is_wsl_1() -> bool:
+    """True when running in WSL 1 (limited POSIX support — no full ioctl, no /proc/net)."""
+    if not is_wsl():
+        return False
+    try:
+        import re
+        v = Path("/proc/version").read_text()
+        m = re.search(r"Linux version (\d+)\.", v)
+        return bool(m and int(m.group(1)) < 5)
     except OSError:
         return False
 
